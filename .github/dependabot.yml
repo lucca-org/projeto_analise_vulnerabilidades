@@ -55,7 +55,7 @@ updates:
     reviewers:
       - "LuccaVG"
 
-  # Terraform updates (fixed invalid schedule)
+  # Terraform updates
   - package-ecosystem: "terraform" # For Terraform dependencies
     directory: "/" # Root directory for Terraform files
     schedule:
@@ -71,7 +71,7 @@ updates:
     reviewers:
       - "LuccaVG"
 
-  # npm (if applicable in the project)
+  # npm updates (if applicable in the project)
   - package-ecosystem: "npm" # For JavaScript/Node.js dependencies
     directory: "/" # Root directory for package.json
     schedule:
