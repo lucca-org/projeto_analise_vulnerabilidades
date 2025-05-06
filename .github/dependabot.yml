@@ -20,8 +20,8 @@ updates:
     reviewers:
       - "LuccaVG" # Automatically request reviews from you
     ignore:
-      - dependency-name: "example-library" # Example: Ignore specific dependencies
-        versions: ["4.x"] # Ignore updates for major version 4.x
+  - dependency-name: "example-library"
+    versions: [">=4.0.0,<5.0.0"] # Ignore updates for major version 4.x
     milestone: 1 # Assign Dependabot PRs to the milestone ID 1 (if applicable)
 
   # GitHub Actions updates
