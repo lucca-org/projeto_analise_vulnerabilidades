@@ -1,0 +1,104 @@
+version: 2
+updates:
+  # Python dependencies (pip)
+  - package-ecosystem: "pip" # Specify pip as the package manager
+    directory: "/" # Root directory where requirements.txt is located
+    schedule:
+      interval: "weekly" # Check for updates weekly
+      day: "monday" # Perform checks every Monday
+      time: "08:00" # Perform checks at 8:00 AM UTC
+    commit-message:
+      prefix: "deps" # Use "deps" prefix for commit messages
+      include: "scope" # Include the updated dependency scope in the commit message
+    open-pull-requests-limit: 10 # Limit open PRs to 10 to avoid clutter
+    rebase-strategy: "auto" # Automatically rebase PRs if there are conflicts
+    allow:
+      - dependency-type: "direct" # Only update direct dependencies (not transitive)
+    labels:
+      - "dependencies" # Add a "dependencies" label to PRs
+      - "python" # Add a label for Python-related updates
+    reviewers:
+      - "LuccaVG" # Automatically request reviews from you
+    ignore:
+      - dependency-name: "example-library" # Example: Ignore specific dependencies
+        versions: ["4.x"] # Ignore updates for major version 4.x
+    milestone: 1 # Assign Dependabot PRs to the milestone ID 1 (if applicable)
+
+  # GitHub Actions updates
+  - package-ecosystem: "github-actions" # Keep GitHub Actions workflows up to date
+    directory: "/" # Root directory for GitHub Actions workflows
+    schedule:
+      interval: "daily" # Check for updates daily
+      time: "07:00" # Perform checks at 7:00 AM UTC
+    commit-message:
+      prefix: "actions" # Use "actions" prefix for GitHub Actions commit messages
+    open-pull-requests-limit: 3 # Limit open PRs to 3 for Actions updates
+    labels:
+      - "dependencies"
+      - "github-actions"
+    reviewers:
+      - "LuccaVG"
+
+  # Docker updates
+  - package-ecosystem: "docker" # For Docker dependencies
+    directory: "/" # Root directory containing Dockerfiles
+    schedule:
+      interval: "weekly" # Weekly updates
+      day: "tuesday"
+      time: "06:00"
+    commit-message:
+      prefix: "docker"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "docker"
+    reviewers:
+      - "LuccaVG"
+
+  # Terraform updates (if applicable)
+  - package-ecosystem: "terraform" # For Terraform dependencies
+    directory: "/" # Root directory for Terraform files
+    schedule:
+      interval: "monthly" # Monthly updates
+      day: "first monday"
+      time: "09:00"
+    commit-message:
+      prefix: "terraform"
+    open-pull-requests-limit: 2
+    labels:
+      - "dependencies"
+      - "terraform"
+    reviewers:
+      - "LuccaVG"
+
+  # npm (if applicable in the project)
+  - package-ecosystem: "npm" # For JavaScript/Node.js dependencies
+    directory: "/" # Root directory for package.json
+    schedule:
+      interval: "weekly"
+      day: "wednesday"
+      time: "10:00"
+    commit-message:
+      prefix: "npm"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "javascript"
+    reviewers:
+      - "LuccaVG"
+
+  # OS package updates (if using Linux package managers)
+  - package-ecosystem: "gomod" # Example: Go Modules (can replace with apt, etc.)
+    directory: "/" # Directory for Go Modules or OS package manifests
+    schedule:
+      interval: "weekly"
+      day: "thursday"
+      time: "11:00"
+    commit-message:
+      prefix: "os"
+    open-pull-requests-limit: 2
+    labels:
+      - "dependencies"
+      - "os"
+    reviewers:
+      - "LuccaVG"
