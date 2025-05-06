@@ -55,13 +55,13 @@ updates:
     reviewers:
       - "LuccaVG"
 
-  # Terraform updates (if applicable)
+  # Terraform updates (fixed invalid schedule)
   - package-ecosystem: "terraform" # For Terraform dependencies
     directory: "/" # Root directory for Terraform files
     schedule:
       interval: "monthly" # Monthly updates
-      day: "first monday"
-      time: "09:00"
+      day: "monday" # Perform checks on a Monday
+      time: "09:00" # Perform checks at 9:00 AM UTC
     commit-message:
       prefix: "terraform"
     open-pull-requests-limit: 2
