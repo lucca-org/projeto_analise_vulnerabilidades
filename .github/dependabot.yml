@@ -1,38 +1,38 @@
 version: 2
 updates:
   # Python dependencies (pip)
-  - package-ecosystem: "pip" # Specify pip as the package manager
-    directory: "/" # Root directory where requirements.txt is located
+  - package-ecosystem: "pip"
+    directory: "/"
     schedule:
-      interval: "weekly" # Check for updates weekly
-      day: "monday" # Perform checks every Monday
-      time: "08:00" # Perform checks at 8:00 AM UTC
+      interval: "weekly"
+      day: "monday"
+      time: "08:00"
     commit-message:
-      prefix: "deps" # Use "deps" prefix for commit messages
-      include: "scope" # Include the updated dependency scope in the commit message
-    open-pull-requests-limit: 10 # Limit open PRs to 10 to avoid clutter
-    rebase-strategy: "auto" # Automatically rebase PRs if there are conflicts
+      prefix: "deps"
+      include: "scope"
+    open-pull-requests-limit: 10
+    rebase-strategy: "auto"
     allow:
-      - dependency-type: "direct" # Only update direct dependencies (not transitive)
+      - dependency-type: "direct"
     labels:
-      - "dependencies" # Add a "dependencies" label to PRs
-      - "python" # Add a label for Python-related updates
+      - "dependencies"
+      - "python"
     reviewers:
-      - "LuccaVG" # Automatically request reviews from you
+      - "LuccaVG"
     ignore:
-  - dependency-name: "example-library"
-    versions: [">=4.0.0,<5.0.0"] # Ignore updates for major version 4.x
-    milestone: 1 # Assign Dependabot PRs to the milestone ID 1 (if applicable)
+      - dependency-name: "example-library"
+        versions: [">=4.0.0,<5.0.0"]
+    milestone: 1
 
   # GitHub Actions updates
-  - package-ecosystem: "github-actions" # Keep GitHub Actions workflows up to date
-    directory: "/" # Root directory for GitHub Actions workflows
-    schedule:
-      interval: "daily" # Check for updates daily
-      time: "07:00" # Perform checks at 7:00 AM UTC
+  - package-ecosystem: "github-actions" # Ensure this property exists
+    directory: "/" # Ensure this property exists
+    schedule: # Ensure this property exists
+      interval: "daily"
+      time: "07:00"
     commit-message:
-      prefix: "actions" # Use "actions" prefix for GitHub Actions commit messages
-    open-pull-requests-limit: 3 # Limit open PRs to 3 for Actions updates
+      prefix: "actions"
+    open-pull-requests-limit: 3
     labels:
       - "dependencies"
       - "github-actions"
@@ -40,10 +40,10 @@ updates:
       - "LuccaVG"
 
   # Docker updates
-  - package-ecosystem: "docker" # For Docker dependencies
-    directory: "/" # Root directory containing Dockerfiles
+  - package-ecosystem: "docker"
+    directory: "/"
     schedule:
-      interval: "weekly" # Weekly updates
+      interval: "weekly"
       day: "tuesday"
       time: "06:00"
     commit-message:
@@ -56,12 +56,12 @@ updates:
       - "LuccaVG"
 
   # Terraform updates
-  - package-ecosystem: "terraform" # For Terraform dependencies
-    directory: "/" # Root directory for Terraform files
+  - package-ecosystem: "terraform"
+    directory: "/"
     schedule:
-      interval: "monthly" # Monthly updates
-      day: "monday" # Perform checks on a Monday
-      time: "09:00" # Perform checks at 9:00 AM UTC
+      interval: "monthly"
+      day: "monday"
+      time: "09:00"
     commit-message:
       prefix: "terraform"
     open-pull-requests-limit: 2
@@ -71,9 +71,9 @@ updates:
     reviewers:
       - "LuccaVG"
 
-  # npm updates (if applicable in the project)
-  - package-ecosystem: "npm" # For JavaScript/Node.js dependencies
-    directory: "/" # Root directory for package.json
+  # npm updates
+  - package-ecosystem: "npm"
+    directory: "/"
     schedule:
       interval: "weekly"
       day: "wednesday"
@@ -87,9 +87,9 @@ updates:
     reviewers:
       - "LuccaVG"
 
-  # OS package updates (if using Linux package managers)
-  - package-ecosystem: "gomod" # Example: Go Modules (can replace with apt, etc.)
-    directory: "/" # Directory for Go Modules or OS package manifests
+  # OS package updates
+  - package-ecosystem: "gomod"
+    directory: "/"
     schedule:
       interval: "weekly"
       day: "thursday"
