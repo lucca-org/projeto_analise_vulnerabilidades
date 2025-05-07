@@ -5,6 +5,7 @@ import os
 import shutil
 
 def run_cmd(cmd, shell=False, check=False, use_sudo=False):
+    """Run a shell command with optional sudo and error handling."""
     if use_sudo and os.geteuid() != 0:
         cmd = ["sudo"] + cmd
     try:
@@ -28,6 +29,7 @@ def run_cmd(cmd, shell=False, check=False, use_sudo=False):
         return False
 
 def ensure_sudo():
+    """Ensure the script is running with sudo/root privileges."""
     if os.geteuid() != 0:
         print("Root privileges are required for some operations.")
         try:
@@ -37,6 +39,7 @@ def ensure_sudo():
             sys.exit(1)
 
 def check_python():
+    """Check if Python3 is installed."""
     return run_cmd(["python3", "--version"])
 
 def install_python():
@@ -45,6 +48,7 @@ def install_python():
     run_cmd(["apt-get", "install", "python3", "-y"], check=True, use_sudo=True)
 
 def check_go():
+    """Check if Go is installed."""
     return run_cmd(["go", "version"])
 
 def install_go():
@@ -53,6 +57,7 @@ def install_go():
     run_cmd(["apt-get", "install", "golang", "-y"], check=True, use_sudo=True)
 
 def check_naabu():
+    """Check if naabu is installed."""
     return run_cmd(["naabu", "--version"])
 
 def install_naabu():
@@ -60,6 +65,7 @@ def install_naabu():
     run_cmd(["go", "install", "-v", "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest"], check=True)
 
 def check_nuclei():
+    """Check if nuclei is installed."""
     return run_cmd(["nuclei", "--version"])
 
 def install_nuclei():
@@ -67,6 +73,7 @@ def install_nuclei():
     run_cmd(["go", "install", "-v", "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"], check=True)
 
 def check_httpx():
+    """Check if httpx is installed."""
     return run_cmd(["httpx", "--version"])
 
 def install_httpx():
@@ -74,14 +81,20 @@ def install_httpx():
     run_cmd(["go", "install", "-v", "github.com/projectdiscovery/httpx/cmd/httpx@latest"], check=True)
 
 def detect_shell_rc():
+    """Detect the user's shell rc file."""
     shell = os.environ.get("SHELL", "")
     if "zsh" in shell:
         return os.path.expanduser("~/.zshrc")
     return os.path.expanduser("~/.bashrc")
 
 def update_path():
+    """Add $HOME/go/bin to PATH in the shell rc file if not already present."""
     shell_rc = detect_shell_rc()
     export_cmd = "export PATH=$PATH:$HOME/go/bin"
+    path_env = os.environ.get("PATH", "")
+    if "$HOME/go/bin" in path_env or os.path.expanduser("~/go/bin") in path_env:
+        print("Your PATH already contains $HOME/go/bin.")
+        return
     try:
         with open(shell_rc, "a+") as f:
             f.seek(0)
@@ -95,22 +108,23 @@ def update_path():
     except PermissionError:
         print(f"Permission denied while updating {shell_rc}. Try running this script with sudo or update your PATH manually.")
 
+def check_and_install(name, check_func, install_func):
+    """Check and install a tool or dependency."""
+    try:
+        if not check_func():
+            install_func()
+            if not check_func():
+                print(f"{name} installation failed. Exiting.")
+                sys.exit(1)
+            print(f"{name} installed and verified.")
+        else:
+            print(f"{name} is already installed.")
+    except Exception as e:
+        print(f"Error during installation of {name}: {e}")
+        sys.exit(1)
+
 def main():
     ensure_sudo()
-
-    def check_and_install(name, check_func, install_func):
-        try:
-            if not check_func():
-                install_func()
-                if not check_func():
-                    print(f"{name} installation failed. Exiting.")
-                    sys.exit(1)
-                print(f"{name} installed and verified.")
-            else:
-                print(f"{name} is already installed.")
-        except Exception as e:
-            print(f"Error during installation of {name}: {e}")
-            sys.exit(1)
 
     # Check and install dependencies
     check_and_install("Python3", check_python, install_python)
@@ -120,6 +134,8 @@ def main():
     check_and_install("httpx", check_httpx, install_httpx)
 
     update_path()
+    print("\nSummary:")
+    print("All dependencies are installed and verified.")
     print("Installation complete. Please restart your terminal or run 'source ~/.zshrc' or 'source ~/.bashrc'.")
 
 if __name__ == "__main__":
