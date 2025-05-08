@@ -3,6 +3,8 @@ import subprocess
 import sys
 import os
 import shutil
+import socket
+import importlib
 
 def run_cmd(cmd, shell=False, check=False, use_sudo=False):
     """Run a shell command with optional sudo and error handling."""
@@ -38,6 +40,15 @@ def ensure_sudo():
             print("Sudo access is required. Exiting.")
             sys.exit(1)
 
+def check_network():
+    """Check for network connectivity."""
+    try:
+        socket.create_connection(("8.8.8.8", 53), timeout=3)
+        return True
+    except OSError:
+        print("No network connection detected. Please connect to the internet and try again.")
+        return False
+
 def check_python():
     """Check if Python3 is installed."""
     return run_cmd(["python3", "--version"])
@@ -46,6 +57,14 @@ def install_python():
     print("Python3 not found. Installing Python3...")
     run_cmd(["apt-get", "update"], check=True, use_sudo=True)
     run_cmd(["apt-get", "install", "python3", "-y"], check=True, use_sudo=True)
+    run_cmd(["apt-get", "install", "python3-pip", "-y"], check=True, use_sudo=True)
+
+def check_pip3():
+    """Check if pip3 is installed."""
+    return run_cmd(["pip3", "--version"])
+
+def install_pip3():
+    print("pip3 not found. Installing pip3...")
     run_cmd(["apt-get", "install", "python3-pip", "-y"], check=True, use_sudo=True)
 
 def check_pytest():
@@ -59,6 +78,12 @@ def check_pytest():
 def install_pytest():
     print("pytest not found. Installing pytest...")
     run_cmd(["pip3", "install", "--user", "pytest"], check=True)
+    try:
+        importlib.invalidate_caches()
+        import pytest  # noqa: F401
+    except ImportError:
+        print("Failed to import pytest after installation.")
+        sys.exit(1)
 
 def check_go():
     """Check if Go is installed."""
@@ -123,6 +148,8 @@ def update_path():
         print(f"Please run: source {shell_rc} or restart your terminal to update PATH.")
     except PermissionError:
         print(f"Permission denied while updating {shell_rc}. Try running this script with sudo or update your PATH manually.")
+    except Exception as e:
+        print(f"Error updating PATH: {e}")
 
 def check_and_install(name, check_func, install_func):
     """Check and install a tool or dependency."""
@@ -140,10 +167,13 @@ def check_and_install(name, check_func, install_func):
         sys.exit(1)
 
 def main():
+    if not check_network():
+        sys.exit(1)
     ensure_sudo()
 
     # Check and install dependencies
     check_and_install("Python3", check_python, install_python)
+    check_and_install("pip3", check_pip3, install_pip3)
     check_and_install("pytest", check_pytest, install_pytest)
     check_and_install("Go", check_go, install_go)
     check_and_install("naabu", check_naabu, install_naabu)
