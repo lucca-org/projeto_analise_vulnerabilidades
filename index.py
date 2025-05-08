@@ -46,6 +46,7 @@ def install_python():
     print("Python3 not found. Installing Python3...")
     run_cmd(["apt-get", "update"], check=True, use_sudo=True)
     run_cmd(["apt-get", "install", "python3", "-y"], check=True, use_sudo=True)
+    run_cmd(["apt-get", "install", "python3-pip", "-y"], check=True, use_sudo=True)
 
 def check_pytest():
     """Check if pytest is installed."""
@@ -67,6 +68,9 @@ def install_go():
     print("Go not found. Installing Go...")
     run_cmd(["apt-get", "update"], check=True, use_sudo=True)
     run_cmd(["apt-get", "install", "golang", "-y"], check=True, use_sudo=True)
+    run_cmd(["apt-get", "install", "git", "-y"], check=True, use_sudo=True)
+    run_cmd(["apt-get", "install", "build-essential", "-y"], check=True, use_sudo=True)
+    run_cmd(["apt-get", "install", "libpcap-dev", "-y"], check=True, use_sudo=True)
 
 def check_naabu():
     """Check if naabu is installed."""
