@@ -47,6 +47,18 @@ def install_python():
     run_cmd(["apt-get", "update"], check=True, use_sudo=True)
     run_cmd(["apt-get", "install", "python3", "-y"], check=True, use_sudo=True)
 
+def check_pytest():
+    """Check if pytest is installed."""
+    try:
+        import pytest  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+def install_pytest():
+    print("pytest not found. Installing pytest...")
+    run_cmd(["pip3", "install", "--user", "pytest"], check=True)
+
 def check_go():
     """Check if Go is installed."""
     return run_cmd(["go", "version"])
@@ -128,6 +140,7 @@ def main():
 
     # Check and install dependencies
     check_and_install("Python3", check_python, install_python)
+    check_and_install("pytest", check_pytest, install_pytest)
     check_and_install("Go", check_go, install_go)
     check_and_install("naabu", check_naabu, install_naabu)
     check_and_install("nuclei", check_nuclei, install_nuclei)
