@@ -2,7 +2,7 @@ version: 2
 updates:
   # Python dependencies (pip)
   - package-ecosystem: "pip"
-    directory: "/" # Adjust if requirements.txt is not in the root directory
+    directory: "/" # Root directory for Python dependencies
     schedule:
       interval: "weekly"
       day: "monday"
@@ -11,27 +11,27 @@ updates:
       prefix: "deps"
       include: "scope"
     open-pull-requests-limit: 10
-    rebase-strategy: "auto"
+    rebase-strategy: "auto" # Automatically resolve merge conflicts
     allow:
-      - dependency-type: "direct"
+      - dependency-type: "direct" # Allow only direct dependencies
     labels:
       - "dependencies"
       - "python"
     reviewers:
       - "LuccaVG"
 
-  # Go modules (commented out if not used yet)
-  # - package-ecosystem: "gomod"
-  #   directory: "/" # Ensure go.mod exists in the root directory
-  #   schedule:
-  #     interval: "weekly"
-  #     day: "tuesday"
-  #     time: "09:00"
-  #   commit-message:
-  #     prefix: "go"
-  #   open-pull-requests-limit: 5
-  #   labels:
-  #     - "dependencies"
-  #     - "go"
-  #   reviewers:
-  #     - "LuccaVG"
+  # Go modules (gomod)
+  - package-ecosystem: "gomod"
+    directory: "/" # Root directory for Go dependencies
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "09:00"
+    commit-message:
+      prefix: "deps"
+    open-pull-requests-limit: 5
+    labels:
+      - "dependencies"
+      - "go"
+    reviewers:
+      - "LuccaVG"
