@@ -4,34 +4,10 @@ updates:
   - package-ecosystem: "pip"
     directory: "/" # Root directory for Python dependencies
     schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "08:00"
-    commit-message:
-      prefix: "deps"
-      include: "scope"
-    open-pull-requests-limit: 10
-    rebase-strategy: "auto" # Automatically resolve merge conflicts
-    allow:
-      - dependency-type: "direct" # Allow only direct dependencies
-    labels:
-      - "dependencies"
-      - "python"
-    reviewers:
-      - "LuccaVG"
+      interval: "weekly" # Check for updates weekly
 
   # Go modules (gomod)
-  - package-ecosystem: "go"
+  - package-ecosystem: "gomod"
     directory: "/" # Root directory for Go dependencies
     schedule:
-      interval: "weekly"
-      day: "tuesday"
-      time: "09:00"
-    commit-message:
-      prefix: "deps"
-    open-pull-requests-limit: 5
-    labels:
-      - "dependencies"
-      - "go"
-    reviewers:
-      - "LuccaVG"
+      interval: "weekly" # Check for updates weekly
