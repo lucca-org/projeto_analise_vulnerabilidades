@@ -21,7 +21,7 @@ updates:
       - "LuccaVG"
 
   # Go modules (gomod)
-  - package-ecosystem: "gomod"
+  - package-ecosystem: "go"
     directory: "/" # Root directory for Go dependencies
     schedule:
       interval: "weekly"
