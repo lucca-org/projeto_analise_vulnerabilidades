@@ -2,7 +2,7 @@ version: 2
 updates:
   # Python dependencies (pip)
   - package-ecosystem: "pip"
-    directory: "/"
+    directory: "/" # Root directory for Python dependencies
     schedule:
       interval: "weekly"
       day: "monday"
@@ -11,9 +11,9 @@ updates:
       prefix: "deps"
       include: "scope"
     open-pull-requests-limit: 10
-    rebase-strategy: "auto"
+    rebase-strategy: "auto" # Automatically resolve merge conflicts
     allow:
-      - dependency-type: "direct"
+      - dependency-type: "direct" # Allow only direct dependencies
     labels:
       - "dependencies"
       - "python"
@@ -21,13 +21,13 @@ updates:
       - "LuccaVG"
     ignore:
       - dependency-name: "example-library"
-        versions: [">=4.0.0,<5.0.0"]
-    milestone: 1
+        versions: [">=4.0.0,<5.0.0"] # Ignore specific versions of example-library
+    milestone: 1 # Associate with milestone 1
 
   # GitHub Actions updates
-  - package-ecosystem: "github-actions" # Ensure this property exists
-    directory: "/" # Ensure this property exists
-    schedule: # Ensure this property exists
+  - package-ecosystem: "github-actions"
+    directory: "/" # Root directory for GitHub Actions workflows
+    schedule:
       interval: "daily"
       time: "07:00"
     commit-message:
@@ -41,7 +41,7 @@ updates:
 
   # Docker updates
   - package-ecosystem: "docker"
-    directory: "/"
+    directory: "/" # Root directory for Docker files
     schedule:
       interval: "weekly"
       day: "tuesday"
@@ -57,7 +57,7 @@ updates:
 
   # Terraform updates
   - package-ecosystem: "terraform"
-    directory: "/"
+    directory: "/" # Root directory for Terraform configurations
     schedule:
       interval: "monthly"
       day: "monday"
@@ -73,7 +73,7 @@ updates:
 
   # npm updates
   - package-ecosystem: "npm"
-    directory: "/"
+    directory: "/" # Root directory for JavaScript dependencies
     schedule:
       interval: "weekly"
       day: "wednesday"
@@ -87,9 +87,9 @@ updates:
     reviewers:
       - "LuccaVG"
 
-  # OS package updates
+  # OS package updates (Go modules)
   - package-ecosystem: "gomod"
-    directory: "/"
+    directory: "/" # Root directory for Go modules
     schedule:
       interval: "weekly"
       day: "thursday"
