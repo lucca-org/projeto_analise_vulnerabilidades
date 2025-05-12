@@ -2,12 +2,6 @@ version: 2
 updates:
   # Python dependencies (pip)
   - package-ecosystem: "pip"
-    directory: "/" # Root directory for Python dependencies
-    schedule:
-      interval: "weekly" # Check for updates weekly
-
-  # Go modules (gomod)
-  - package-ecosystem: "gomod"
-    directory: "/" # Root directory for Go dependencies
+    directory: "/" # Assuming the Python dependencies (requirements.txt) are in the root directory
     schedule:
       interval: "weekly" # Check for updates weekly
