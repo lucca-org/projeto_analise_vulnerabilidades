@@ -2,13 +2,11 @@
 import subprocess
 import sys
 import os
-import shutil
 import socket
-import importlib
 
 def run_cmd(cmd, shell=False, check=False, use_sudo=False):
     """Run a shell command with optional sudo and error handling."""
-    if use_sudo and os.geteuid() != 0:
+    if use_sudo:
         cmd = ["sudo"] + cmd
     try:
         print(f"Running: {' '.join(cmd) if isinstance(cmd, list) else cmd}")
@@ -36,8 +34,8 @@ def ensure_sudo():
         print("Root privileges are required for some operations.")
         try:
             subprocess.run(["sudo", "true"], check=True)
-        except Exception:
-            print("Sudo access is required. Exiting.")
+        except subprocess.CalledProcessError:
+            print("Sudo access is required. Please run the script with sudo. Exiting.")
             sys.exit(1)
 
 def check_network():
@@ -46,80 +44,8 @@ def check_network():
         socket.create_connection(("8.8.8.8", 53), timeout=3)
         return True
     except OSError:
-        print("No network connection detected. Please connect to the internet and try again.")
-        return False
-
-def check_python():
-    """Check if Python3 is installed."""
-    return run_cmd(["python3", "--version"])
-
-def install_python():
-    print("Python3 not found. Installing Python3...")
-    run_cmd(["apt-get", "update"], check=True, use_sudo=True)
-    run_cmd(["apt-get", "install", "python3", "-y"], check=True, use_sudo=True)
-    run_cmd(["apt-get", "install", "python3-pip", "-y"], check=True, use_sudo=True)
-
-def check_pip3():
-    """Check if pip3 is installed."""
-    return run_cmd(["pip3", "--version"])
-
-def install_pip3():
-    print("pip3 not found. Installing pip3...")
-    run_cmd(["apt-get", "install", "python3-pip", "-y"], check=True, use_sudo=True)
-
-def check_pytest():
-    """Check if pytest is installed."""
-    try:
-        import pytest  # noqa: F401
-        return True
-    except ImportError:
-        return False
-
-def install_pytest():
-    print("pytest not found. Installing pytest...")
-    run_cmd(["pip3", "install", "--user", "pytest"], check=True)
-    try:
-        importlib.invalidate_caches()
-        import pytest  # noqa: F401
-    except ImportError:
-        print("Failed to import pytest after installation.")
+        print("No network connection detected. Please connect to the internet and try again. Exiting.")
         sys.exit(1)
-
-def check_go():
-    """Check if Go is installed."""
-    return run_cmd(["go", "version"])
-
-def install_go():
-    print("Go not found. Installing Go...")
-    run_cmd(["apt-get", "update"], check=True, use_sudo=True)
-    run_cmd(["apt-get", "install", "golang", "-y"], check=True, use_sudo=True)
-    run_cmd(["apt-get", "install", "git", "-y"], check=True, use_sudo=True)
-    run_cmd(["apt-get", "install", "build-essential", "-y"], check=True, use_sudo=True)
-    run_cmd(["apt-get", "install", "libpcap-dev", "-y"], check=True, use_sudo=True)
-
-def check_naabu():
-    """Check if naabu is installed."""
-    return run_cmd(["naabu", "--version"])
-
-def install_naabu():
-    print("naabu not found. Installing naabu...")
-    run_cmd(["go", "install", "-v", "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest"], check=True)
-
-def check_nuclei():
-    """Check if nuclei is installed."""
-    return run_cmd(["nuclei", "--version"])
-
-def install_nuclei():
-    print("nuclei not found. Installing nuclei...")
-    run_cmd(["go", "install", "-v", "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"], check=True)
-
-def check_httpx():
-    """Check if httpx is installed."""
-    return run_cmd(["httpx", "--version"])
-
-def install_httpx():
-    print("httpx not found. Installing httpx...")
-    run_cmd(["go", "install", "-v", "github.com/projectdiscovery/httpx/cmd/httpx@latest"], check=True)
 
 def detect_shell_rc():
     """Detect the user's shell rc file."""
@@ -155,6 +81,7 @@ def check_and_install(name, check_func, install_func):
     """Check and install a tool or dependency."""
     try:
         if not check_func():
+            print(f"{name} not found. Installing...")
             install_func()
             if not check_func():
                 print(f"{name} installation failed. Exiting.")
@@ -168,17 +95,17 @@ def check_and_install(name, check_func, install_func):
 
 def main():
     if not check_network():
+        print("Network check failed. Exiting.")
         sys.exit(1)
     ensure_sudo()
 
     # Check and install dependencies
-    check_and_install("Python3", check_python, install_python)
-    check_and_install("pip3", check_pip3, install_pip3)
-    check_and_install("pytest", check_pytest, install_pytest)
-    check_and_install("Go", check_go, install_go)
-    check_and_install("naabu", check_naabu, install_naabu)
-    check_and_install("nuclei", check_nuclei, install_nuclei)
-    check_and_install("httpx", check_httpx, install_httpx)
+    check_and_install("Python3", lambda: run_cmd(["python3", "--version"]), lambda: run_cmd(["apt-get", "install", "python3", "-y"], use_sudo=True))
+    check_and_install("pip3", lambda: run_cmd(["pip3", "--version"]), lambda: run_cmd(["apt-get", "install", "python3-pip", "-y"], use_sudo=True))
+    check_and_install("Go", lambda: run_cmd(["go", "version"]), lambda: run_cmd(["apt-get", "install", "golang", "-y"], use_sudo=True))
+    check_and_install("naabu", lambda: run_cmd(["naabu", "--version"]), lambda: run_cmd(["go", "install", "-v", "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest"], use_sudo=True))
+    check_and_install("nuclei", lambda: run_cmd(["nuclei", "--version"]), lambda: run_cmd(["go", "install", "-v", "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"], use_sudo=True))
+    check_and_install("httpx", lambda: run_cmd(["httpx", "--version"]), lambda: run_cmd(["go", "install", "-v", "github.com/projectdiscovery/httpx/cmd/httpx@latest"], use_sudo=True))
 
     update_path()
     print("\nSummary:")
