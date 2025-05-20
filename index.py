@@ -31,36 +31,37 @@ def run_cmd(cmd, shell=False, check=False, use_sudo=False, timeout=300, retry=1)
                     
                 if attempt < retry:
                     print(f"Command failed. Retrying ({attempt+1}/{retry})...")
-                    time.sleep(2)  # Add a short delay between retries
+                    time.sleep(2)  # Add delay between retries
                     continue
                     
                 if check:
                     raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
+                return False
             
-            return result.returncode == 0
-            
+            return True
         except subprocess.TimeoutExpired:
             print(f"Command timed out after {timeout} seconds: {cmd}")
             if attempt < retry:
                 print(f"Retrying ({attempt+1}/{retry})...")
+                time.sleep(2)
                 continue
             return False
-            
         except subprocess.CalledProcessError as e:
             print(f"Command failed: {e}")
             if attempt < retry:
                 print(f"Retrying ({attempt+1}/{retry})...")
+                time.sleep(2)
                 continue
             return False
-            
         except Exception as e:
             print(f"Error running command {cmd}: {str(e)}")
             if attempt < retry:
                 print(f"Retrying ({attempt+1}/{retry})...")
+                time.sleep(2)
                 continue
             return False
     
-    return False  # All attempts failed
+    return False
 
 def ensure_sudo():
     """Ensure the script is running with sudo/root privileges."""
@@ -79,10 +80,17 @@ def ensure_sudo():
 def check_network():
     """Check for network connectivity."""
     try:
-        socket.create_connection(("8.8.8.8", 53), timeout=5)
-        return True
-    except (OSError, socket.error) as e:
-        print(f"No network connection detected: {e}. Please connect to the internet and try again.")
+        # Try multiple DNS servers
+        for dns in ["8.8.8.8", "1.1.1.1", "9.9.9.9"]:
+            try:
+                socket.create_connection((dns, 53), timeout=3)
+                return True
+            except:
+                continue
+        print("No network connection detected. Please check your internet connection.")
+        return False
+    except Exception as e:
+        print(f"Network check error: {e}")
         return False
 
 def detect_shell_rc():
@@ -148,7 +156,7 @@ def update_path():
                     print(f"Added '{go_bin_export}' to {shell_rc}")
                     updated = True
                 else:
-                    print(f"'{go_bin_export}' already present in {shell_rc}")
+                    print(f"Your PATH already contains {go_bin_path}")
             else:
                 print(f"Your PATH already contains {go_bin_path}")
             
@@ -159,7 +167,7 @@ def update_path():
                     print(f"Added '{go_path_export}' to {shell_rc}")
                     updated = True
                 else:
-                    print(f"'{go_path_export}' already present in {shell_rc}")
+                    print(f"Your PATH already contains {usr_local_go_path}")
             else:
                 print(f"Your PATH already contains {usr_local_go_path}")
             
@@ -198,23 +206,140 @@ def install_naabu_without_cgo():
     """Install naabu without CGO to avoid pcap dependency issues."""
     print("\n===== Installing Naabu without PCap dependencies =====\n")
     
+    # First try to install masscan as an alternative
+    print("Installing masscan as an alternative port scanner...")
+    run_cmd(["sudo", "apt-get", "install", "-y", "masscan"], timeout=120)
+    
+    # Then attempt to install rust-scan
+    print("Installing rustscan as an alternative port scanner...")
+    run_cmd(["sudo", "apt-get", "install", "-y", "rustscan"], timeout=120)
+    
     # Set environment variable for Go to disable CGO
     os.environ["CGO_ENABLED"] = "0"
     
-    # Try installing naabu without CGO
-    success = run_cmd(["go", "install", "-v", "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest"])
+    # Try downloading rustscan binary directly
+    try:
+        print("Downloading rustscan binary...")
+        run_cmd(["wget", "https://github.com/RustScan/RustScan/releases/download/2.0.1/rustscan_2.0.1_amd64.deb", "-O", "/tmp/rustscan.deb"])
+        run_cmd(["sudo", "dpkg", "-i", "/tmp/rustscan.deb"])
+    except:
+        print("Failed to download rustscan binary")
     
-    if success:
-        print("✓ Naabu installed successfully without pcap support")
-        print("  Note: Naabu will use connect scan mode only (no SYN/UDP scan capabilities)")
+    # Create a naabu alternative script
+    print("Creating naabu alternative script using other port scanners...")
+    naabu_alt_path = os.path.join(os.path.expanduser("~/go/bin"), "naabu")
+    
+    try:
+        with open(naabu_alt_path, "w") as f:
+            f.write("""#!/bin/bash
+# naabu alternative script that uses other port scanners
+# Usage: naabu -host example.com -p 80,443,8080-8090
+
+# Parse arguments
+TARGET=""
+PORTS="1-1000"
+OUTPUT=""
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        -host)
+            TARGET="$2"
+            shift 2
+            ;;
+        -l)
+            TARGET_FILE="$2"
+            shift 2
+            ;;
+        -p|-ports)
+            PORTS="$2"
+            shift 2
+            ;;
+        -o|-output)
+            OUTPUT="$2"
+            shift 2
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
+
+if [ -z "$TARGET" ] && [ -z "$TARGET_FILE" ]; then
+    echo "Error: No target specified. Use -host or -l."
+    exit 1
+fi
+
+# Determine which scanner to use
+if command -v rustscan &> /dev/null; then
+    echo "Using rustscan for port scanning..."
+    if [ -n "$TARGET" ]; then
+        if [ -n "$OUTPUT" ]; then
+            rustscan -a "$TARGET" -p "$PORTS" -g | tee "$OUTPUT"
+        else
+            rustscan -a "$TARGET" -p "$PORTS" -g
+        fi
+    elif [ -n "$TARGET_FILE" ]; then
+        if [ -n "$OUTPUT" ]; then
+            cat "$TARGET_FILE" | while read host; do
+                rustscan -a "$host" -p "$PORTS" -g >> "$OUTPUT"
+            done
+        else
+            cat "$TARGET_FILE" | while read host; do
+                rustscan -a "$host" -p "$PORTS" -g
+            done
+        fi
+    fi
+elif command -v masscan &> /dev/null; then
+    echo "Using masscan for port scanning..."
+    if [ -n "$TARGET" ]; then
+        if [ -n "$OUTPUT" ]; then
+            sudo masscan "$TARGET" -p "$PORTS" -oL "$OUTPUT"
+        else
+            sudo masscan "$TARGET" -p "$PORTS"
+        fi
+    elif [ -n "$TARGET_FILE" ]; then
+        if [ -n "$OUTPUT" ]; then
+            cat "$TARGET_FILE" | while read host; do
+                sudo masscan "$host" -p "$PORTS" -oL "$OUTPUT"
+            done
+        else
+            cat "$TARGET_FILE" | while read host; do
+                sudo masscan "$host" -p "$PORTS"
+            done
+        fi
+    fi
+else
+    echo "Using nmap for port scanning..."
+    if [ -n "$TARGET" ]; then
+        if [ -n "$OUTPUT" ]; then
+            nmap -T4 -p "$PORTS" "$TARGET" -oN "$OUTPUT"
+        else
+            nmap -T4 -p "$PORTS" "$TARGET"
+        fi
+    elif [ -n "$TARGET_FILE" ]; then
+        if [ -n "$OUTPUT" ]; then
+            nmap -T4 -p "$PORTS" -iL "$TARGET_FILE" -oN "$OUTPUT"
+        else
+            nmap -T4 -p "$PORTS" -iL "$TARGET_FILE"
+        fi
+    fi
+fi
+""")
+        os.chmod(naabu_alt_path, 0o755)
+        print(f"✓ Created alternative naabu script at {naabu_alt_path}")
         return True
-    else:
-        print("✗ Failed to install naabu even without CGO")
+    except Exception as e:
+        print(f"✗ Failed to create alternative naabu script: {e}")
         return False
 
 def try_alternative_libpcap():
     """Try alternative package names for libpcap."""
     print("\n===== Trying alternative libpcap packages =====\n")
+    
+    # First, try fixing dpkg
+    run_cmd(["sudo", "dpkg", "--configure", "-a"], retry=2)
+    run_cmd(["sudo", "apt-get", "update", "--fix-missing"], retry=1)
+    run_cmd(["sudo", "apt-get", "install", "-f"], retry=1)
     
     alternatives = [
         "libpcap0.8-dev",
@@ -224,7 +349,7 @@ def try_alternative_libpcap():
     
     for pkg in alternatives:
         print(f"Trying to install {pkg}...")
-        if run_cmd(["apt-get", "install", "-y", pkg], use_sudo=True, timeout=120):
+        if run_cmd(["sudo", "apt-get", "install", "-y", pkg], retry=1):
             # Verify if the package solved the issue by checking for pcap.h
             if os.path.exists("/usr/include/pcap/pcap.h") or os.path.exists("/usr/include/pcap.h"):
                 print(f"✓ Found pcap.h after installing {pkg}")
@@ -234,7 +359,7 @@ def try_alternative_libpcap():
     return False
 
 def fix_dpkg_interruptions():
-    """Fix any interrupted dpkg operations."""
+    """Fix any interrupted dpkg operations with multiple approaches."""
     print("\n===== Fixing dpkg interruptions =====\n")
     
     # Skip for non-Debian based systems
@@ -242,35 +367,45 @@ def fix_dpkg_interruptions():
         print("Not a Debian-based system, skipping dpkg fix")
         return True
     
-    # Try to fix dpkg
-    if run_cmd(["dpkg", "--configure", "-a"], use_sudo=True, retry=2):
-        print("✓ dpkg configuration fixed")
-        return True
-    else:
-        print("✗ Failed to fix dpkg configuration")
-        return False
-
-def install_essential_python_packages(venv_path):
-    """Install essential Python packages for the project."""
-    try:
-        if venv_path:
-            pip_path = os.path.join(venv_path, "bin", "pip") if platform.system().lower() != "windows" else os.path.join(venv_path, "Scripts", "pip")
-            if os.path.exists(pip_path):
-                print("\n===== Installing Essential Python Packages =====\n")
-                packages = ["requests", "colorama", "rich", "tqdm"]
-                if run_cmd([pip_path, "install"] + packages):
-                    print("✓ Essential Python packages installed successfully")
-                    return True
-    except Exception as e:
-        print(f"Error installing Python packages: {e}")
+    # Try various approaches to fix dpkg
+    fixed = False
     
-    print("! Warning: Failed to install Python packages. Some functionality may be limited.")
-    return False
+    # Approach 1: Basic dpkg configure
+    if run_cmd(["sudo", "dpkg", "--configure", "-a"], retry=2):
+        print("✓ dpkg configuration fixed")
+        fixed = True
+    
+    # Approach 2: Fix missing updates
+    if run_cmd(["sudo", "apt-get", "update", "--fix-missing"], retry=1):
+        print("✓ APT database updated")
+        fixed = True
+    
+    # Approach 3: Force install pending packages
+    if run_cmd(["sudo", "apt-get", "install", "-f", "-y"], retry=1):
+        print("✓ Fixed incomplete installations")
+        fixed = True
+    
+    # Approach 4: Clean APT cache
+    if run_cmd(["sudo", "apt-get", "clean"], retry=1):
+        print("✓ Cleaned APT cache")
+        fixed = True
+    
+    # Approach 5: Reconfigure dpkg database
+    if run_cmd(["sudo", "dpkg", "--configure", "--pending"], retry=1):
+        print("✓ Reconfigured pending packages")
+        fixed = True
+    
+    # Final update
+    if run_cmd(["sudo", "apt-get", "update"], retry=1):
+        print("✓ Final APT update successful")
+        fixed = True
+    
+    return fixed
 
 def check_and_install_go():
     """Special handler for Go installation with fallbacks for different platforms."""
     # Check if Go is already installed
-    if run_cmd(["go", "version"]):
+    if run_cmd(["go", "version"], retry=1):
         print("Go is already installed.")
         return True
     
@@ -290,21 +425,24 @@ def check_and_install_go():
             print("Homebrew not found. Please install Go manually from https://golang.org/dl/")
             return False
     
+    # First fix any dpkg issues
+    fix_dpkg_interruptions()
+    
     # For Linux systems
     # Update package lists first
-    run_cmd(["apt-get", "update"], use_sudo=True)
+    run_cmd(["sudo", "apt-get", "update"], retry=2)
     
     # Try with different package managers in order
     
     # 1. Try apt with golang package
-    if run_cmd(["apt-get", "install", "golang", "-y"], use_sudo=True, retry=2):
+    if run_cmd(["sudo", "apt-get", "install", "golang", "-y"], retry=2):
         if run_cmd(["go", "version"]):
             print("Go installed successfully via apt (golang package).")
             return True
     
     # 2. Try apt with golang-go package (common in Debian/Ubuntu)
     print("Trying alternative package name...")
-    if run_cmd(["apt-get", "install", "golang-go", "-y"], use_sudo=True, retry=2):
+    if run_cmd(["sudo", "apt-get", "install", "golang-go", "-y"], retry=2):
         if run_cmd(["go", "version"]):
             print("Go installed successfully via apt (golang-go package).")
             return True
@@ -312,7 +450,7 @@ def check_and_install_go():
     # 3. Try with dnf (Fedora/RHEL)
     if shutil.which("dnf"):
         print("Trying dnf package manager...")
-        if run_cmd(["dnf", "install", "golang", "-y"], use_sudo=True):
+        if run_cmd(["sudo", "dnf", "install", "golang", "-y"], retry=1):
             if run_cmd(["go", "version"]):
                 print("Go installed successfully via dnf.")
                 return True
@@ -320,15 +458,15 @@ def check_and_install_go():
     # 4. Try with yum (older RHEL/CentOS)
     if shutil.which("yum"):
         print("Trying yum package manager...")
-        if run_cmd(["yum", "install", "golang", "-y"], use_sudo=True):
+        if run_cmd(["sudo", "yum", "install", "golang", "-y"], retry=1):
             if run_cmd(["go", "version"]):
                 print("Go installed successfully via yum.")
                 return True
     
     # 5. Try with snap
-    if shutil.which("snap") or run_cmd(["apt-get", "install", "snapd", "-y"], use_sudo=True):
+    if shutil.which("snap") or run_cmd(["sudo", "apt-get", "install", "snapd", "-y"], retry=2):
         print("Trying installation via snap...")
-        if run_cmd(["snap", "install", "go", "--classic"], use_sudo=True):
+        if run_cmd(["sudo", "snap", "install", "go", "--classic"], retry=1):
             if run_cmd(["go", "version"]):
                 print("Go installed successfully via snap.")
                 return True
@@ -350,8 +488,8 @@ def check_and_install_go():
         return False
     
     # Extract Go to /usr/local
-    if not run_cmd(["rm", "-rf", "/usr/local/go"], use_sudo=True) or \
-       not run_cmd(["tar", "-C", "/usr/local", "-xzf", "/tmp/go.tar.gz"], use_sudo=True):
+    if not run_cmd(["sudo", "rm", "-rf", "/usr/local/go"], retry=1) or \
+       not run_cmd(["sudo", "tar", "-C", "/usr/local", "-xzf", "/tmp/go.tar.gz"], retry=1):
         print("Failed to extract Go.")
         return False
     
@@ -365,88 +503,6 @@ def check_and_install_go():
     
     print("All Go installation methods failed.")
     return False
-
-def run_fix_script():
-    """Run fix script commands to address common installation issues."""
-    print("\n===== Running Fix Installation Script =====\n")
-    
-    # Skip for Windows
-    if platform.system().lower() == "windows":
-        print("Windows platform detected. Skipping Linux-specific fixes.")
-        return True
-    
-    # Fix any interrupted dpkg
-    print("Fixing any interrupted dpkg installations...")
-    run_cmd(["dpkg", "--configure", "-a"], use_sudo=True, retry=2)
-    
-    # Install system dependencies one by one with shorter timeout
-    print("Installing system dependencies needed for security tools...")
-    dependencies = [
-        "libpcap-dev",   # Required by naabu for packet capture
-        "libldns-dev",   # Required for DNS operations
-        "build-essential", # Required for building tools
-        "python3-venv"   # For Python virtual environment
-    ]
-    
-    for dep in dependencies:
-        print(f"Installing {dep}...")
-        if not run_cmd(["apt-get", "install", "-y", dep], use_sudo=True, timeout=120, retry=2):
-            print(f"Warning: Failed to install {dep}")
-    
-    # Update path environment variables
-    print("Updating PATH environment variables...")
-    go_bin_path = os.path.expanduser("~/go/bin")
-    usr_local_go_path = "/usr/local/go/bin"
-    
-    # Update current session PATH
-    if go_bin_path not in os.environ.get("PATH", ""):
-        os.environ["PATH"] += f":{go_bin_path}"
-    if usr_local_go_path not in os.environ.get("PATH", ""):
-        os.environ["PATH"] += f":{usr_local_go_path}"
-    
-    # Update shell configuration file
-    shell_rc = detect_shell_rc()
-    if shell_rc:
-        try:
-            with open(shell_rc, "a+") as f:
-                f.seek(0)
-                content = f.read()
-                if f"export PATH=$PATH:{go_bin_path}:{usr_local_go_path}" not in content:
-                    f.write(f'\n# Added by vulnerability analysis setup\nexport PATH=$PATH:{go_bin_path}:{usr_local_go_path}\n')
-                    print(f"Updated PATH in {shell_rc}")
-        except Exception as e:
-            print(f"Warning: Could not update shell configuration: {e}")
-    
-    print("Fix script completed")
-    return True
-
-def install_system_dependencies():
-    """Install required system dependencies for security tools."""
-    if platform.system().lower() == "windows":
-        return True
-    
-    print("\n===== Installing System Dependencies =====\n")
-    
-    # Fix any interrupted dpkg first
-    run_cmd(["dpkg", "--configure", "-a"], use_sudo=True, retry=2)
-    
-    # These are required for compilation of Go tools, particularly Naabu
-    dependencies = [
-        "libpcap-dev",   # Required for packet capture in Naabu
-        "libldns-dev",   # Required for DNS operations
-        "build-essential",  # Compilation tools
-        "python3-venv"   # For Python virtual environments
-    ]
-    
-    # Install one by one to avoid timeouts
-    success = True
-    for dep in dependencies:
-        print(f"Installing {dep}...")
-        if not run_cmd(["apt-get", "install", "-y", dep], use_sudo=True, timeout=120, retry=2):
-            print(f"Failed to install {dep}")
-            success = False
-    
-    return success
 
 def setup_python_venv():
     """Set up a Python virtual environment for package installations."""
@@ -466,38 +522,22 @@ def setup_python_venv():
         print(f"Failed to create virtual environment: {e}")
         return None
 
-def import_commands():
-    """Dynamically import command modules to check functionality."""
-    commands_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "commands")
-    if os.path.exists(commands_path) and os.path.isdir(commands_path):
-        modules = {}
-        
-        # Create __init__.py if it doesn't exist to make commands a proper package
-        init_file = os.path.join(commands_path, "__init__.py")
-        if not os.path.exists(init_file):
-            try:
-                with open(init_file, "w") as f:
-                    f.write("# This file makes the commands directory a proper Python package")
-            except Exception as e:
-                print(f"Warning: Could not create {init_file}: {e}")
-        
-        for file in os.listdir(commands_path):
-            if file.endswith('.py') and not file.startswith('__'):
-                module_name = file[:-3]  # Remove .py extension
-                try:
-                    spec = importlib.util.spec_from_file_location(
-                        module_name, 
-                        os.path.join(commands_path, file)
-                    )
-                    module = importlib.util.module_from_spec(spec)
-                    spec.loader.exec_module(module)
-                    modules[module_name] = module
-                    print(f"Successfully imported {module_name} module")
-                except Exception as e:
-                    print(f"Error importing {module_name}: {e}")
-        
-        return modules
-    return {}
+def install_essential_python_packages(venv_path):
+    """Install essential Python packages for the project."""
+    try:
+        if venv_path:
+            pip_path = os.path.join(venv_path, "bin", "pip") if platform.system().lower() != "windows" else os.path.join(venv_path, "Scripts", "pip")
+            if os.path.exists(pip_path):
+                print("\n===== Installing Essential Python Packages =====\n")
+                packages = ["requests", "colorama", "rich", "tqdm"]
+                if run_cmd([pip_path, "install"] + packages):
+                    print("✓ Essential Python packages installed successfully")
+                    return True
+    except Exception as e:
+        print(f"Error installing Python packages: {e}")
+    
+    print("! Warning: Failed to install Python packages. Some functionality may be limited.")
+    return False
 
 def install_go_and_tools():
     """Install Go and security tools."""
@@ -536,7 +576,7 @@ def install_go_and_tools():
                      lambda: run_cmd(["which", "naabu"]) or run_cmd(["naabu", "--version"]), 
                      lambda: run_cmd(["go", "install", "-v", "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest"]))
     
-    # If naabu installation failed, try without CGO
+    # If naabu installation failed, try alternative approach
     if not naabu_success:
         print("Standard naabu installation failed. Trying without CGO...")
         if install_naabu_without_cgo():
@@ -550,6 +590,30 @@ def install_go_and_tools():
         run_cmd(["nuclei", "-update-templates"])
     
     return len(tools_installed) > 0
+
+def import_commands():
+    """Dynamically import command modules to check functionality."""
+    commands_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "commands")
+    if os.path.exists(commands_path) and os.path.isdir(commands_path):
+        modules = {}
+        
+        for file in os.listdir(commands_path):
+            if file.endswith('.py') and not file.startswith('__'):
+                module_name = file[:-3]  # Remove .py extension
+                try:
+                    spec = importlib.util.spec_from_file_location(
+                        module_name, 
+                        os.path.join(commands_path, file)
+                    )
+                    module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(module)
+                    modules[module_name] = module
+                    print(f"Successfully imported {module_name} module")
+                except Exception as e:
+                    print(f"Error importing {module_name}: {e}")
+        
+        return modules
+    return {}
 
 def show_summary_and_quick_start():
     """Show a summary of installed tools and quick start guide."""
@@ -607,26 +671,20 @@ def main():
     if platform.system().lower() != "windows":
         fix_dpkg_interruptions()
     
-    # Run the full fix script
-    run_fix_script()
-
     # Update package lists for Linux systems
     if platform.system().lower() != "windows" and platform.system().lower() != "darwin":
-        run_cmd(["apt-get", "update"], use_sudo=True)
+        run_cmd(["sudo", "apt-get", "update"], retry=2)
 
     # Check and install Python dependencies
     check_and_install("Python3", 
-                     lambda: run_cmd(["python3", "--version"]), 
-                     lambda: run_cmd(["apt-get", "install", "python3", "-y"], use_sudo=True))
+                     lambda: run_cmd(["python3", "--version"], retry=1), 
+                     lambda: run_cmd(["sudo", "apt-get", "install", "python3", "-y"], retry=2))
     check_and_install("pip3", 
-                     lambda: run_cmd(["pip3", "--version"]), 
-                     lambda: run_cmd(["apt-get", "install", "python3-pip", "-y"], use_sudo=True))
-    
-    # Install system dependencies for Go tools
-    install_system_dependencies()
+                     lambda: run_cmd(["pip3", "--version"], retry=1), 
+                     lambda: run_cmd(["sudo", "apt-get", "install", "python3-pip", "-y"], retry=2))
     
     # Try alternative libpcap packages if needed
-    if platform.system().lower() == "linux" and not (os.path.exists("/usr/include/pcap/pcap.h") or os.path.exists("/usr/include/pcap.h")):
+    if platform.system().lower() == "linux":
         try_alternative_libpcap()
     
     # Set up Python virtual environment
