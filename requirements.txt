@@ -15,7 +15,7 @@ bandit==1.7.5
 safety==2.3.5
 
 # Linter for code quality
-flake8==6.1.0
+flake8==7.2.0
 
 # Testing framework
 pytest==7.4.0
