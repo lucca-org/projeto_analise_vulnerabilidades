@@ -44,7 +44,7 @@ def ensure_sudo():
             subprocess.run(["sudo", "true"], check=True)
         except subprocess.CalledProcessError:
             print("Sudo access is required. Please run the script with sudo. Exiting.")
-            sys.exit(1)
+            raise RuntimeError("Sudo access is required. Please run the script with sudo.")
 
 def check_network():
     """Check for network connectivity."""
@@ -371,8 +371,10 @@ def main():
     
     try:
         ensure_sudo()
-    except:
-        print("WARNING: Running without sudo. Some operations may fail.")
+    except PermissionError:
+        print("WARNING: Insufficient permissions. Some operations may fail without sudo.")
+    except OSError as e:
+        print(f"WARNING: An OS-related error occurred: {e}. Some operations may fail without sudo.")
 
     # Update package lists first (for Linux systems)
     if platform.system().lower() != "windows" and platform.system().lower() != "darwin":
