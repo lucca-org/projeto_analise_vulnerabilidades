@@ -262,15 +262,79 @@ def check_and_install_go():
     print("All Go installation methods failed.")
     return False
 
-def check_python_modules():
+def install_system_dependencies():
+    """Install required system dependencies for security tools."""
+    if platform.system().lower() == "windows":
+        return True
+    
+    print("\n===== Installing System Dependencies =====\n")
+    
+    # These are required for compilation of Go tools, particularly Naabu
+    dependencies = [
+        "libpcap-dev",   # Required for packet capture in Naabu
+        "libldns-dev",   # Required for DNS operations
+        "build-essential",  # Compilation tools
+        "python3-venv"   # For Python virtual environments
+    ]
+    
+    # For Debian/Ubuntu/Kali
+    if os.path.exists("/etc/debian_version"):
+        return run_cmd(["apt-get", "install", "-y"] + dependencies, use_sudo=True)
+    
+    # For Fedora/RHEL/CentOS
+    elif shutil.which("dnf"):
+        fedora_deps = ["libpcap-devel", "ldns-devel", "gcc", "python3-virtualenv"]
+        return run_cmd(["dnf", "install", "-y"] + fedora_deps, use_sudo=True)
+    
+    # For other systems, we'll try with apt as a fallback
+    return run_cmd(["apt-get", "install", "-y"] + dependencies, use_sudo=True)
+
+def setup_python_venv():
+    """Set up a Python virtual environment for package installations."""
+    print("\n===== Setting up Python Virtual Environment =====\n")
+    
+    venv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".venv")
+    if os.path.exists(venv_path):
+        print(f"Using existing virtual environment at {venv_path}")
+        return venv_path
+        
+    try:
+        print(f"Creating Python virtual environment at {venv_path}")
+        subprocess.run([sys.executable, "-m", "venv", venv_path], check=True)
+        print("Virtual environment created successfully.")
+        return venv_path
+    except subprocess.CalledProcessError as e:
+        print(f"Failed to create virtual environment: {e}")
+        return None
+
+def check_python_modules(venv_path=None):
     """Install required Python modules from requirements.txt."""
     req_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "requirements.txt")
-    if os.path.exists(req_file):
-        print("Installing Python requirements from requirements.txt...")
-        return run_cmd(["pip3", "install", "-r", req_file])
-    else:
+    if not os.path.exists(req_file):
         print("requirements.txt not found. Skipping Python module installation.")
         return True
+    
+    print("Installing Python requirements from requirements.txt...")
+    if venv_path:
+        # Use pip from virtual environment if available
+        if platform.system().lower() == "windows":
+            pip_path = os.path.join(venv_path, "Scripts", "pip")
+        else:
+            pip_path = os.path.join(venv_path, "bin", "pip")
+        
+        if os.path.exists(pip_path):
+            print(f"Installing Python requirements into virtual environment...")
+            return run_cmd([pip_path, "install", "-r", req_file])
+    
+    # Fallback to system pip with warning
+    print("WARNING: Installing Python packages system-wide. This may fail on newer Python versions.")
+    try:
+        # Try with system pip
+        return run_cmd(["pip3", "install", "-r", req_file])
+    except Exception as e:
+        print(f"Error installing Python packages: {e}")
+        print("Try creating a virtual environment or use --break-system-packages if appropriate.")
+        return False
 
 def import_commands():
     """Dynamically import command modules to check functionality."""
@@ -322,8 +386,14 @@ def main():
                      lambda: run_cmd(["pip3", "--version"]), 
                      lambda: run_cmd(["apt-get", "install", "python3-pip", "-y"], use_sudo=True))
     
+    # Install system dependencies needed for Go tools
+    install_system_dependencies()
+    
+    # Set up Python virtual environment for module installation
+    venv_path = setup_python_venv()
+    
     # Install Python dependencies
-    check_python_modules()
+    check_python_modules(venv_path)
     
     # Install Go with our robust method
     if not check_and_install_go():
