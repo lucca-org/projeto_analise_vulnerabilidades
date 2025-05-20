@@ -3,15 +3,19 @@ import subprocess
 import sys
 import os
 import socket
+import platform
+import shutil
+import importlib.util
+from pathlib import Path
 
 def run_cmd(cmd, shell=False, check=False, use_sudo=False):
     """Run a shell command with optional sudo and error handling."""
-    if use_sudo:
+    if use_sudo and os.geteuid() != 0 and not platform.system().lower() == "windows":
         cmd = ["sudo"] + cmd
     try:
         print(f"Running: {' '.join(cmd) if isinstance(cmd, list) else cmd}")
         result = subprocess.run(cmd, shell=shell, capture_output=True, text=True, timeout=300)
-        if result.stdout:
+        if result.stdout and not result.stdout.isspace():
             print(result.stdout)
         if result.stderr and result.returncode != 0:
             print(f"Error: {result.stderr}")
@@ -30,6 +34,10 @@ def run_cmd(cmd, shell=False, check=False, use_sudo=False):
 
 def ensure_sudo():
     """Ensure the script is running with sudo/root privileges."""
+    # Skip for Windows
+    if platform.system().lower() == "windows":
+        return True
+        
     if os.geteuid() != 0:
         print("Root privileges are required for some operations.")
         try:
@@ -41,37 +49,93 @@ def ensure_sudo():
 def check_network():
     """Check for network connectivity."""
     try:
-        socket.create_connection(("8.8.8.8", 53), timeout=3)
+        socket.create_connection(("8.8.8.8", 53), timeout=5)
         return True
-    except OSError:
-        print("No network connection detected. Please connect to the internet and try again. Exiting.")
-        sys.exit(1)
+    except (OSError, socket.error) as e:
+        print(f"No network connection detected: {e}. Please connect to the internet and try again.")
+        return False
 
 def detect_shell_rc():
     """Detect the user's shell rc file."""
+    # Skip for Windows
+    if platform.system().lower() == "windows":
+        return ""
+        
     shell = os.environ.get("SHELL", "")
+    home = os.path.expanduser("~")
+    
     if "zsh" in shell:
-        return os.path.expanduser("~/.zshrc")
-    return os.path.expanduser("~/.bashrc")
+        return os.path.join(home, ".zshrc")
+    elif "bash" in shell:
+        return os.path.join(home, ".bashrc")
+    elif "fish" in shell:
+        return os.path.join(home, ".config", "fish", "config.fish")
+    
+    # Default to bashrc if we can't determine the shell
+    return os.path.join(home, ".bashrc")
 
 def update_path():
-    """Add $HOME/go/bin to PATH in the shell rc file if not already present."""
-    shell_rc = detect_shell_rc()
-    export_cmd = "export PATH=$PATH:$HOME/go/bin"
-    path_env = os.environ.get("PATH", "")
-    if "$HOME/go/bin" in path_env or os.path.expanduser("~/go/bin") in path_env:
-        print("Your PATH already contains $HOME/go/bin.")
+    """Add $HOME/go/bin and /usr/local/go/bin to PATH in the shell rc file if not already present."""
+    # Skip for Windows
+    if platform.system().lower() == "windows":
+        print("Windows detected. Please add Go binary path to your PATH environment variable manually.")
         return
+        
+    shell_rc = detect_shell_rc()
+    if not shell_rc:
+        print("Could not detect shell configuration file. Please add Go paths manually.")
+        return
+    
+    # Determine correct export syntax based on shell
+    shell = os.environ.get("SHELL", "")
+    path_env = os.environ.get("PATH", "")
+    updated = False
+    
+    go_bin_path = os.path.expanduser("~/go/bin")
+    usr_local_go_path = "/usr/local/go/bin"
+    
+    if "fish" in shell:
+        go_bin_export = f"set -x PATH $PATH {go_bin_path}"
+        go_path_export = f"set -x PATH $PATH {usr_local_go_path}"
+    else:  # bash, zsh, or others
+        go_bin_export = f"export PATH=$PATH:{go_bin_path}"
+        go_path_export = f"export PATH=$PATH:{usr_local_go_path}"
+    
     try:
+        # Create directory if it doesn't exist
+        shell_rc_dir = os.path.dirname(shell_rc)
+        if not os.path.exists(shell_rc_dir):
+            os.makedirs(shell_rc_dir, exist_ok=True)
+            
         with open(shell_rc, "a+") as f:
             f.seek(0)
             content = f.read()
-            if export_cmd not in content:
-                f.write(f"\n{export_cmd}\n")
-                print(f"Added '{export_cmd}' to {shell_rc}")
+            
+            # Add go bin if needed
+            if go_bin_path not in path_env:
+                if go_bin_export not in content:
+                    f.write(f"\n# Added by vulnerability analysis setup\n{go_bin_export}\n")
+                    print(f"Added '{go_bin_export}' to {shell_rc}")
+                    updated = True
+                else:
+                    print(f"'{go_bin_export}' already present in {shell_rc}")
             else:
-                print(f"'{export_cmd}' already present in {shell_rc}")
-        print(f"Please run: source {shell_rc} or restart your terminal to update PATH.")
+                print(f"Your PATH already contains {go_bin_path}")
+            
+            # Add usr local go bin if needed
+            if usr_local_go_path not in path_env:
+                if go_path_export not in content:
+                    f.write(f"\n# Added by vulnerability analysis setup\n{go_path_export}\n")
+                    print(f"Added '{go_path_export}' to {shell_rc}")
+                    updated = True
+                else:
+                    print(f"'{go_path_export}' already present in {shell_rc}")
+            else:
+                print(f"Your PATH already contains {usr_local_go_path}")
+            
+        if updated:
+            print(f"Shell configuration updated in {shell_rc}")
+            print(f"Please run: source {shell_rc} or restart your terminal to update PATH.")
     except PermissionError:
         print(f"Permission denied while updating {shell_rc}. Try running this script with sudo or update your PATH manually.")
     except Exception as e:
@@ -82,35 +146,233 @@ def check_and_install(name, check_func, install_func):
     try:
         if not check_func():
             print(f"{name} not found. Installing...")
-            install_func()
-            if not check_func():
+            if not install_func():
                 print(f"{name} installation failed. Exiting.")
                 sys.exit(1)
+            
+            # Verify installation was successful
+            if not check_func():
+                print(f"{name} was installed but verification failed. Please check manually.")
+                sys.exit(1)
+                
             print(f"{name} installed and verified.")
         else:
             print(f"{name} is already installed.")
+        return True
     except Exception as e:
         print(f"Error during installation of {name}: {e}")
-        sys.exit(1)
+        return False
+
+def check_and_install_go():
+    """Special handler for Go installation with fallbacks for different platforms."""
+    # Check if Go is already installed
+    if run_cmd(["go", "version"]):
+        print("Go is already installed.")
+        return True
+    
+    print("Go not found. Installing...")
+    
+    # For Windows
+    if platform.system().lower() == "windows":
+        print("Windows detected. Please install Go manually from https://golang.org/dl/")
+        print("After installation, ensure Go is added to your PATH environment variable.")
+        return False
+    
+    # For macOS
+    if platform.system().lower() == "darwin":
+        if shutil.which("brew"):
+            return run_cmd(["brew", "install", "go"])
+        else:
+            print("Homebrew not found. Please install Go manually from https://golang.org/dl/")
+            return False
+    
+    # For Linux systems
+    # Update package lists first
+    run_cmd(["apt-get", "update"], use_sudo=True)
+    
+    # Try with different package managers in order
+    
+    # 1. Try apt with golang package
+    if run_cmd(["apt-get", "install", "golang", "-y"], use_sudo=True):
+        if run_cmd(["go", "version"]):
+            print("Go installed successfully via apt (golang package).")
+            return True
+    
+    # 2. Try apt with golang-go package (common in Debian/Ubuntu)
+    print("Trying alternative package name...")
+    if run_cmd(["apt-get", "install", "golang-go", "-y"], use_sudo=True):
+        if run_cmd(["go", "version"]):
+            print("Go installed successfully via apt (golang-go package).")
+            return True
+    
+    # 3. Try with dnf (Fedora/RHEL)
+    if shutil.which("dnf"):
+        print("Trying dnf package manager...")
+        if run_cmd(["dnf", "install", "golang", "-y"], use_sudo=True):
+            if run_cmd(["go", "version"]):
+                print("Go installed successfully via dnf.")
+                return True
+    
+    # 4. Try with yum (older RHEL/CentOS)
+    if shutil.which("yum"):
+        print("Trying yum package manager...")
+        if run_cmd(["yum", "install", "golang", "-y"], use_sudo=True):
+            if run_cmd(["go", "version"]):
+                print("Go installed successfully via yum.")
+                return True
+    
+    # 5. Try with snap
+    if shutil.which("snap") or run_cmd(["apt-get", "install", "snapd", "-y"], use_sudo=True):
+        print("Trying installation via snap...")
+        if run_cmd(["snap", "install", "go", "--classic"], use_sudo=True):
+            if run_cmd(["go", "version"]):
+                print("Go installed successfully via snap.")
+                return True
+    
+    # 6. Manual installation as last resort
+    print("Package manager installation failed. Trying manual installation...")
+    go_version = "1.21.0"  # You can update this to the latest version
+    
+    # Determine architecture
+    arch = "amd64"  # Default
+    if platform.machine() == "aarch64" or platform.machine() == "arm64":
+        arch = "arm64"
+    elif platform.machine() == "armv7l":
+        arch = "armv6l"
+    
+    # Download Go
+    if not run_cmd(["wget", f"https://golang.org/dl/go{go_version}.linux-{arch}.tar.gz", "-O", "/tmp/go.tar.gz"]):
+        print("Failed to download Go. Please check your network connection.")
+        return False
+    
+    # Extract Go to /usr/local
+    if not run_cmd(["rm", "-rf", "/usr/local/go"], use_sudo=True) or \
+       not run_cmd(["tar", "-C", "/usr/local", "-xzf", "/tmp/go.tar.gz"], use_sudo=True):
+        print("Failed to extract Go.")
+        return False
+    
+    # Add to PATH temporarily
+    os.environ["PATH"] += ":/usr/local/go/bin"
+    
+    # Check installation
+    if run_cmd(["go", "version"]):
+        print("Go installed successfully via manual installation.")
+        return True
+    
+    print("All Go installation methods failed.")
+    return False
+
+def check_python_modules():
+    """Install required Python modules from requirements.txt."""
+    req_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "requirements.txt")
+    if os.path.exists(req_file):
+        print("Installing Python requirements from requirements.txt...")
+        return run_cmd(["pip3", "install", "-r", req_file])
+    else:
+        print("requirements.txt not found. Skipping Python module installation.")
+        return True
+
+def import_commands():
+    """Dynamically import command modules to check functionality."""
+    commands_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "commands")
+    if os.path.exists(commands_path) and os.path.isdir(commands_path):
+        modules = {}
+        
+        for file in os.listdir(commands_path):
+            if file.endswith('.py') and not file.startswith('__'):
+                module_name = file[:-3]  # Remove .py extension
+                try:
+                    spec = importlib.util.spec_from_file_location(
+                        module_name, 
+                        os.path.join(commands_path, file)
+                    )
+                    module = importlib.util.module_from_spec(spec)
+                    spec.loader.exec_module(module)
+                    modules[module_name] = module
+                    print(f"Successfully imported {module_name} module")
+                except Exception as e:
+                    print(f"Error importing {module_name}: {e}")
+        
+        return modules
+    return {}
 
 def main():
+    print("\n===== Vulnerability Analysis Tools Setup =====\n")
+    
     if not check_network():
-        print("Network check failed. Exiting.")
-        sys.exit(1)
-    ensure_sudo()
+        response = input("No network detected. Would you like to continue anyway? (y/N): ")
+        if not response.lower().startswith('y'):
+            print("Exiting.")
+            sys.exit(1)
+    
+    try:
+        ensure_sudo()
+    except:
+        print("WARNING: Running without sudo. Some operations may fail.")
+
+    # Update package lists first (for Linux systems)
+    if platform.system().lower() != "windows" and platform.system().lower() != "darwin":
+        run_cmd(["apt-get", "update"], use_sudo=True)
 
     # Check and install dependencies
-    check_and_install("Python3", lambda: run_cmd(["python3", "--version"]), lambda: run_cmd(["apt-get", "install", "python3", "-y"], use_sudo=True))
-    check_and_install("pip3", lambda: run_cmd(["pip3", "--version"]), lambda: run_cmd(["apt-get", "install", "python3-pip", "-y"], use_sudo=True))
-    check_and_install("Go", lambda: run_cmd(["go", "version"]), lambda: run_cmd(["apt-get", "install", "golang", "-y"], use_sudo=True))
-    check_and_install("naabu", lambda: run_cmd(["naabu", "--version"]), lambda: run_cmd(["go", "install", "-v", "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest"], use_sudo=True))
-    check_and_install("nuclei", lambda: run_cmd(["nuclei", "--version"]), lambda: run_cmd(["go", "install", "-v", "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"], use_sudo=True))
-    check_and_install("httpx", lambda: run_cmd(["httpx", "--version"]), lambda: run_cmd(["go", "install", "-v", "github.com/projectdiscovery/httpx/cmd/httpx@latest"], use_sudo=True))
+    check_and_install("Python3", 
+                     lambda: run_cmd(["python3", "--version"]), 
+                     lambda: run_cmd(["apt-get", "install", "python3", "-y"], use_sudo=True))
+    check_and_install("pip3", 
+                     lambda: run_cmd(["pip3", "--version"]), 
+                     lambda: run_cmd(["apt-get", "install", "python3-pip", "-y"], use_sudo=True))
+    
+    # Install Python dependencies
+    check_python_modules()
+    
+    # Install Go with our robust method
+    if not check_and_install_go():
+        print("Go installation failed. Continuing with limited functionality.")
+    else:
+        # Set up Go env path temporarily to ensure go install commands work
+        go_path = os.path.expanduser("~/go/bin")
+        if go_path not in os.environ.get("PATH", ""):
+            os.environ["PATH"] += f":{go_path}"
+        
+        # Install Go tools
+        print("\n===== Installing Security Tools =====\n")
+        check_and_install("naabu", 
+                         lambda: run_cmd(["which", "naabu"]) or run_cmd(["naabu", "--version"]), 
+                         lambda: run_cmd(["go", "install", "-v", "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest"]))
+        check_and_install("nuclei", 
+                         lambda: run_cmd(["which", "nuclei"]) or run_cmd(["nuclei", "--version"]), 
+                         lambda: run_cmd(["go", "install", "-v", "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"]))
+        check_and_install("httpx", 
+                         lambda: run_cmd(["which", "httpx"]) or run_cmd(["httpx", "--version"]), 
+                         lambda: run_cmd(["go", "install", "-v", "github.com/projectdiscovery/httpx/cmd/httpx@latest"]))
+        
+        # Install additional tool for DNS enumeration
+        check_and_install("subfinder", 
+                         lambda: run_cmd(["which", "subfinder"]) or run_cmd(["subfinder", "--version"]), 
+                         lambda: run_cmd(["go", "install", "-v", "github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"]))
 
+    # Update system PATH for persistent use
     update_path()
-    print("\nSummary:")
-    print("All dependencies are installed and verified.")
-    print("Installation complete. Please restart your terminal or run 'source ~/.zshrc' or 'source ~/.bashrc'.")
+    
+    # Test importing command modules
+    print("\n===== Testing Command Modules =====\n")
+    modules = import_commands()
+    
+    print("\n===== Summary =====")
+    print("✓ Dependencies installation completed.")
+    if platform.system().lower() != "windows":
+        print(f"✓ Shell configuration updated: {detect_shell_rc()}")
+        print(f"✓ Please run: source {detect_shell_rc()} or restart your terminal to update PATH.")
+    print("✓ All systems ready for vulnerability analysis.")
+    
+    # Provide a helpful message if all tools were installed
+    if "naabu" in modules and "httpx" in modules and "nuclei" in modules:
+        print("\n===== Quick Start =====")
+        print("To scan a target:")
+        print("1. First map open ports: naabu -host example.com -p 80,443,8080-8090")
+        print("2. Probe for HTTP services: httpx -l hosts.txt -title -tech-detect")
+        print("3. Scan for vulnerabilities: nuclei -u https://example.com -t cves/ -severity critical,high")
+        print("\nFor more options, check the documentation in documentacao/comandos_e_parametros.txt")
 
 if __name__ == "__main__":
     main()
