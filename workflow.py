@@ -10,7 +10,7 @@ import argparse
 import datetime
 import json
 from commands import naabu, httpx, nuclei
-from utils import run_cmd, check_network
+from utils import run_cmd, check_network, create_directory_if_not_exists
 
 def create_output_directory(target_name):
     """Create a timestamped output directory."""
@@ -27,7 +27,7 @@ def create_output_directory(target_name):
 def run_full_scan(target, output_dir, ports=None, templates=None, tags="cve", 
                  severity="critical,high", verbose=False):
     """
-    Run the complete vulnerability scanning workflow.
+    Run the complete vulnerability scanning workflow with robust error handling.
     
     Parameters:
         target (str): Target to scan (IP or domain).
@@ -44,77 +44,110 @@ def run_full_scan(target, output_dir, ports=None, templates=None, tags="cve",
     print(f"[+] Starting full scan on {target}")
     print(f"[+] Results will be saved to {output_dir}")
     
-    # Step 1: Port scanning with naabu
-    print("\n[+] Step 1: Port scanning with naabu")
-    ports_output = os.path.join(output_dir, "ports.txt")
-    ports_json = os.path.join(output_dir, "ports.json")
+    success = True
     
-    if not naabu.run_naabu(
-        target=target,
-        ports=ports or "top-1000",
-        output_file=ports_output,
-        json_output=True,
-        silent=not verbose,
-        additional_args=["-json", "-o", ports_json]
-    ):
-        print("[-] Naabu port scan failed. Exiting.")
-        return False
+    try:
+        # Step 1: Port scanning with naabu
+        print("\n[+] Step 1: Port scanning with naabu")
+        ports_output = os.path.join(output_dir, "ports.txt")
+        ports_json = os.path.join(output_dir, "ports.json")
+        
+        naabu_success = naabu.run_naabu(
+            target=target,
+            ports=ports or "top-1000",
+            output_file=ports_output,
+            json_output=True,
+            silent=not verbose,
+            additional_args=["-json", "-o", ports_json]
+        )
+        
+        if not naabu_success:
+            print("[!] Naabu port scan had issues. Continuing with available results.")
+            success = False
+        else:
+            print(f"[+] Port scan results saved to {ports_output}")
+        
+        # Continue only if ports file exists and is not empty
+        if not os.path.exists(ports_output) or os.path.getsize(ports_output) == 0:
+            print("[!] No ports found or ports file is empty. Creating a default one with common ports.")
+            with open(ports_output, "w") as f:
+                f.write(f"{target}:80\n{target}:443\n")
+        
+        # Step 2: HTTP service detection with httpx
+        print("\n[+] Step 2: HTTP service detection with httpx")
+        http_output = os.path.join(output_dir, "http_services.txt")
+        http_json = os.path.join(output_dir, "http_services.json")
+        
+        httpx_success = httpx.run_httpx(
+            target_list=ports_output,
+            output_file=http_output,
+            title=True,
+            status_code=True,
+            tech_detect=True,
+            web_server=True,
+            follow_redirects=True,
+            silent=not verbose,
+            additional_args=["-json", "-o", http_json]
+        )
+        
+        if not httpx_success:
+            print("[!] HTTPX service detection had issues. Continuing with available results.")
+            success = False
+        else:
+            print(f"[+] HTTP service detection results saved to {http_output}")
+        
+        # Continue only if http file exists and is not empty
+        if not os.path.exists(http_output) or os.path.getsize(http_output) == 0:
+            print("[!] No HTTP services found or services file is empty. Creating a default one.")
+            with open(http_output, "w") as f:
+                f.write(f"http://{target}\nhttps://{target}\n")
+        
+        # Step 3: Vulnerability scanning with nuclei
+        print("\n[+] Step 3: Vulnerability scanning with nuclei")
+        vuln_output = os.path.join(output_dir, "vulnerabilities.txt")
+        vuln_json = os.path.join(output_dir, "vulnerabilities.jsonl")
+        
+        # Create output directory for storing responses
+        nuclei_resp_dir = os.path.join(output_dir, "nuclei_responses")
+        create_directory_if_not_exists(nuclei_resp_dir)
+        
+        nuclei_success = nuclei.run_nuclei(
+            target_list=http_output,
+            templates=templates,
+            tags=tags,
+            severity=severity,
+            output_file=vuln_output,
+            jsonl=True,
+            store_resp=True,
+            silent=not verbose,
+            additional_args=["-jsonl", "-o", vuln_json, "-irr", "-stats", "-me", nuclei_resp_dir]
+        )
+        
+        if not nuclei_success:
+            print("[!] Nuclei vulnerability scan had issues.")
+            success = False
+        else:
+            print(f"[+] Vulnerability scan results saved to {vuln_output}")
+        
+        # Step 4: Generate summary report
+        print("\n[+] Step 4: Generating summary report")
+        summary_success = generate_summary_report(output_dir, target)
+        
+        if not summary_success:
+            print("[!] Summary report generation had issues.")
+            success = False
+        
+    except Exception as e:
+        print(f"[!] Error during scan: {str(e)}")
+        success = False
     
-    print(f"[+] Port scan results saved to {ports_output}")
+    if success:
+        print("\n[+] Full scan completed successfully!")
+    else:
+        print("\n[+] Full scan completed with some issues.")
     
-    # Step 2: HTTP service detection with httpx
-    print("\n[+] Step 2: HTTP service detection with httpx")
-    http_output = os.path.join(output_dir, "http_services.txt")
-    http_json = os.path.join(output_dir, "http_services.json")
-    
-    if not httpx.run_httpx(
-        target_list=ports_output,
-        output_file=http_output,
-        title=True,
-        status_code=True,
-        tech_detect=True,
-        web_server=True,
-        follow_redirects=True,
-        silent=not verbose,
-        additional_args=["-json", "-o", http_json]
-    ):
-        print("[-] HTTPX service detection failed. Exiting.")
-        return False
-    
-    print(f"[+] HTTP service detection results saved to {http_output}")
-    
-    # Step 3: Vulnerability scanning with nuclei
-    print("\n[+] Step 3: Vulnerability scanning with nuclei")
-    vuln_output = os.path.join(output_dir, "vulnerabilities.txt")
-    vuln_json = os.path.join(output_dir, "vulnerabilities.jsonl")
-    
-    # Create output directory for storing responses
-    nuclei_resp_dir = os.path.join(output_dir, "nuclei_responses")
-    os.makedirs(nuclei_resp_dir, exist_ok=True)
-    
-    if not nuclei.run_nuclei(
-        target_list=http_output,
-        templates=templates,
-        tags=tags,
-        severity=severity,
-        output_file=vuln_output,
-        jsonl=True,
-        store_resp=True,
-        silent=not verbose,
-        additional_args=["-jsonl", "-o", vuln_json, "-irr", "-stats", "-me", nuclei_resp_dir]
-    ):
-        print("[-] Nuclei vulnerability scan failed.")
-        # Continue anyway since we might have partial results
-    
-    print(f"[+] Vulnerability scan results saved to {vuln_output}")
-    
-    # Step 4: Generate summary report
-    print("\n[+] Step 4: Generating summary report")
-    generate_summary_report(output_dir, target)
-    
-    print("\n[+] Full scan completed successfully!")
     print(f"[+] All results saved to {output_dir}")
-    return True
+    return success
 
 def generate_summary_report(output_dir, target):
     """Generate a summary report of all findings."""
@@ -141,8 +174,8 @@ def generate_summary_report(output_dir, target):
                     for line in f:
                         if line.strip():
                             port_count += 1
-            except:
-                pass
+            except Exception as e:
+                print(f"[!] Warning: Could not parse ports JSON: {e}")
         
         # Count HTTP services
         if os.path.exists(http_json):
@@ -151,8 +184,8 @@ def generate_summary_report(output_dir, target):
                     for line in f:
                         if line.strip():
                             http_count += 1
-            except:
-                pass
+            except Exception as e:
+                print(f"[!] Warning: Could not parse HTTP services JSON: {e}")
         
         # Count vulnerabilities by severity
         if os.path.exists(vuln_json):
@@ -172,10 +205,10 @@ def generate_summary_report(output_dir, target):
                                     medium_count += 1
                                 elif severity == "low":
                                     low_count += 1
-                            except:
+                            except json.JSONDecodeError:
                                 pass
-            except:
-                pass
+            except Exception as e:
+                print(f"[!] Warning: Could not parse vulnerabilities JSONL: {e}")
         
         # Write the summary report
         with open(summary_file, 'w') as f:
@@ -200,10 +233,10 @@ def generate_summary_report(output_dir, target):
                 f.write("Please review the detailed findings in the 'vulnerabilities.txt' file and take appropriate remediation steps.\n\n")
             
             f.write("FILES OVERVIEW:\n")
-            f.write(f"- ports.txt: List of open ports\n")
-            f.write(f"- http_services.txt: Detected HTTP services\n")
-            f.write(f"- vulnerabilities.txt: Detailed vulnerability findings\n")
-            f.write(f"- nuclei_responses/: Directory containing HTTP requests/responses for detected vulnerabilities\n\n")
+            f.write("- ports.txt: List of open ports\n")
+            f.write("- http_services.txt: Detected HTTP services\n")
+            f.write("- vulnerabilities.txt: Detailed vulnerability findings\n")
+            f.write("- nuclei_responses/: Directory containing HTTP requests/responses for detected vulnerabilities\n\n")
             
             f.write("=" * 60 + "\n")
             f.write("End of Summary Report\n")
@@ -223,6 +256,7 @@ def main():
     parser.add_argument('--severity', default='critical,high', help='Vulnerability severity filter (default: critical,high)')
     parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose output')
     parser.add_argument('-o', '--output-dir', help='Custom output directory')
+    parser.add_argument('--update-templates', action='store_true', help='Update nuclei templates before scanning')
     
     args = parser.parse_args()
     
@@ -230,6 +264,21 @@ def main():
     if not check_network():
         print("[-] No network connectivity. Please check your connection and try again.")
         sys.exit(1)
+    
+    # Check if required tools are installed
+    if not all([
+        naabu.check_naabu(), 
+        httpx.check_httpx(), 
+        nuclei.check_nuclei()
+    ]):
+        print("[-] One or more required tools are not installed. Please run the setup script (index.py) first.")
+        sys.exit(1)
+    
+    # Update nuclei templates if requested
+    if args.update_templates:
+        print("[+] Updating nuclei templates...")
+        if not nuclei.update_nuclei_templates():
+            print("[-] Failed to update nuclei templates. Continuing with existing templates.")
     
     # Create output directory
     output_dir = args.output_dir
@@ -241,21 +290,34 @@ def main():
         print("[-] Failed to create output directory. Exiting.")
         sys.exit(1)
     
-    # Run the full scan
-    success = run_full_scan(
-        target=args.target,
-        output_dir=output_dir,
-        ports=args.ports,
-        templates=args.templates,
-        tags=args.tags,
-        severity=args.severity,
-        verbose=args.verbose
-    )
-    
-    if not success:
-        print("[-] Scan workflow completed with errors. Please check the output logs.")
+    # Create output directory if it doesn't exist
+    if not create_directory_if_not_exists(output_dir):
+        print("[-] Failed to create output directory. Exiting.")
         sys.exit(1)
     
+    # Run the full scan
+    try:
+        success = run_full_scan(
+            target=args.target,
+            output_dir=output_dir,
+            ports=args.ports,
+            templates=args.templates,
+            tags=args.tags,
+            severity=args.severity,
+            verbose=args.verbose
+        )
+        
+        if not success:
+            print("[-] Scan workflow completed with some issues. Review the output for details.")
+            sys.exit(2)  # Use exit code 2 to indicate partial success
+    except KeyboardInterrupt:
+        print("\n[-] Scan interrupted by user. Partial results may be available in the output directory.")
+        sys.exit(130)  # Standard exit code for SIGINT
+    except Exception as e:
+        print(f"[-] An unexpected error occurred: {str(e)}")
+        sys.exit(1)
+    
+    print("[+] Scan completed successfully!")
     sys.exit(0)
 
 if __name__ == "__main__":

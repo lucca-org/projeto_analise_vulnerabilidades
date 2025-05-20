@@ -1,6 +1,7 @@
-from utils import run_cmd
 import os
 import json
+import subprocess
+from utils import run_cmd
 
 def run_nuclei(target=None, target_list=None, templates=None, tags=None, severity=None,
               output_file=None, jsonl=False, silent=False, store_resp=False, 
@@ -10,7 +11,7 @@ def run_nuclei(target=None, target_list=None, templates=None, tags=None, severit
     
     Parameters:
         target (str): Single target to scan.
-        target_list (str): Path to a file containing targets.
+        target_list (str): Path to a file containing targets or a URL string (e.g., "http://example.com/targets").
         templates (str): Custom templates or template directory.
         tags (str): Tags to include templates by (e.g., "cve,wordpress").
         severity (str): Filter templates by severity (e.g., "critical,high").
@@ -33,7 +34,19 @@ def run_nuclei(target=None, target_list=None, templates=None, tags=None, severit
     
     if target_list and not os.path.isfile(target_list):
         print(f"Error: Target list file '{target_list}' not found.")
-        return False
+        # If it's a direct URL, create a temporary file
+        if target_list.startswith(('http://', 'https://')):
+            try:
+                temp_file = "temp_targets.txt"
+                with open(temp_file, "w") as f:
+                    f.write(target_list)
+                target_list = temp_file
+                print(f"Created temporary target file: {temp_file}")
+            except Exception as e:
+                print(f"Error creating temporary file: {e}")
+                return False
+        else:
+            return False
     
     cmd = ["nuclei"]
 
@@ -59,16 +72,18 @@ def run_nuclei(target=None, target_list=None, templates=None, tags=None, severit
         for header in headers:
             cmd.extend(["-H", header])
     if variables:
+        # Detect supported flag for template variables
+        supported_flag = "-var"
+        try:
+            help_output = subprocess.run(["nuclei", "-h"], capture_output=True, text=True, timeout=5).stdout
+            if "-var" not in help_output:
+                supported_flag = "-V"
+        except Exception as e:
+            print(f"Error detecting supported flag for variables: {e}")
+            supported_flag = "-V"  # Default to '-V' if detection fails
+
         for key, value in variables.items():
-            # Check if '-var' is supported, otherwise use '-V'
-            try:
-                if run_cmd(["nuclei", "-h"]).find("-var") != -1:
-                    cmd.extend(["-var", f"{key}={value}"])
-                else:
-                    cmd.extend(["-V", f"{key}={value}"])
-            except Exception as e:
-                print(f"Error checking Nuclei flags: {e}")
-                return False
+            cmd.extend([supported_flag, f"{key}={value}"])
     if rate_limit:
         cmd.extend(["-rate-limit", str(rate_limit)])
     if timeout:
@@ -78,7 +93,8 @@ def run_nuclei(target=None, target_list=None, templates=None, tags=None, severit
     if additional_args:
         cmd.extend(additional_args)
 
-    success = run_cmd(cmd)
+    # Run with retry for better resilience
+    success = run_cmd(cmd, retry=1)
     if not success:
         print("Failed to execute Nuclei. Please check the parameters and try again.")
         return False
@@ -123,4 +139,61 @@ def parse_nuclei_results(output_file, jsonl_format=False):
 
 def check_nuclei():
     """Check if Nuclei is installed."""
-    return run_cmd(["nuclei", "--version"])
+    try:
+        return run_cmd(["nuclei", "--version"])
+    except Exception:
+        return False
+
+def get_nuclei_capabilities():
+    """Get information about nuclei capabilities based on its installation."""
+    capabilities = {
+        "version": "unknown",
+        "templates_count": 0,
+        "features": []
+    }
+    
+    try:
+        # Get version
+        version_output = subprocess.run(["nuclei", "--version"], 
+                                      capture_output=True, 
+                                      text=True, 
+                                      timeout=5).stdout
+        
+        if version_output:
+            capabilities["version"] = version_output.strip()
+        
+        # Get installed templates count
+        templates_output = subprocess.run(["nuclei", "-tl"], 
+                                        capture_output=True, 
+                                        text=True, 
+                                        timeout=10).stdout
+        
+        if templates_output:
+            # Try to count templates
+            try:
+                templates_lines = templates_output.strip().split('\n')
+                capabilities["templates_count"] = len(templates_lines)
+            except:
+                pass
+        
+        # Check for advanced features
+        help_output = subprocess.run(["nuclei", "-h"], 
+                                   capture_output=True, 
+                                   text=True, 
+                                   timeout=5).stdout
+        
+        features = []
+        if "-headless" in help_output:
+            features.append("headless")
+        if "-fuzzing" in help_output:
+            features.append("fuzzing")
+        if "-system-resolvers" in help_output:
+            features.append("system-resolvers")
+        if "-stats" in help_output:
+            features.append("stats")
+            
+        capabilities["features"] = features
+        return capabilities
+    except Exception as e:
+        print(f"Error getting nuclei capabilities: {e}")
+        return capabilities

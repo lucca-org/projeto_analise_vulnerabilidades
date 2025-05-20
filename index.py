@@ -6,31 +6,61 @@ import socket
 import platform
 import shutil
 import importlib.util
+import time
 from pathlib import Path
 
-def run_cmd(cmd, shell=False, check=False, use_sudo=False, timeout=300):
-    """Run a shell command with optional sudo and error handling."""
-    if use_sudo and os.geteuid() != 0 and not platform.system().lower() == "windows":
+# Configuration constants
+GO_VERSION = "1.21.0"  # Update this constant to change the Go version globally
+
+def run_cmd(cmd, shell=False, check=False, use_sudo=False, timeout=300, retry=1):
+    """Run a shell command with optional sudo, error handling and retries."""
+    if use_sudo and os.geteuid() != 0 and platform.system().lower() != "windows":
         cmd = ["sudo"] + cmd
-    try:
-        print(f"Running: {' '.join(cmd) if isinstance(cmd, list) else cmd}")
-        result = subprocess.run(cmd, shell=shell, capture_output=True, text=True, timeout=timeout)
-        if result.stdout and not result.stdout.isspace():
-            print(result.stdout)
-        if result.stderr and result.returncode != 0:
-            print(f"Error: {result.stderr}")
-        if check and result.returncode != 0:
-            raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
-        return result.returncode == 0
-    except subprocess.TimeoutExpired:
-        print(f"Command timed out after {timeout} seconds: {cmd}")
-        return False
-    except subprocess.CalledProcessError as e:
-        print(f"Command failed: {e}")
-        return False
-    except Exception as e:
-        print(f"Error running command {cmd}: {str(e)}")
-        return False
+    
+    for attempt in range(retry + 1):
+        try:
+            print(f"Running: {' '.join(cmd) if isinstance(cmd, list) else cmd}")
+            result = subprocess.run(cmd, shell=shell, capture_output=True, text=True, timeout=timeout)
+            
+            if result.stdout and not result.stdout.isspace():
+                print(result.stdout)
+            
+            if result.returncode != 0:
+                if result.stderr:
+                    print(f"Error: {result.stderr}")
+                    
+                if attempt < retry:
+                    print(f"Command failed. Retrying ({attempt+1}/{retry})...")
+                    time.sleep(2)  # Add a short delay between retries
+                    continue
+                    
+                if check:
+                    raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
+            
+            return result.returncode == 0
+            
+        except subprocess.TimeoutExpired:
+            print(f"Command timed out after {timeout} seconds: {cmd}")
+            if attempt < retry:
+                print(f"Retrying ({attempt+1}/{retry})...")
+                continue
+            return False
+            
+        except subprocess.CalledProcessError as e:
+            print(f"Command failed: {e}")
+            if attempt < retry:
+                print(f"Retrying ({attempt+1}/{retry})...")
+                continue
+            return False
+            
+        except Exception as e:
+            print(f"Error running command {cmd}: {str(e)}")
+            if attempt < retry:
+                print(f"Retrying ({attempt+1}/{retry})...")
+                continue
+            return False
+    
+    return False  # All attempts failed
 
 def ensure_sudo():
     """Ensure the script is running with sudo/root privileges."""
@@ -147,21 +177,95 @@ def check_and_install(name, check_func, install_func):
         if not check_func():
             print(f"{name} not found. Installing...")
             if not install_func():
-                print(f"{name} installation failed. Exiting.")
-                sys.exit(1)
+                print(f"{name} installation failed.")
+                return False
             
             # Verify installation was successful
             if not check_func():
                 print(f"{name} was installed but verification failed. Please check manually.")
-                sys.exit(1)
+                return False
                 
             print(f"{name} installed and verified.")
+            return True
         else:
             print(f"{name} is already installed.")
-        return True
+            return True
     except Exception as e:
         print(f"Error during installation of {name}: {e}")
         return False
+
+def install_naabu_without_cgo():
+    """Install naabu without CGO to avoid pcap dependency issues."""
+    print("\n===== Installing Naabu without PCap dependencies =====\n")
+    
+    # Set environment variable for Go to disable CGO
+    os.environ["CGO_ENABLED"] = "0"
+    
+    # Try installing naabu without CGO
+    success = run_cmd(["go", "install", "-v", "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest"])
+    
+    if success:
+        print("✓ Naabu installed successfully without pcap support")
+        print("  Note: Naabu will use connect scan mode only (no SYN/UDP scan capabilities)")
+        return True
+    else:
+        print("✗ Failed to install naabu even without CGO")
+        return False
+
+def try_alternative_libpcap():
+    """Try alternative package names for libpcap."""
+    print("\n===== Trying alternative libpcap packages =====\n")
+    
+    alternatives = [
+        "libpcap0.8-dev",
+        "libpcap-devel",
+        "libpcap-dev"
+    ]
+    
+    for pkg in alternatives:
+        print(f"Trying to install {pkg}...")
+        if run_cmd(["apt-get", "install", "-y", pkg], use_sudo=True, timeout=120):
+            # Verify if the package solved the issue by checking for pcap.h
+            if os.path.exists("/usr/include/pcap/pcap.h") or os.path.exists("/usr/include/pcap.h"):
+                print(f"✓ Found pcap.h after installing {pkg}")
+                return True
+    
+    print("✗ Could not install libpcap with alternative package names")
+    return False
+
+def fix_dpkg_interruptions():
+    """Fix any interrupted dpkg operations."""
+    print("\n===== Fixing dpkg interruptions =====\n")
+    
+    # Skip for non-Debian based systems
+    if not os.path.exists("/usr/bin/dpkg"):
+        print("Not a Debian-based system, skipping dpkg fix")
+        return True
+    
+    # Try to fix dpkg
+    if run_cmd(["dpkg", "--configure", "-a"], use_sudo=True, retry=2):
+        print("✓ dpkg configuration fixed")
+        return True
+    else:
+        print("✗ Failed to fix dpkg configuration")
+        return False
+
+def install_essential_python_packages(venv_path):
+    """Install essential Python packages for the project."""
+    try:
+        if venv_path:
+            pip_path = os.path.join(venv_path, "bin", "pip") if platform.system().lower() != "windows" else os.path.join(venv_path, "Scripts", "pip")
+            if os.path.exists(pip_path):
+                print("\n===== Installing Essential Python Packages =====\n")
+                packages = ["requests", "colorama", "rich", "tqdm"]
+                if run_cmd([pip_path, "install"] + packages):
+                    print("✓ Essential Python packages installed successfully")
+                    return True
+    except Exception as e:
+        print(f"Error installing Python packages: {e}")
+    
+    print("! Warning: Failed to install Python packages. Some functionality may be limited.")
+    return False
 
 def check_and_install_go():
     """Special handler for Go installation with fallbacks for different platforms."""
@@ -193,14 +297,14 @@ def check_and_install_go():
     # Try with different package managers in order
     
     # 1. Try apt with golang package
-    if run_cmd(["apt-get", "install", "golang", "-y"], use_sudo=True):
+    if run_cmd(["apt-get", "install", "golang", "-y"], use_sudo=True, retry=2):
         if run_cmd(["go", "version"]):
             print("Go installed successfully via apt (golang package).")
             return True
     
     # 2. Try apt with golang-go package (common in Debian/Ubuntu)
     print("Trying alternative package name...")
-    if run_cmd(["apt-get", "install", "golang-go", "-y"], use_sudo=True):
+    if run_cmd(["apt-get", "install", "golang-go", "-y"], use_sudo=True, retry=2):
         if run_cmd(["go", "version"]):
             print("Go installed successfully via apt (golang-go package).")
             return True
@@ -231,7 +335,7 @@ def check_and_install_go():
     
     # 6. Manual installation as last resort
     print("Package manager installation failed. Trying manual installation...")
-    go_version = "1.21.0"  # You can update this to the latest version
+    go_version = GO_VERSION  # Use the centralized constant for the Go version
     
     # Determine architecture
     arch = "amd64"  # Default
@@ -273,7 +377,7 @@ def run_fix_script():
     
     # Fix any interrupted dpkg
     print("Fixing any interrupted dpkg installations...")
-    run_cmd(["dpkg", "--configure", "-a"], use_sudo=True)
+    run_cmd(["dpkg", "--configure", "-a"], use_sudo=True, retry=2)
     
     # Install system dependencies one by one with shorter timeout
     print("Installing system dependencies needed for security tools...")
@@ -286,7 +390,7 @@ def run_fix_script():
     
     for dep in dependencies:
         print(f"Installing {dep}...")
-        if not run_cmd(["apt-get", "install", "-y", dep], use_sudo=True, timeout=120):
+        if not run_cmd(["apt-get", "install", "-y", dep], use_sudo=True, timeout=120, retry=2):
             print(f"Warning: Failed to install {dep}")
     
     # Update path environment variables
@@ -324,7 +428,7 @@ def install_system_dependencies():
     print("\n===== Installing System Dependencies =====\n")
     
     # Fix any interrupted dpkg first
-    run_cmd(["dpkg", "--configure", "-a"], use_sudo=True)
+    run_cmd(["dpkg", "--configure", "-a"], use_sudo=True, retry=2)
     
     # These are required for compilation of Go tools, particularly Naabu
     dependencies = [
@@ -338,7 +442,7 @@ def install_system_dependencies():
     success = True
     for dep in dependencies:
         print(f"Installing {dep}...")
-        if not run_cmd(["apt-get", "install", "-y", dep], use_sudo=True, timeout=120):
+        if not run_cmd(["apt-get", "install", "-y", dep], use_sudo=True, timeout=120, retry=2):
             print(f"Failed to install {dep}")
             success = False
     
@@ -362,40 +466,20 @@ def setup_python_venv():
         print(f"Failed to create virtual environment: {e}")
         return None
 
-def check_python_modules(venv_path=None):
-    """Install required Python modules from requirements.txt."""
-    req_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "requirements.txt")
-    if not os.path.exists(req_file):
-        print("requirements.txt not found. Skipping Python module installation.")
-        return True
-    
-    print("Installing Python requirements from requirements.txt...")
-    if venv_path:
-        # Use pip from virtual environment if available
-        if platform.system().lower() == "windows":
-            pip_path = os.path.join(venv_path, "Scripts", "pip")
-        else:
-            pip_path = os.path.join(venv_path, "bin", "pip")
-        
-        if os.path.exists(pip_path):
-            print(f"Installing Python requirements into virtual environment...")
-            return run_cmd([pip_path, "install", "-r", req_file])
-    
-    # Fallback to system pip with warning
-    print("WARNING: Installing Python packages system-wide. This may fail on newer Python versions.")
-    try:
-        # Try with system pip
-        return run_cmd(["pip3", "install", "-r", req_file])
-    except Exception as e:
-        print(f"Error installing Python packages: {e}")
-        print("Try creating a virtual environment or use --break-system-packages if appropriate.")
-        return False
-
 def import_commands():
     """Dynamically import command modules to check functionality."""
     commands_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "commands")
     if os.path.exists(commands_path) and os.path.isdir(commands_path):
         modules = {}
+        
+        # Create __init__.py if it doesn't exist to make commands a proper package
+        init_file = os.path.join(commands_path, "__init__.py")
+        if not os.path.exists(init_file):
+            try:
+                with open(init_file, "w") as f:
+                    f.write("# This file makes the commands directory a proper Python package")
+            except Exception as e:
+                print(f"Warning: Could not create {init_file}: {e}")
         
         for file in os.listdir(commands_path):
             if file.endswith('.py') and not file.startswith('__'):
@@ -415,6 +499,90 @@ def import_commands():
         return modules
     return {}
 
+def install_go_and_tools():
+    """Install Go and security tools."""
+    if not check_and_install_go():
+        print("⚠️ Go installation failed. Continuing with limited functionality.")
+        return False
+
+    # Set up Go env path temporarily
+    go_path = os.path.expanduser("~/go/bin")
+    if go_path not in os.environ.get("PATH", ""):
+        os.environ["PATH"] += f":{go_path}"
+    
+    # Install Go tools
+    print("\n===== Installing Security Tools =====\n")
+    
+    # Install tools that don't need pcap first
+    tools_installed = []
+    
+    if check_and_install("httpx", 
+                       lambda: run_cmd(["which", "httpx"]) or run_cmd(["httpx", "--version"]), 
+                       lambda: run_cmd(["go", "install", "-v", "github.com/projectdiscovery/httpx/cmd/httpx@latest"])):
+        tools_installed.append("httpx")
+        
+    if check_and_install("nuclei", 
+                       lambda: run_cmd(["which", "nuclei"]) or run_cmd(["nuclei", "--version"]), 
+                       lambda: run_cmd(["go", "install", "-v", "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"])):
+        tools_installed.append("nuclei")
+        
+    if check_and_install("subfinder", 
+                       lambda: run_cmd(["which", "subfinder"]) or run_cmd(["subfinder", "--version"]), 
+                       lambda: run_cmd(["go", "install", "-v", "github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"])):
+        tools_installed.append("subfinder")
+    
+    # Try installing naabu normally first
+    naabu_success = check_and_install("naabu", 
+                     lambda: run_cmd(["which", "naabu"]) or run_cmd(["naabu", "--version"]), 
+                     lambda: run_cmd(["go", "install", "-v", "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest"]))
+    
+    # If naabu installation failed, try without CGO
+    if not naabu_success:
+        print("Standard naabu installation failed. Trying without CGO...")
+        if install_naabu_without_cgo():
+            tools_installed.append("naabu")
+    else:
+        tools_installed.append("naabu")
+    
+    # Update nuclei templates if nuclei is installed
+    if "nuclei" in tools_installed:
+        print("\n===== Updating Nuclei Templates =====\n")
+        run_cmd(["nuclei", "-update-templates"])
+    
+    return len(tools_installed) > 0
+
+def show_summary_and_quick_start():
+    """Show a summary of installed tools and quick start guide."""
+    print("\n===== Summary =====")
+    print("✓ Dependencies installation completed.")
+    if platform.system().lower() != "windows":
+        print(f"✓ Shell configuration updated: {detect_shell_rc()}")
+        print(f"✓ Please run: source {detect_shell_rc()} or restart your terminal to update PATH.")
+    print("✓ All systems ready for vulnerability analysis.")
+    
+    # Check which tools are available
+    ready_tools = []
+    for tool in ["httpx", "nuclei", "naabu", "subfinder"]:
+        if os.path.exists(os.path.expanduser(f"~/go/bin/{tool}")) or shutil.which(tool):
+            ready_tools.append(tool)
+    
+    if ready_tools:
+        print("\n===== Quick Start =====")
+        print(f"Available tools: {', '.join(ready_tools)}")
+        print("To scan a target:")
+        if "subfinder" in ready_tools:
+            print("0. Discover subdomains: subfinder -d example.com -o subdomains.txt")
+        if "naabu" in ready_tools:
+            print("1. Map open ports: naabu -host example.com -p 80,443,8080-8090 -o ports.txt")
+        if "httpx" in ready_tools:
+            print("2. Probe for HTTP services: httpx -l ports.txt -title -tech-detect -o http_services.txt")
+        if "nuclei" in ready_tools:
+            print("3. Scan for vulnerabilities: nuclei -l http_services.txt -t cves/ -severity critical,high -o vulnerabilities.txt")
+        if all(tool in ready_tools for tool in ["subfinder", "naabu", "httpx", "nuclei"]):
+            print("\nOr use the automated workflow script:")
+            print("python3 workflow.py example.com")
+        print("\nFor more options, check the documentation in documentacao/comandos_e_parametros.txt")
+
 def main():
     print("\n===== Vulnerability Analysis Tools Setup =====\n")
     
@@ -425,18 +593,28 @@ def main():
             sys.exit(1)
     
     try:
-        ensure_sudo()
+        # On Linux/Mac, we need sudo for some operations
+        if platform.system().lower() != "windows":
+            ensure_sudo()
     except Exception as e:
         print(f"WARNING: Running without sudo. Some operations may fail. Error: {e}")
+        response = input("Continue without sudo? (y/N): ")
+        if not response.lower().startswith('y'):
+            print("Exiting.")
+            sys.exit(1)
     
-    # Run the fix script which includes dpkg --configure -a
+    # Fix any dpkg interruptions first - this is critical
+    if platform.system().lower() != "windows":
+        fix_dpkg_interruptions()
+    
+    # Run the full fix script
     run_fix_script()
 
-    # Update package lists first (for Linux systems)
+    # Update package lists for Linux systems
     if platform.system().lower() != "windows" and platform.system().lower() != "darwin":
         run_cmd(["apt-get", "update"], use_sudo=True)
 
-    # Check and install dependencies
+    # Check and install Python dependencies
     check_and_install("Python3", 
                      lambda: run_cmd(["python3", "--version"]), 
                      lambda: run_cmd(["apt-get", "install", "python3", "-y"], use_sudo=True))
@@ -444,47 +622,21 @@ def main():
                      lambda: run_cmd(["pip3", "--version"]), 
                      lambda: run_cmd(["apt-get", "install", "python3-pip", "-y"], use_sudo=True))
     
-    # Install system dependencies needed for Go tools
+    # Install system dependencies for Go tools
     install_system_dependencies()
     
-    # Set up Python virtual environment for module installation
+    # Try alternative libpcap packages if needed
+    if platform.system().lower() == "linux" and not (os.path.exists("/usr/include/pcap/pcap.h") or os.path.exists("/usr/include/pcap.h")):
+        try_alternative_libpcap()
+    
+    # Set up Python virtual environment
     venv_path = setup_python_venv()
     
-    # Install minimal Python dependencies to avoid compatibility issues
-    try:
-        if venv_path:
-            pip_path = os.path.join(venv_path, "bin", "pip") if platform.system().lower() != "windows" else os.path.join(venv_path, "Scripts", "pip")
-            if os.path.exists(pip_path):
-                print("Installing essential Python packages...")
-                run_cmd([pip_path, "install", "requests", "colorama", "rich", "tqdm"])
-    except Exception as e:
-        print(f"Error installing minimal Python packages: {e}")
+    # Install essential Python packages
+    install_essential_python_packages(venv_path)
     
-    # Install Go with our robust method
-    if not check_and_install_go():
-        print("Go installation failed. Continuing with limited functionality.")
-    else:
-        # Set up Go env path temporarily to ensure go install commands work
-        go_path = os.path.expanduser("~/go/bin")
-        if go_path not in os.environ.get("PATH", ""):
-            os.environ["PATH"] += f":{go_path}"
-        
-        # Install Go tools
-        print("\n===== Installing Security Tools =====\n")
-        check_and_install("naabu", 
-                         lambda: run_cmd(["which", "naabu"]) or run_cmd(["naabu", "--version"]), 
-                         lambda: run_cmd(["go", "install", "-v", "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest"]))
-        check_and_install("nuclei", 
-                         lambda: run_cmd(["which", "nuclei"]) or run_cmd(["nuclei", "--version"]), 
-                         lambda: run_cmd(["go", "install", "-v", "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"]))
-        check_and_install("httpx", 
-                         lambda: run_cmd(["which", "httpx"]) or run_cmd(["httpx", "--version"]), 
-                         lambda: run_cmd(["go", "install", "-v", "github.com/projectdiscovery/httpx/cmd/httpx@latest"]))
-        
-        # Install additional tool for DNS enumeration
-        check_and_install("subfinder", 
-                         lambda: run_cmd(["which", "subfinder"]) or run_cmd(["subfinder", "--version"]), 
-                         lambda: run_cmd(["go", "install", "-v", "github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest"]))
+    # Install Go and tools
+    install_go_and_tools()
 
     # Update system PATH for persistent use
     update_path()
@@ -493,21 +645,7 @@ def main():
     print("\n===== Testing Command Modules =====\n")
     modules = import_commands()
     
-    print("\n===== Summary =====")
-    print("✓ Dependencies installation completed.")
-    if platform.system().lower() != "windows":
-        print(f"✓ Shell configuration updated: {detect_shell_rc()}")
-        print(f"✓ Please run: source {detect_shell_rc()} or restart your terminal to update PATH.")
-    print("✓ All systems ready for vulnerability analysis.")
-    
-    # Provide a helpful message if all tools were installed
-    if "naabu" in modules and "httpx" in modules and "nuclei" in modules:
-        print("\n===== Quick Start =====")
-        print("To scan a target:")
-        print("1. First map open ports: naabu -host example.com -p 80,443,8080-8090")
-        print("2. Probe for HTTP services: httpx -l hosts.txt -title -tech-detect")
-        print("3. Scan for vulnerabilities: nuclei -u https://example.com -t cves/ -severity critical,high")
-        print("\nFor more options, check the documentation in documentacao/comandos_e_parametros.txt")
+    show_summary_and_quick_start()
 
 if __name__ == "__main__":
     main()
