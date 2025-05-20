@@ -8,13 +8,13 @@ import shutil
 import importlib.util
 from pathlib import Path
 
-def run_cmd(cmd, shell=False, check=False, use_sudo=False):
+def run_cmd(cmd, shell=False, check=False, use_sudo=False, timeout=300):
     """Run a shell command with optional sudo and error handling."""
     if use_sudo and os.geteuid() != 0 and not platform.system().lower() == "windows":
         cmd = ["sudo"] + cmd
     try:
         print(f"Running: {' '.join(cmd) if isinstance(cmd, list) else cmd}")
-        result = subprocess.run(cmd, shell=shell, capture_output=True, text=True, timeout=300)
+        result = subprocess.run(cmd, shell=shell, capture_output=True, text=True, timeout=timeout)
         if result.stdout and not result.stdout.isspace():
             print(result.stdout)
         if result.stderr and result.returncode != 0:
@@ -23,7 +23,7 @@ def run_cmd(cmd, shell=False, check=False, use_sudo=False):
             raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
         return result.returncode == 0
     except subprocess.TimeoutExpired:
-        print(f"Command timed out after 300 seconds: {cmd}")
+        print(f"Command timed out after {timeout} seconds: {cmd}")
         return False
     except subprocess.CalledProcessError as e:
         print(f"Command failed: {e}")
@@ -262,12 +262,69 @@ def check_and_install_go():
     print("All Go installation methods failed.")
     return False
 
+def run_fix_script():
+    """Run fix script commands to address common installation issues."""
+    print("\n===== Running Fix Installation Script =====\n")
+    
+    # Skip for Windows
+    if platform.system().lower() == "windows":
+        print("Windows platform detected. Skipping Linux-specific fixes.")
+        return True
+    
+    # Fix any interrupted dpkg
+    print("Fixing any interrupted dpkg installations...")
+    run_cmd(["dpkg", "--configure", "-a"], use_sudo=True)
+    
+    # Install system dependencies one by one with shorter timeout
+    print("Installing system dependencies needed for security tools...")
+    dependencies = [
+        "libpcap-dev",   # Required by naabu for packet capture
+        "libldns-dev",   # Required for DNS operations
+        "build-essential", # Required for building tools
+        "python3-venv"   # For Python virtual environment
+    ]
+    
+    for dep in dependencies:
+        print(f"Installing {dep}...")
+        if not run_cmd(["apt-get", "install", "-y", dep], use_sudo=True, timeout=120):
+            print(f"Warning: Failed to install {dep}")
+    
+    # Update path environment variables
+    print("Updating PATH environment variables...")
+    go_bin_path = os.path.expanduser("~/go/bin")
+    usr_local_go_path = "/usr/local/go/bin"
+    
+    # Update current session PATH
+    if go_bin_path not in os.environ.get("PATH", ""):
+        os.environ["PATH"] += f":{go_bin_path}"
+    if usr_local_go_path not in os.environ.get("PATH", ""):
+        os.environ["PATH"] += f":{usr_local_go_path}"
+    
+    # Update shell configuration file
+    shell_rc = detect_shell_rc()
+    if shell_rc:
+        try:
+            with open(shell_rc, "a+") as f:
+                f.seek(0)
+                content = f.read()
+                if f"export PATH=$PATH:{go_bin_path}:{usr_local_go_path}" not in content:
+                    f.write(f'\n# Added by vulnerability analysis setup\nexport PATH=$PATH:{go_bin_path}:{usr_local_go_path}\n')
+                    print(f"Updated PATH in {shell_rc}")
+        except Exception as e:
+            print(f"Warning: Could not update shell configuration: {e}")
+    
+    print("Fix script completed")
+    return True
+
 def install_system_dependencies():
     """Install required system dependencies for security tools."""
     if platform.system().lower() == "windows":
         return True
     
     print("\n===== Installing System Dependencies =====\n")
+    
+    # Fix any interrupted dpkg first
+    run_cmd(["dpkg", "--configure", "-a"], use_sudo=True)
     
     # These are required for compilation of Go tools, particularly Naabu
     dependencies = [
@@ -277,17 +334,15 @@ def install_system_dependencies():
         "python3-venv"   # For Python virtual environments
     ]
     
-    # For Debian/Ubuntu/Kali
-    if os.path.exists("/etc/debian_version"):
-        return run_cmd(["apt-get", "install", "-y"] + dependencies, use_sudo=True)
+    # Install one by one to avoid timeouts
+    success = True
+    for dep in dependencies:
+        print(f"Installing {dep}...")
+        if not run_cmd(["apt-get", "install", "-y", dep], use_sudo=True, timeout=120):
+            print(f"Failed to install {dep}")
+            success = False
     
-    # For Fedora/RHEL/CentOS
-    elif shutil.which("dnf"):
-        fedora_deps = ["libpcap-devel", "ldns-devel", "gcc", "python3-virtualenv"]
-        return run_cmd(["dnf", "install", "-y"] + fedora_deps, use_sudo=True)
-    
-    # For other systems, we'll try with apt as a fallback
-    return run_cmd(["apt-get", "install", "-y"] + dependencies, use_sudo=True)
+    return success
 
 def setup_python_venv():
     """Set up a Python virtual environment for package installations."""
@@ -371,10 +426,11 @@ def main():
     
     try:
         ensure_sudo()
-    except PermissionError:
-        print("WARNING: Insufficient permissions. Some operations may fail without sudo.")
-    except OSError as e:
-        print(f"WARNING: An OS-related error occurred: {e}. Some operations may fail without sudo.")
+    except Exception as e:
+        print(f"WARNING: Running without sudo. Some operations may fail. Error: {e}")
+    
+    # Run the fix script which includes dpkg --configure -a
+    run_fix_script()
 
     # Update package lists first (for Linux systems)
     if platform.system().lower() != "windows" and platform.system().lower() != "darwin":
@@ -394,8 +450,15 @@ def main():
     # Set up Python virtual environment for module installation
     venv_path = setup_python_venv()
     
-    # Install Python dependencies
-    check_python_modules(venv_path)
+    # Install minimal Python dependencies to avoid compatibility issues
+    try:
+        if venv_path:
+            pip_path = os.path.join(venv_path, "bin", "pip") if platform.system().lower() != "windows" else os.path.join(venv_path, "Scripts", "pip")
+            if os.path.exists(pip_path):
+                print("Installing essential Python packages...")
+                run_cmd([pip_path, "install", "requests", "colorama", "rich", "tqdm"])
+    except Exception as e:
+        print(f"Error installing minimal Python packages: {e}")
     
     # Install Go with our robust method
     if not check_and_install_go():
