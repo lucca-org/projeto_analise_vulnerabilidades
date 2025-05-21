@@ -1,7 +1,7 @@
 import os
 import json
 import subprocess
-from utils import run_cmd
+from utils import run_cmd, get_executable_path
 
 def run_nuclei(target=None, target_list=None, templates=None, tags=None, severity=None,
               output_file=None, jsonl=False, silent=False, store_resp=False, 
@@ -138,10 +138,32 @@ def parse_nuclei_results(output_file, jsonl_format=False):
         return None
 
 def check_nuclei():
-    """Check if Nuclei is installed."""
+    """
+    Check if nuclei is installed and available in the PATH.
+    
+    Returns:
+        bool: True if nuclei is installed and working, False otherwise.
+    """
+    nuclei_path = get_executable_path("nuclei")
+    if not nuclei_path:
+        print("nuclei not found in PATH or in ~/go/bin.")
+        return False
+        
     try:
-        return run_cmd(["nuclei", "--version"])
-    except Exception:
+        # Try running a simple command to check if nuclei is working
+        result = subprocess.run([nuclei_path, "-version"], 
+                              capture_output=True, 
+                              text=True, 
+                              timeout=5)
+        
+        if result.returncode == 0:
+            print(f"nuclei is available: {result.stdout.strip()}")
+            return True
+        else:
+            print("nuclei is installed but not working correctly.")
+            return False
+    except Exception as e:
+        print(f"Error checking nuclei: {e}")
         return False
 
 def get_nuclei_capabilities():

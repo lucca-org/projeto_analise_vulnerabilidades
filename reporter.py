@@ -20,12 +20,6 @@ except ImportError:
     JINJA_AVAILABLE = False
 
 try:
-    import markdown
-    MARKDOWN_AVAILABLE = True
-except ImportError:
-    MARKDOWN_AVAILABLE = False
-
-try:
     from rich.console import Console
     from rich.table import Table
     from rich.markdown import Markdown
@@ -33,6 +27,22 @@ try:
 except ImportError:
     RICH_AVAILABLE = False
 
+try:
+    import markdown
+    MARKDOWN_AVAILABLE = True
+except ImportError:
+    MARKDOWN_AVAILABLE = False
+
+# Add a warning for missing dependencies
+def check_dependencies():
+    if not JINJA_AVAILABLE:
+        print("Warning: Jinja2 is not installed. HTML report generation will be disabled.")
+    if not RICH_AVAILABLE:
+        print("Warning: Rich is not installed. Enhanced console output will be disabled.")
+    if not MARKDOWN_AVAILABLE:
+        print("Warning: Markdown is not installed. Markdown report generation will be disabled.")
+
+check_dependencies()
 
 def parse_scan_results(output_dir: str) -> Dict[str, Any]:
     """

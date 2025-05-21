@@ -1,7 +1,7 @@
 import os
 import json
 import subprocess
-from utils import run_cmd
+from utils import run_cmd, get_executable_path
 
 def run_httpx(target=None, target_list=None, output_file=None, json_output=False,
              title=False, status_code=False, tech_detect=False, web_server=False,
@@ -121,11 +121,32 @@ def parse_httpx_results(output_file, json_format=False):
         return None
 
 def check_httpx():
-    """Check if HTTPX is installed."""
+    """
+    Check if httpx is installed and available in the PATH.
+    
+    Returns:
+        bool: True if httpx is installed and working, False otherwise.
+    """
+    httpx_path = get_executable_path("httpx")
+    if not httpx_path:
+        print("httpx not found in PATH or in ~/go/bin.")
+        return False
+        
     try:
-        result = run_cmd(["httpx", "-version"], retry=0)
-        return result
-    except:
+        # Try running a simple command to check if httpx is working
+        result = subprocess.run([httpx_path, "-version"], 
+                              capture_output=True, 
+                              text=True, 
+                              timeout=5)
+        
+        if result.returncode == 0:
+            print(f"httpx is available: {result.stdout.strip()}")
+            return True
+        else:
+            print("httpx is installed but not working correctly.")
+            return False
+    except Exception as e:
+        print(f"Error checking httpx: {e}")
         return False
 
 def get_httpx_capabilities():

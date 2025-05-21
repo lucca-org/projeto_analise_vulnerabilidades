@@ -2,7 +2,7 @@
 import os
 import json
 import subprocess
-from utils import run_cmd
+from utils import run_cmd, get_executable_path
 
 def run_naabu(target=None, target_list=None, ports=None, exclude_ports=None, 
              threads=None, rate=None, timeout=None, json_output=False, 
@@ -61,17 +61,13 @@ def run_naabu(target=None, target_list=None, ports=None, exclude_ports=None,
     if additional_args:
         cmd.extend(additional_args)
     
-    # Check if this is a CGO-disabled version and add connect flag if needed
-    try:
-        naabu_help_output = subprocess.run(["naabu", "-h"], capture_output=True, text=True).stdout
-        # If this is a CGO-disabled naabu, it can only use connect scan mode
-        if "-scan-type" in naabu_help_output and "--connect" not in cmd and "-connect" not in cmd:
+    # Always use connect scan mode for better compatibility across systems
+    if "--scan-type" not in cmd and "-scan-type" not in cmd:
+        if "--connect" not in cmd and "-connect" not in cmd:
             if "--so" not in cmd and "-so" not in cmd and "--syn" not in cmd and "-syn" not in cmd:
                 cmd.append("-scan-type")
                 cmd.append("connect")
-                print("Note: Using connect scan mode since this is likely a CGO-disabled Naabu build")
-    except Exception as e:
-        print(f"Warning: Could not detect Naabu capabilities: {e}")
+                print("Using connect scan mode for better cross-platform compatibility")
 
     # Run with retry for better resilience
     success = run_cmd(cmd, retry=1)
@@ -136,43 +132,71 @@ def parse_naabu_results(output_file, json_format=False):
         return None
 
 def check_naabu():
-    """Check if Naabu is installed."""
+    """
+    Check if naabu is installed and available in the PATH.
+    
+    Returns:
+        bool: True if naabu is installed and working, False otherwise.
+    """
+    naabu_path = get_executable_path("naabu")
+    if not naabu_path:
+        print("Naabu not found in PATH or in ~/go/bin.")
+        return False
+        
     try:
-        result = run_cmd(["naabu", "-version"], retry=0)
-        return result
-    except:
+        # Try running a simple command to check if naabu is working
+        result = subprocess.run([naabu_path, "-version"], 
+                              capture_output=True, 
+                              text=True, 
+                              timeout=5)
+        
+        if result.returncode == 0:
+            print(f"Naabu is available: {result.stdout.strip()}")
+            return True
+        else:
+            print("Naabu is installed but not working correctly.")
+            return False
+    except Exception as e:
+        print(f"Error checking naabu: {e}")
         return False
 
+
 def get_naabu_capabilities():
-    """Get information about naabu capabilities based on its installation."""
+    """
+    Detect naabu capabilities by checking version and supported arguments.
+    
+    Returns:
+        dict: Dictionary containing capabilities information
+    """
     capabilities = {
         "version": None,
         "scan_types": [],
-        "is_cgo_enabled": False
     }
+    
+    naabu_path = get_executable_path("naabu")
+    if not naabu_path:
+        return capabilities
     
     try:
         # Get version
-        process = subprocess.run(["naabu", "-version"], capture_output=True, text=True)
-        if process.returncode == 0 and process.stdout:
-            capabilities["version"] = process.stdout.strip()
+        version_output = subprocess.run([naabu_path, "-version"], 
+                                     capture_output=True, 
+                                     text=True, 
+                                     timeout=5).stdout.strip()
+        capabilities["version"] = version_output
         
-        # Check if SYN scan is available (requires CGO)
-        process = subprocess.run(["naabu", "-h"], capture_output=True, text=True)
-        if process.returncode == 0 and process.stdout:
-            help_text = process.stdout
-            
-            # Check scan types
-            if "-scan-type" in help_text:
-                for line in help_text.split("\n"):
-                    if "-scan-type" in line:
-                        types_part = line.split("-scan-type", 1)[1]
-                        if "SYN" in types_part:
-                            capabilities["scan_types"].append("SYN")
-                            capabilities["is_cgo_enabled"] = True
-                        if "CONNECT" in types_part:
-                            capabilities["scan_types"].append("CONNECT")
+        # Check for scan types
+        help_output = subprocess.run([naabu_path, "-h"], 
+                                   capture_output=True, 
+                                   text=True, 
+                                   timeout=5).stdout
+                                   
+        if "-scan-type" in help_output:
+            if "SYN" in help_output and "CONNECT" in help_output:
+                capabilities["scan_types"] = ["SYN", "CONNECT"]
+            else:
+                capabilities["scan_types"] = ["CONNECT"]  # Default fallback
     except Exception as e:
-        print(f"Error checking Naabu capabilities: {e}")
+        print(f"Error detecting naabu capabilities: {e}")
     
     return capabilities

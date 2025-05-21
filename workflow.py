@@ -425,15 +425,29 @@ def main():
     if not check_network():
         print("[-] No network connectivity. Please check your connection and try again.")
         sys.exit(1)
+      # Check if required tools are installed
+    tool_checks = []
     
-    # Check if required tools are installed
-    if not all([
-        naabu.check_naabu(), 
-        httpx.check_httpx(), 
-        nuclei.check_nuclei()
-    ]):
-        print("[-] One or more required tools are not installed. Please run the setup script (index.py) first.")
+    print("[+] Checking required tools...")
+    
+    # Check naabu
+    naabu_ok = naabu.check_naabu()
+    tool_checks.append(naabu_ok)
+    
+    # Check httpx
+    httpx_ok = httpx.check_httpx()
+    tool_checks.append(httpx_ok)
+    
+    # Check nuclei
+    nuclei_ok = nuclei.check_nuclei()
+    tool_checks.append(nuclei_ok)
+    
+    if not all(tool_checks):
+        print("[-] One or more required tools are not installed.")
+        print("[*] Please run the setup script: ./setup_tools.sh")
         sys.exit(1)
+    
+    print("[+] All required tools are installed.")
     
     # Update nuclei templates if requested
     if args.update_templates:

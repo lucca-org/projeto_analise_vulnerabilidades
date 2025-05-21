@@ -154,8 +154,7 @@ def check_tools_installation() -> Dict[str, Dict[str, Any]]:
     tools = {
         "naabu": {"installed": False, "version": None, "command": "naabu -version"},
         "httpx": {"installed": False, "version": None, "command": "httpx -version"},
-        "nuclei": {"installed": False, "version": None, "command": "nuclei -version"},
-        "subfinder": {"installed": False, "version": None, "command": "subfinder -version"}
+        "nuclei": {"installed": False, "version": None, "command": "nuclei -version"}
     }
     
     for tool, data in tools.items():

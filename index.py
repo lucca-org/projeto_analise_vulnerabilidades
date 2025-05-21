@@ -28,12 +28,6 @@ TOOLS_INFO = {
         "repository": "github.com/projectdiscovery/nuclei/v3/cmd/nuclei",
         "module_file": "commands/nuclei.py"
     },
-    "subfinder": {
-        "name": "subfinder",
-        "description": "Fast subdomain discovery tool",
-        "repository": "github.com/projectdiscovery/subfinder/v2/cmd/subfinder",
-        "module_file": None
-    },
     "naabu": {
         "name": "naabu",
         "description": "Fast port scanner with SYN/CONNECT modes",
@@ -497,40 +491,7 @@ elif [[ -n "$TARGET_FILE" ]]; then
     cp "$TARGET_FILE" "$TEMP_DIR/targets.txt"
 fi
 
-# Port scanning functions
-scan_with_nmap() {
-    local target="$1"
-    local output="$2"
-    local nmap_rate=$((RATE / 100))
-    [[ $nmap_rate -lt 1 ]] && nmap_rate=1
-    [[ $nmap_rate -gt 5 ]] && nmap_rate=5
-    
-    # Dynamic timing template based on rate
-    local timing=3
-    [[ $RATE -gt 2000 ]] && timing=4
-    [[ $RATE -gt 4000 ]] && timing=5
-    
-    # Set max timeout
-    local nmap_timeout=$((TIMEOUT / 1000))
-    [[ $nmap_timeout -lt 1 ]] && nmap_timeout=1
-    
-    # Build command
-    local nmap_cmd="nmap -T$timing --max-retries 1 --host-timeout ${nmap_timeout}s -p $PORTS -oG $output"
-    
-    if [[ "$VERBOSE" = true && "$SILENT" = false ]]; then
-        echo "Running: $nmap_cmd $target"
-        $nmap_cmd "$target"
-    else
-        $nmap_cmd "$target" >/dev/null 2>&1
-    fi
-    
-    # Check if we found anything
-    if grep -q "Ports:" "$output"; then
-        return 0
-    else
-        return 1
-    fi
-}
+# Port scanning function
 
 scan_with_nc() {
     local target="$1"
@@ -615,20 +576,14 @@ if [[ "$SILENT" = false ]]; then
     echo "Processing $total_targets targets..."
 fi
 
-# Choose best available scanner
-SCANNER="none"
-if command -v nmap >/dev/null 2>&1; then
-    SCANNER="nmap"
+# Use netcat for port scanning (no nmap dependency)
+SCANNER="nc"
+if command -v nc >/dev/null 2>&1; then
     if [[ "$SILENT" = false ]]; then
-        echo "Using nmap for port scanning"
-    fi
-elif command -v nc >/dev/null 2>&1; then
-    SCANNER="nc"
-    if [[ "$SILENT" = false ]]; then
-        echo "Using netcat for port scanning (limited functionality)"
+        echo "Using netcat for port scanning"
     fi
 else
-    echo "Error: No port scanning tools available. Please install nmap or netcat."
+    echo "Error: Netcat not found. Please install netcat (nc) package."
     exit 1
 fi
 
@@ -640,24 +595,11 @@ process_target() {
     # Skip empty lines and comments
     [[ -z "$target" || "$target" =~ ^[[:space:]]*# ]] && return
     
-    # Try primary scanner first, fall back to alternative if available
+    # Process with netcat
     local success=false
     
-    if [[ "$SCANNER" == "nmap" ]]; then
-        if scan_with_nmap "$target" "$output"; then
-            success=true
-        elif command -v nc >/dev/null 2>&1; then
-            if [[ "$VERBOSE" = true && "$SILENT" = false ]]; then
-                echo "Nmap failed for $target, trying netcat..."
-            fi
-            if scan_with_nc "$target" "$output"; then
-                success=true
-            fi
-        fi
-    elif [[ "$SCANNER" == "nc" ]]; then
-        if scan_with_nc "$target" "$output"; then
-            success=true
-        fi
+    if scan_with_nc "$target" "$output"; then
+        success=true
     fi
     
     if [[ "$success" != "true" && "$SILENT" = false && "$VERBOSE" = true ]]; then
@@ -697,23 +639,7 @@ if [[ -n "$OUTPUT" ]]; then
             target_id=$(basename "$result_file" .txt)
             target=$(sed -n "${target_id}p" "$TEMP_DIR/targets.txt")
             
-            if [[ "$SCANNER" == "nmap" && -f "$result_file" && -s "$result_file" ]]; then
-                # Process nmap output
-                ports=$(cat "$result_file" | grep -oP 'Ports: \K.*' | tr ',' '\n' | grep -v "closed" | grep -v "filtered")
-                
-                while read -r port_info; do
-                    [[ -z "$port_info" ]] && continue
-                    
-                    port_num=$(echo "$port_info" | awk '{print $1}')
-                    if [[ -n "$port_num" ]]; then
-                        if [[ "$first_entry" != "true" ]]; then
-                            echo "," >> "$OUTPUT"
-                        fi
-                        first_entry=false
-                        echo -n "  {\"host\":\"$target\",\"port\":$port_num}" >> "$OUTPUT"
-                    fi
-                done <<< "$ports"
-            elif [[ "$SCANNER" == "nc" && -f "$result_file" && -s "$result_file" ]]; then
+            if [[ -f "$result_file" && -s "$result_file" ]]; then
                 # Process netcat output
                 while read -r line; do
                     [[ -z "$line" ]] && continue
@@ -795,8 +721,7 @@ def install_security_tools():
     # List of tools to install
     tools = [
         {"name": "httpx", "repo": "github.com/projectdiscovery/httpx/cmd/httpx"},
-        {"name": "nuclei", "repo": "github.com/projectdiscovery/nuclei/v3/cmd/nuclei"},
-        {"name": "subfinder", "repo": "github.com/projectdiscovery/subfinder/v2/cmd/subfinder"}
+        {"name": "nuclei", "repo": "github.com/projectdiscovery/nuclei/v3/cmd/nuclei"}
     ]
     
     installed_tools = []
@@ -1025,17 +950,7 @@ Common Parameters:
   -c             Maximum number of templates to execute in parallel (default: 25)
   -timeout       Timeout in seconds (default: 5)
 
-== SUBFINDER - Subdomain Discovery ==
 
-Basic Usage:
-  subfinder -d example.com -o subdomains.txt
-
-Common Parameters:
-  -d             Domain to find subdomains for
-  -o             Output file to write results
-  -timeout       Timeout for the subdomain enumeration (default: 30s)
-  -all           Show all subdomains, including those without IP address
-  -v             Verbose output
 
 == WORKFLOW SCRIPT ==
 
@@ -1220,10 +1135,9 @@ def main():
     print(f"✓ Shell configuration updated: {shell_rc}")
     print(f"✓ Please run: source {shell_rc} or restart your terminal to update PATH.")
     print("✓ All systems ready for vulnerability analysis.")
-    
-    # Check which tools are installed
+      # Check which tools are installed
     tools_installed = []
-    for tool in ["httpx", "nuclei", "subfinder", "naabu"]:
+    for tool in ["httpx", "nuclei", "naabu"]:
         if shutil.which(tool) or os.path.exists(os.path.expanduser(f"~/go/bin/{tool}")):
             tools_installed.append(tool)
     
@@ -1231,8 +1145,6 @@ def main():
         print("\n===== Quick Start =====")
         print(f"Available tools: {', '.join(tools_installed)}")
         print("To scan a target:")
-        if "subfinder" in tools_installed:
-            print("0. Discover subdomains: subfinder -d example.com -o subdomains.txt")
         if "naabu" in tools_installed:
             print("1. Map open ports: naabu -host example.com -p 80,443,8080-8090 -o ports.txt")
         if "httpx" in tools_installed:

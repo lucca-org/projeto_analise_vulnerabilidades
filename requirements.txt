@@ -1,24 +1,17 @@
-# Web framework
-flask==2.3.3
-
-# HTTP requests
+# Core dependencies
 requests==2.31.0
+colorama==0.4.6
 
-# Data manipulation
-pandas==2.1.0
+# Reporting dependencies
+jinja2==3.1.2
+markdown==3.4.3
+rich==13.3.5
 
-# Numerical computations
-numpy==1.25.2
+# Progress and formatting
+tqdm==4.65.0
 
-# Security analysis tools
-bandit==1.7.5
-safety==2.3.5
-
-# Linter for code quality
-flake8==6.1.0
-
-# Testing framework
-pytest==7.4.0
+# Utility
+pathlib==1.0.1
 
 # API testing
 pytest-httpx==0.24.0
