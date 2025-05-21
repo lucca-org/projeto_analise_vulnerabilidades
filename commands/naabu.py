@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 import os
 import json
 import subprocess
@@ -15,7 +16,7 @@ def run_naabu(target=None, target_list=None, ports=None, exclude_ports=None,
         ports (str): Ports to scan (e.g., "80,443,8080-8090").
         exclude_ports (str): Ports to exclude from scan.
         threads (int): Number of concurrent threads.
-        rate (int): Number of packets per second to send.
+        rate (int): Number of packets per second.
         timeout (int): Timeout in milliseconds.
         json_output (bool): Output in JSON format.
         output_file (str): Path to save the output.
@@ -99,14 +100,36 @@ def parse_naabu_results(output_file, json_format=False):
         results = []
         with open(output_file, 'r') as f:
             if json_format:
-                for line in f:
-                    try:
-                        results.append(json.loads(line.strip()))
-                    except json.JSONDecodeError:
-                        # Skip invalid JSON lines
-                        continue
+                try:
+                    # Try parsing as a single JSON array
+                    content = f.read()
+                    if content.strip().startswith('[') and content.strip().endswith(']'):
+                        results = json.loads(content)
+                    else:
+                        # Parse as JSON lines
+                        f.seek(0)  # Go back to the beginning of the file
+                        for line in f:
+                            try:
+                                results.append(json.loads(line.strip()))
+                            except json.JSONDecodeError:
+                                # Skip invalid JSON lines
+                                continue
+                except json.JSONDecodeError:
+                    # Fall back to line-by-line parsing
+                    f.seek(0)  # Go back to the beginning of the file
+                    for line in f:
+                        try:
+                            results.append(json.loads(line.strip()))
+                        except json.JSONDecodeError:
+                            # Skip invalid JSON lines
+                            continue
             else:
-                results = [line.strip() for line in f.readlines()]
+                results = []
+                for line in f:
+                    line = line.strip()
+                    if line:
+                        results.append(line)
+                        
         return results
     except Exception as e:
         print(f"Error parsing Naabu results: {e}")

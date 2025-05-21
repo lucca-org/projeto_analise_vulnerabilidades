@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Make script executable
+chmod +x $(dirname "$0")/fix_deps.sh
+
 echo "=== Fixing dpkg and installing critical dependencies ==="
 sudo dpkg --configure -a
 
@@ -21,6 +24,7 @@ export PATH=$PATH:/usr/local/go/bin:~/go/bin
 
 echo "=== Installing security tools ==="
 # Try with standard Go modules
+go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
 go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
 go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest
 go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
@@ -28,6 +32,16 @@ go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest
 # Try Naabu with CGO_ENABLED=0 to avoid the C dependencies
 CGO_ENABLED=0 go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
 
+# Make sure binaries are in PATH
+mkdir -p ~/go/bin
+chmod -R +x ~/go/bin/*
+
 echo "=== Installation completed ==="
-echo "You can now use: httpx, nuclei, and subfinder"
-echo "Note: Naabu was built without pcap support, so it will use connect scan mode only"
+echo "You can now run 'python workflow.py example.com' to test the installation."
+echo "Make sure to restart your terminal or run 'source ~/.bashrc' to update your PATH."
+
+# Add Go paths to bashrc if they don't exist
+if ! grep -q "go/bin" ~/.bashrc; then
+  echo 'export PATH=$PATH:/usr/local/go/bin:~/go/bin' >> ~/.bashrc
+  echo "✓ Added Go paths to ~/.bashrc"
+fi

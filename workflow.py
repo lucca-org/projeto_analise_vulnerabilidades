@@ -9,10 +9,33 @@ import sys
 import argparse
 import datetime
 import json
+import time
+import signal
+from pathlib import Path
+import traceback
+from typing import Optional, Dict, List, Any, Union, Tuple
 from commands import naabu, httpx, nuclei
-from utils import run_cmd, check_network, create_directory_if_not_exists
+from utils import run_cmd, check_network, create_directory_if_not_exists, get_executable_path
 
-def create_output_directory(target_name):
+# Create commands directory if it doesn't exist
+commands_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "commands")
+if not os.path.exists(commands_dir):
+    os.makedirs(commands_dir, exist_ok=True)
+    # Create __init__.py if it doesn't exist
+    init_path = os.path.join(commands_dir, "__init__.py")
+    if not os.path.exists(init_path):
+        with open(init_path, "w") as f:
+            f.write('# This file makes the commands directory a proper Python package\n')
+
+# Try to import reporter if available
+try:
+    from reporter import generate_report
+    REPORTER_AVAILABLE = True
+except ImportError:
+    REPORTER_AVAILABLE = False
+    print("Reporter module not found. Basic reports will be generated.")
+
+def create_output_directory(target_name: str) -> Optional[str]:
     """Create a timestamped output directory."""
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     output_dir = f"results_{target_name}_{timestamp}"
@@ -24,8 +47,15 @@ def create_output_directory(target_name):
         print(f"Error creating output directory: {e}")
         return None
 
-def run_full_scan(target, output_dir, ports=None, templates=None, tags="cve", 
-                 severity="critical,high", verbose=False):
+def signal_handler(sig, frame):
+    """Handle CTRL+C gracefully."""
+    print("\n[!] Scan interrupted by user. Partial results may be available.")
+    sys.exit(130)  # Standard exit code for SIGINT
+
+def run_full_scan(target: str, output_dir: str, ports: Optional[str] = None, 
+                 templates: Optional[str] = None, tags: str = "cve", 
+                 severity: str = "critical,high", verbose: bool = False, 
+                 timeout: int = 3600) -> bool:
     """
     Run the complete vulnerability scanning workflow with robust error handling.
     
@@ -37,6 +67,7 @@ def run_full_scan(target, output_dir, ports=None, templates=None, tags="cve",
         tags (str): Tags to use with nuclei.
         severity (str): Severity filter for nuclei.
         verbose (bool): Display verbose output.
+        timeout (int): Maximum time for the full scan in seconds.
     
     Returns:
         bool: True if workflow completed successfully, False otherwise.
@@ -45,6 +76,7 @@ def run_full_scan(target, output_dir, ports=None, templates=None, tags="cve",
     print(f"[+] Results will be saved to {output_dir}")
     
     success = True
+    start_time = time.time()
     
     try:
         # Step 1: Port scanning with naabu
@@ -52,13 +84,31 @@ def run_full_scan(target, output_dir, ports=None, templates=None, tags="cve",
         ports_output = os.path.join(output_dir, "ports.txt")
         ports_json = os.path.join(output_dir, "ports.json")
         
+        # Check if naabu is installed and get its capabilities
+        naabu_capabilities = naabu.get_naabu_capabilities()
+        naabu_args = ["--json", "-o", ports_json]
+        
+        # Check if naabu is installed
+        naabu_path = get_executable_path("naabu")
+        if not naabu_path:
+            print("[!] Naabu not found in PATH. Checking for alternative installation...")
+            # Try with go/bin path
+            naabu_path = os.path.expanduser("~/go/bin/naabu")
+            if not os.path.exists(naabu_path):
+                print("[!] Naabu not installed. Please install it first.")
+                return False
+            
+        # If SYN scan is available, use it for better performance
+        if naabu_capabilities.get("scan_types") and "SYN" in naabu_capabilities.get("scan_types", []):
+            naabu_args.extend(["--scan-type", "SYN"])
+        
         naabu_success = naabu.run_naabu(
             target=target,
             ports=ports or "top-1000",
             output_file=ports_output,
             json_output=True,
             silent=not verbose,
-            additional_args=["-json", "-o", ports_json]
+            additional_args=naabu_args
         )
         
         if not naabu_success:
@@ -66,6 +116,10 @@ def run_full_scan(target, output_dir, ports=None, templates=None, tags="cve",
             success = False
         else:
             print(f"[+] Port scan results saved to {ports_output}")
+            
+            # Check if scan timeout is approaching
+            if time.time() - start_time > timeout * 0.3:  # Using 30% of total time
+                print("[!] Port scanning took longer than expected. Adjusting remaining steps.")
         
         # Continue only if ports file exists and is not empty
         if not os.path.exists(ports_output) or os.path.getsize(ports_output) == 0:
@@ -78,23 +132,40 @@ def run_full_scan(target, output_dir, ports=None, templates=None, tags="cve",
         http_output = os.path.join(output_dir, "http_services.txt")
         http_json = os.path.join(output_dir, "http_services.json")
         
-        httpx_success = httpx.run_httpx(
-            target_list=ports_output,
-            output_file=http_output,
-            title=True,
-            status_code=True,
-            tech_detect=True,
-            web_server=True,
-            follow_redirects=True,
-            silent=not verbose,
-            additional_args=["-json", "-o", http_json]
-        )
-        
-        if not httpx_success:
-            print("[!] HTTPX service detection had issues. Continuing with available results.")
-            success = False
+        # Check if httpx is installed
+        httpx_path = get_executable_path("httpx")
+        if not httpx_path:
+            print("[!] httpx not found in PATH. Checking for alternative installation...")
+            # Try with go/bin path
+            httpx_path = os.path.expanduser("~/go/bin/httpx")
+            if not os.path.exists(httpx_path):
+                print("[!] httpx not installed. Please install it first.")
+                success = False
+                # Continue with a basic default for the next step
+                with open(http_output, "w") as f:
+                    f.write(f"http://{target}\nhttps://{target}\n")
         else:
-            print(f"[+] HTTP service detection results saved to {http_output}")
+            httpx_success = httpx.run_httpx(
+                target_list=ports_output,
+                output_file=http_output,
+                title=True,
+                status_code=True,
+                tech_detect=True,
+                web_server=True,
+                follow_redirects=True,
+                silent=not verbose,
+                additional_args=["--json", "-o", http_json]
+            )
+            
+            if not httpx_success:
+                print("[!] HTTPX service detection had issues. Continuing with available results.")
+                success = False
+            else:
+                print(f"[+] HTTP service detection results saved to {http_output}")
+                
+                # Check if scan timeout is approaching
+                if time.time() - start_time > timeout * 0.6:  # Using 60% of total time
+                    print("[!] HTTP service detection took longer than expected. Adjusting remaining steps.")
         
         # Continue only if http file exists and is not empty
         if not os.path.exists(http_output) or os.path.getsize(http_output) == 0:
@@ -107,39 +178,99 @@ def run_full_scan(target, output_dir, ports=None, templates=None, tags="cve",
         vuln_output = os.path.join(output_dir, "vulnerabilities.txt")
         vuln_json = os.path.join(output_dir, "vulnerabilities.jsonl")
         
-        # Create output directory for storing responses
-        nuclei_resp_dir = os.path.join(output_dir, "nuclei_responses")
-        create_directory_if_not_exists(nuclei_resp_dir)
-        
-        nuclei_success = nuclei.run_nuclei(
-            target_list=http_output,
-            templates=templates,
-            tags=tags,
-            severity=severity,
-            output_file=vuln_output,
-            jsonl=True,
-            store_resp=True,
-            silent=not verbose,
-            additional_args=["-jsonl", "-o", vuln_json, "-irr", "-stats", "-me", nuclei_resp_dir]
-        )
-        
-        if not nuclei_success:
-            print("[!] Nuclei vulnerability scan had issues.")
-            success = False
+        # Check if nuclei is installed
+        nuclei_path = get_executable_path("nuclei")
+        if not nuclei_path:
+            print("[!] nuclei not found in PATH. Checking for alternative installation...")
+            # Try with go/bin path
+            nuclei_path = os.path.expanduser("~/go/bin/nuclei")
+            if not os.path.exists(nuclei_path):
+                print("[!] nuclei not installed. Please install it first.")
+                success = False
+                # Create an empty file for consistency
+                with open(vuln_output, "w") as f:
+                    f.write("# No vulnerabilities scanned - nuclei not installed\n")
         else:
-            print(f"[+] Vulnerability scan results saved to {vuln_output}")
+            # Create output directory for storing responses
+            nuclei_resp_dir = os.path.join(output_dir, "nuclei_responses")
+            create_directory_if_not_exists(nuclei_resp_dir)
+            
+            # Determine if we need to adjust scanning due to time constraints
+            remaining_time = timeout - (time.time() - start_time)
+            if remaining_time < timeout * 0.3:  # Less than 30% of time remaining
+                print("[!] Limited time remaining for vulnerability scanning. Using focused scan.")
+                # Use a more focused scan if time is limited
+                if templates is None:
+                    templates = "cves"  # Only scan for CVEs
+                if tags is None or tags == "cve":
+                    tags = "cve,rce,critical" # Focus on critical issues
+                severity = "critical,high"    # Focus on high severity
+            
+            # Prepare nuclei arguments
+            nuclei_args = [
+                "-jsonl", 
+                "-o", vuln_json, 
+                "-irr", 
+                "-stats", 
+                "-me", nuclei_resp_dir
+            ]
+            
+            # If time is very limited, add rate limiting to avoid overwhelming the target
+            if remaining_time < timeout * 0.2:
+                nuclei_args.extend(["-rate-limit", "50"])
+            
+            nuclei_success = nuclei.run_nuclei(
+                target_list=http_output,
+                templates=templates,
+                tags=tags,
+                severity=severity,
+                output_file=vuln_output,
+                jsonl=True,
+                store_resp=True,
+                silent=not verbose,
+                additional_args=nuclei_args
+            )
+            
+            if not nuclei_success:
+                print("[!] Nuclei vulnerability scan had issues.")
+                success = False
+            else:
+                print(f"[+] Vulnerability scan results saved to {vuln_output}")
         
         # Step 4: Generate summary report
         print("\n[+] Step 4: Generating summary report")
-        summary_success = generate_summary_report(output_dir, target)
+        
+        if REPORTER_AVAILABLE:
+            summary_success = generate_report(output_dir, target)
+            if not summary_success:
+                print("[!] Advanced report generation had issues. Falling back to basic summary.")
+                summary_success = generate_basic_summary_report(output_dir, target)
+        else:
+            summary_success = generate_basic_summary_report(output_dir, target)
         
         if not summary_success:
             print("[!] Summary report generation had issues.")
             success = False
         
-    except Exception as e:
-        print(f"[!] Error during scan: {str(e)}")
+    except KeyboardInterrupt:
+        print("\n[!] Scan interrupted by user.")
         success = False
+    except Exception as e:
+        print(f"\n[!] Error during scan: {str(e)}")
+        if verbose:
+            traceback.print_exc()
+        success = False
+    finally:
+        # Always create at least a basic report if we have results
+        if os.path.exists(output_dir) and not os.path.exists(os.path.join(output_dir, "summary.txt")):
+            try:
+                generate_basic_summary_report(output_dir, target)
+            except Exception as e:
+                if verbose:
+                    print(f"[!] Could not create basic report: {e}")
+    
+    elapsed_time = time.time() - start_time
+    print(f"\n[+] Scan completed in {elapsed_time:.2f} seconds ({elapsed_time/60:.2f} minutes)")
     
     if success:
         print("\n[+] Full scan completed successfully!")
@@ -149,8 +280,8 @@ def run_full_scan(target, output_dir, ports=None, templates=None, tags="cve",
     print(f"[+] All results saved to {output_dir}")
     return success
 
-def generate_summary_report(output_dir, target):
-    """Generate a summary report of all findings."""
+def generate_basic_summary_report(output_dir: str, target: str) -> bool:
+    """Generate a basic summary report of all findings."""
     summary_file = os.path.join(output_dir, "summary.txt")
     
     try:
@@ -257,8 +388,38 @@ def main():
     parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose output')
     parser.add_argument('-o', '--output-dir', help='Custom output directory')
     parser.add_argument('--update-templates', action='store_true', help='Update nuclei templates before scanning')
+    parser.add_argument('--timeout', type=int, default=3600, help='Maximum scan time in seconds (default: 3600)')
+    parser.add_argument('--report-only', help='Generate report for existing results directory')
     
     args = parser.parse_args()
+    
+    # Set up signal handler for graceful exit on CTRL+C
+    signal.signal(signal.SIGINT, signal_handler)
+    
+    # If only generating a report for existing results
+    if args.report_only:
+        if not os.path.isdir(args.report_only):
+            print(f"[-] Results directory not found: {args.report_only}")
+            sys.exit(1)
+        
+        print(f"[+] Generating report for existing results in {args.report_only}")
+        
+        if REPORTER_AVAILABLE:
+            success = generate_report(args.report_only, args.target)
+            if success:
+                print("[+] Report generated successfully!")
+                sys.exit(0)
+            else:
+                print("[-] Report generation failed.")
+                sys.exit(1)
+        else:
+            success = generate_basic_summary_report(args.report_only, args.target)
+            if success:
+                print("[+] Basic summary report generated successfully!")
+                sys.exit(0)
+            else:
+                print("[-] Report generation failed.")
+                sys.exit(1)
     
     # Check network connectivity
     if not check_network():
@@ -304,7 +465,8 @@ def main():
             templates=args.templates,
             tags=args.tags,
             severity=args.severity,
-            verbose=args.verbose
+            verbose=args.verbose,
+            timeout=args.timeout
         )
         
         if not success:

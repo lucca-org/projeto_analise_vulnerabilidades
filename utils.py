@@ -5,188 +5,221 @@ import platform
 import subprocess
 import shutil
 import time
+import json
+from pathlib import Path
+from typing import List, Dict, Any, Union, Optional, Tuple
 
-def run_cmd(cmd, shell=False, check=False, use_sudo=False, timeout=300, retry=1):
-    """Run a shell command with optional sudo, error handling, and retries."""
-    if use_sudo and os.geteuid() != 0 and platform.system().lower() != "windows":
-        cmd = ["sudo"] + cmd
-    
+def run_cmd(cmd: Union[str, List[str]], shell: bool = False, check: bool = False, use_sudo: bool = False, timeout: int = 300, retry: int = 1, silent: bool = False) -> bool:
+    """Enhanced command runner with better retry logic and error detection."""
+    if isinstance(cmd, list):
+        cmd_str = ' '.join(cmd)
+    else:
+        cmd_str = cmd
+        
     for attempt in range(retry + 1):
         try:
-            print(f"Running: {' '.join(cmd) if isinstance(cmd, list) else cmd}")
-            result = subprocess.run(cmd, shell=shell, capture_output=True, text=True, timeout=timeout)
+            if not silent:
+                print(f"Running: {cmd_str}")
             
-            if result.stdout and not result.stdout.isspace():
-                print(result.stdout)
+            # Handle sudo and Windows special case
+            if use_sudo and os.name != 'nt' and os.geteuid() != 0:
+                if isinstance(cmd, list):
+                    cmd = ["sudo"] + cmd
+                else:
+                    cmd = f"sudo {cmd}"
             
-            if result.returncode != 0:
-                if result.stderr:
-                    print(f"Error: {result.stderr}")
-                
-                if attempt < retry:
-                    print(f"Command failed. Retrying ({attempt+1}/{retry})...")
-                    time.sleep(2)  # Add a short delay between retries
-                    continue
-                    
-                if check:
-                    raise subprocess.CalledProcessError(result.returncode, cmd, result.stdout, result.stderr)
+            # Start process
+            process = subprocess.Popen(
+                cmd, 
+                shell=shell, 
+                stdout=subprocess.PIPE if not silent else subprocess.DEVNULL, 
+                stderr=subprocess.PIPE if not silent else subprocess.DEVNULL, 
+                text=True
+            )
             
-            # Command succeeded
-            return result.returncode == 0
-            
-        except subprocess.TimeoutExpired:
-            print(f"Command timed out after {timeout} seconds: {cmd}")
-            if attempt < retry:
-                print(f"Retrying ({attempt+1}/{retry})...")
-                time.sleep(2)
-                continue
-            return False
-            
-        except subprocess.CalledProcessError as e:
-            print(f"Command failed: {e}")
-            if attempt < retry:
-                print(f"Retrying ({attempt+1}/{retry})...")
-                time.sleep(2)
-                continue
-            return False
-            
-        except Exception as e:
-            print(f"Error running command {cmd}: {str(e)}")
-            if attempt < retry:
-                print(f"Retrying ({attempt+1}/{retry})...")
-                time.sleep(2)
-                continue
-            return False
-    
-    return False  # All attempts failed
-
-def check_network():
-    """Check for network connectivity."""
-    try:
-        # Try multiple DNS servers to ensure we're actually connected
-        for dns in ["8.8.8.8", "1.1.1.1", "9.9.9.9"]:
+            # Wait with timeout
             try:
-                socket.create_connection((dns, 53), timeout=3)
+                stdout, stderr = process.communicate(timeout=timeout)
+                
+                # Process output if collected
+                if not silent and stdout and stdout.strip():
+                    # Only show first 10 lines if output is very long
+                    if stdout.count('\n') > 20:
+                        short_stdout = '\n'.join(stdout.split('\n')[:10])
+                        print(f"{short_stdout}\n[...output truncated...]")
+                    else:
+                        print(stdout)
+                
+                # Check return code
+                if process.returncode != 0:
+                    if not silent and stderr and stderr.strip():
+                        print(f"Error: {stderr}")
+                    
+                    # Retry logic
+                    if attempt < retry:
+                        if not silent:
+                            print(f"Command failed. Retrying ({attempt+1}/{retry})...")
+                        time.sleep(2 * (attempt + 1))  # Exponential backoff
+                        continue
+                    
+                    if check:
+                        raise subprocess.CalledProcessError(process.returncode, cmd)
+                    return False
+                
                 return True
-            except:
+                
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+                if not silent:
+                    print(f"Command timed out after {timeout} seconds: {cmd_str}")
+                if attempt < retry:
+                    if not silent:
+                        print(f"Retrying ({attempt+1}/{retry})...")
+                    time.sleep(2 * (attempt + 1))
+                    continue
+                return False
+                
+        except subprocess.CalledProcessError as e:
+            if not silent:
+                print(f"Command failed: {e}")
+            if attempt < retry:
+                if not silent:
+                    print(f"Retrying ({attempt+1}/{retry})...")
+                time.sleep(2 * (attempt + 1))
                 continue
-        print("No network connection detected. Please check your internet connection.")
-        return False
-    except Exception as e:
-        print(f"Network check error: {e}")
-        return False
-
-def format_duration(seconds):
-    """Format seconds into human-readable time."""
-    if seconds < 60:
-        return f"{seconds:.1f} seconds"
-    elif seconds < 3600:
-        minutes = seconds / 60
-        return f"{minutes:.1f} minutes"
-    else:
-        hours = seconds / 3600
-        return f"{hours:.1f} hours"
-
-def is_valid_ip(ip):
-    """Check if a string is a valid IP address."""
-    try:
-        socket.inet_aton(ip)
-        return True
-    except socket.error:
-        return False
-
-def detect_os():
-    """Detect the operating system with more detail."""
-    system = platform.system().lower()
+            return False
+        except Exception as e:
+            if not silent:
+                print(f"Error running command {cmd_str}: {str(e)}")
+            if attempt < retry:
+                if not silent:
+                    print(f"Retrying ({attempt+1}/{retry})...")
+                time.sleep(2 * (attempt + 1))
+                continue
+            return False
     
-    if system == "linux":
-        # Detect Linux distribution
+    return False
+
+def check_required_commands(commands: List[str]) -> List[str]:
+    """Check if required commands are available and return missing ones."""
+    missing = []
+    for cmd in commands:
+        if not shutil.which(cmd) and not os.path.exists(os.path.expanduser(f"~/go/bin/{cmd}")):
+            missing.append(cmd)
+    return missing
+
+def safe_read_json(json_file: str, default: Any = None) -> Any:
+    """Safely read a JSON file with error handling."""
+    if not os.path.exists(json_file):
+        return default
+    
+    try:
+        with open(json_file, 'r') as f:
+            return json.load(f)
+    except json.JSONDecodeError:
+        # Try to read line by line for JSONL format
         try:
-            with open("/etc/os-release") as f:
-                content = f.read()
-                if "kali" in content.lower():
-                    return "kali"
-                elif "ubuntu" in content.lower():
-                    return "ubuntu"
-                elif "debian" in content.lower():
-                    return "debian"
-                elif "centos" in content.lower() or "rhel" in content.lower():
-                    return "rhel"
+            results = []
+            with open(json_file, 'r') as f:
+                for line in f:
+                    if line.strip():
+                        results.append(json.loads(line))
+            if results:
+                return results
         except:
             pass
-    return system  # windows, darwin, or linux if not identified
+            
+        print(f"Warning: Could not parse JSON from {json_file}")
+        return default
+    except Exception as e:
+        print(f"Error reading {json_file}: {e}")
+        return default
 
-def create_directory_if_not_exists(directory_path):
-    """Create a directory if it doesn't exist."""
-    if not os.path.exists(directory_path):
-        try:
-            os.makedirs(directory_path, exist_ok=True)
-            return True
-        except Exception as e:
-            print(f"Error creating directory {directory_path}: {e}")
-            return False
-    return True
-
-def is_tool_installed(tool_name):
-    """Check if a specific tool is installed and available in PATH."""
-    return shutil.which(tool_name) is not None
-
-def get_go_version():
-    """Get the installed Go version."""
+def safe_write_json(data: Any, json_file: str) -> bool:
+    """Safely write data to a JSON file with error handling."""
     try:
-        result = subprocess.run(["go", "version"], capture_output=True, text=True)
-        if result.returncode == 0:
-            return result.stdout.strip()
-        return None
-    except:
-        return None
-
-def write_to_file(filename, content, append=False):
-    """Write content to a file, creating directories as needed."""
-    try:
-        # Create directory if it doesn't exist
-        directory = os.path.dirname(filename)
-        if directory and not os.path.exists(directory):
-            os.makedirs(directory, exist_ok=True)
+        # Ensure directory exists
+        os.makedirs(os.path.dirname(os.path.abspath(json_file)), exist_ok=True)
         
-        # Write content to file
-        mode = "a" if append else "w"
-        with open(filename, mode) as f:
-            f.write(content)
+        with open(json_file, 'w') as f:
+            json.dump(data, f, indent=2)
         return True
     except Exception as e:
-        print(f"Error writing to file {filename}: {e}")
+        print(f"Error writing to {json_file}: {e}")
         return False
 
-def read_file(filename):
-    """Read content from a file safely."""
-    try:
-        if not os.path.exists(filename):
-            print(f"File not found: {filename}")
-            return None
+def check_tools_installation() -> Dict[str, Dict[str, Any]]:
+    """Verify if all required security tools are installed and working."""
+    tools = {
+        "naabu": {"installed": False, "version": None, "command": "naabu -version"},
+        "httpx": {"installed": False, "version": None, "command": "httpx -version"},
+        "nuclei": {"installed": False, "version": None, "command": "nuclei -version"},
+        "subfinder": {"installed": False, "version": None, "command": "subfinder -version"}
+    }
+    
+    for tool, data in tools.items():
+        # Check if tool exists in PATH or ~/go/bin
+        tool_path = shutil.which(tool)
+        if not tool_path and os.path.exists(os.path.expanduser(f"~/go/bin/{tool}")):
+            tool_path = os.path.expanduser(f"~/go/bin/{tool}")
         
-        with open(filename, "r") as f:
-            return f.read()
+        if tool_path:
+            try:
+                result = subprocess.run(data["command"].split(), 
+                                      capture_output=True, 
+                                      text=True, 
+                                      timeout=5)
+                
+                data["installed"] = True
+                data["version"] = result.stdout.strip() if result.stdout else "Unknown"
+                data["path"] = tool_path
+            except Exception as e:
+                data["error"] = str(e)
+    
+    return tools
+
+def check_network() -> bool:
+    """Check for network connectivity."""
+    dns_servers = ["8.8.8.8", "1.1.1.1", "9.9.9.9"]
+    
+    for dns in dns_servers:
+        try:
+            # Try connecting to DNS server with timeout
+            socket.create_connection((dns, 53), 3)
+            return True
+        except (socket.timeout, socket.error, OSError):
+            continue
+    
+    print("No network connection detected. Please check your internet connection.")
+    return False
+
+def create_directory_if_not_exists(directory: str) -> bool:
+    """Create a directory if it doesn't exist."""
+    try:
+        os.makedirs(directory, exist_ok=True)
+        return True
     except Exception as e:
-        print(f"Error reading file {filename}: {e}")
-        return None
+        print(f"Error creating directory {directory}: {e}")
+        return False
 
-def human_readable_size(size_bytes):
-    """Convert bytes to a human-readable format."""
-    if size_bytes == 0:
-        return "0B"
+def get_executable_path(cmd: str) -> Optional[str]:
+    """Find the path to an executable, checking PATH and common locations."""
+    # Check in PATH
+    cmd_path = shutil.which(cmd)
+    if cmd_path:
+        return cmd_path
+        
+    # Check in ~/go/bin
+    go_bin_path = os.path.expanduser(f"~/go/bin/{cmd}")
+    if os.path.exists(go_bin_path) and os.access(go_bin_path, os.X_OK):
+        return go_bin_path
     
-    size_names = ("B", "KB", "MB", "GB", "TB")
-    i = 0
-    while size_bytes >= 1024 and i < len(size_names) - 1:
-        size_bytes /= 1024
-        i += 1
+    # Check Windows common locations if on Windows
+    if platform.system() == "Windows":
+        for path in [f"C:\\Program Files\\{cmd}\\{cmd}.exe", 
+                    f"C:\\Program Files (x86)\\{cmd}\\{cmd}.exe"]:
+            if os.path.exists(path):
+                return path
     
-    return f"{size_bytes:.2f} {size_names[i]}"
-
-def print_banner(text):
-    """Print a stylized banner."""
-    border = "=" * (len(text) + 4)
-    print(f"\n{border}")
-    print(f"| {text} |")
-    print(f"{border}\n")
+    return None
