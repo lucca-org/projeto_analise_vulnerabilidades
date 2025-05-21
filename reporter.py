@@ -12,12 +12,13 @@ import re
 import traceback
 from typing import Dict, List, Any, Optional, Union
 
-# Try to import optional dependencies for enhanced reporting
+# Added fallback logic for missing `markdown` library
 try:
     import markdown
     MARKDOWN_AVAILABLE = True
 except ImportError:
     MARKDOWN_AVAILABLE = False
+    print("Warning: Markdown library is not installed. Markdown report generation will be disabled.")
 
 # Add a warning for missing dependencies
 def check_dependencies():
@@ -155,6 +156,10 @@ def generate_markdown_report(output_dir: str, results: Dict[str, Any]) -> bool:
     Returns:
         True if successful, False otherwise
     """
+    if not MARKDOWN_AVAILABLE:
+        print("Markdown library is not available. Cannot generate Markdown report.")
+        return False
+    
     try:
         markdown_content = f"""# Security Scan Report for {results['target_info']['name']}
 
