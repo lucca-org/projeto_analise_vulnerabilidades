@@ -1079,6 +1079,30 @@ def get_file_size(file_path):
             return False
     return True
 
+def check_and_install_dependencies():
+    """Check and install all required dependencies."""
+    print("\n===== Checking and Installing Dependencies =====\n")
+
+    # Check and install Python dependencies
+    print("Checking Python dependencies...")
+    venv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".venv")
+    if not os.path.exists(venv_path):
+        setup_python_venv()
+    install_python_packages(venv_path)
+
+    # Check and install Go and Go tools
+    print("Checking Go and Go tools...")
+    if not check_and_install_go():
+        print("Failed to install Go. Please check your environment.")
+        return False
+
+    installed_tools = install_security_tools()
+    if "naabu" not in installed_tools:
+        install_naabu_alternative()
+
+    print("\nAll dependencies are installed and up-to-date.")
+    return True
+
 def main():
     print("\n===== Vulnerability Analysis Tools Setup =====\n")
     
@@ -1160,4 +1184,8 @@ def main():
     print("\nFor more options, check the documentation in documentacao/comandos_e_parametros.txt")
 
 if __name__ == "__main__":
+    if not check_and_install_dependencies():
+        print("Dependency installation failed. Exiting.")
+        exit(1)
+
     main()
