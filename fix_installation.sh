@@ -1,14 +1,13 @@
 #!/bin/bash
 
-# fix_installation.sh - Aligning with setup_tools.sh fo installation fixes
+# fix_installation.sh - Aligning with setup_tools.sh for installation fixes
 
 set -e
 
-# Refeence setup_tools.sh fo consolidated logic
+# Reference setup_tools.sh for consolidated logic
 if [ ! -f "setup_tools.sh" ]; then
-    echo "Eo: setup_tools.sh not found in the cuent diectoy."
+    echo "Error: setup_tools.sh not found in the current directory."
     exit 1
 fi
 
 bash setup_tools.sh
-

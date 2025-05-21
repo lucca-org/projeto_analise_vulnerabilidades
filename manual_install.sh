@@ -4,9 +4,7 @@
 set -e
 
 if [ ! -f "setup_tools.sh" ]; then
-    echo "Eo: setup_tools.sh not found in the cuent diectoy."
     exit 1
-fi
+fiz
 
 bash setup_tools.sh
-

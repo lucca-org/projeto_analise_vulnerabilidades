@@ -372,400 +372,46 @@ def check_and_install_go():
     # If not found, try manual installation
     return manual_go_install()
 
-def install_naabu_alternative():
-    """Install an enhanced alternative to naabu that doesn't require libpcap."""
-    print("\n===== Creating enhanced naabu alternative script =====\n")
-    naabu_path = os.path.expanduser("~/go/bin/naabu")
-    
-    # Ensure directory exists
-    os.makedirs(os.path.dirname(naabu_path), exist_ok=True)
-    
-    script_content = """#!/bin/bash
-# naabu-alternative v2.0.0 - Multi-engine port scanner for maximum compatibility
-# Features: nmap, netcat fallback, faster port scanning, better JSON handling
-
-VERSION="2.0.0"
-TARGET=""
-TARGET_FILE=""
-PORTS="1-1000"
-OUTPUT=""
-VERBOSE=false
-RATE=1000
-TIMEOUT=5000
-JSON=false
-SILENT=false
-THREADS=25
-PARALLEL=5  # Max targets to scan in parallel
-
-# Parse all arguments
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        -host)
-            TARGET="$2"
-            shift 2
-            ;;
-        -l)
-            TARGET_FILE="$2"
-            shift 2
-            ;;
-        -p|-ports)
-            PORTS="$2"
-            shift 2
-            ;;
-        -o|-output)
-            OUTPUT="$2"
-            shift 2
-            ;;
-        -v|-verbose)
-            VERBOSE=true
-            shift
-            ;;
-        -c)
-            THREADS="$2"
-            shift 2
-            ;;
-        -rate)
-            RATE="$2"
-            shift 2
-            ;;
-        -json)
-            JSON=true
-            shift
-            ;;
-        -silent)
-            SILENT=true
-            shift
-            ;;
-        -timeout)
-            TIMEOUT="$2"
-            shift 2
-            ;;
-        -version)
-            echo "naabu-alternative v$VERSION"
-            exit 0
-            ;;
-        -h|-help)
-            echo "Naabu alternative - multi-engine port scanner"
-            echo "Usage:"
-            echo "  -host string        Host to scan"
-            echo "  -l string           List of hosts to scan"
-            echo "  -p, -ports string   Ports to scan (default: 1-1000)"
-            echo "  -o, -output string  Output file to write results"
-            echo "  -v, -verbose        Verbose output"
-            echo "  -c int              Number of concurrent threads (default: 25)"
-            echo "  -silent             Silent mode"
-            echo "  -json               Output in JSON format"
-            echo "  -rate int           Rate of port scan (default: 1000)"
-            echo "  -timeout int        Timeout in milliseconds (default: 5000)"
-            exit 0
-            ;;
-        *)
-            shift
-            ;;
-    esac
-done
-
-# Validate input
-if [[ -z "$TARGET" && -z "$TARGET_FILE" ]]; then
-    echo "Error: No target specified. Use -host or -l."
-    exit 1
-fi
-
-if [[ "$SILENT" = false ]]; then
-    echo "Starting port scan with naabu-alternative v$VERSION"
-fi
-
-# Create temp files and directories for processing
-TEMP_DIR=$(mktemp -d)
-TEMP_RESULTS="$TEMP_DIR/results"
-mkdir -p "$TEMP_RESULTS"
-
-# Process targets
-if [[ -n "$TARGET" ]]; then
-    echo "$TARGET" > "$TEMP_DIR/targets.txt"
-elif [[ -n "$TARGET_FILE" ]]; then
-    if [[ ! -f "$TARGET_FILE" ]]; then
-        echo "Error: Target file not found: $TARGET_FILE"
-        exit 1
-    fi
-    cp "$TARGET_FILE" "$TEMP_DIR/targets.txt"
-fi
-
-# Port scanning function
-
-scan_with_nc() {
-    local target="$1"
-    local output="$2"
-    local nc_timeout=1
-    
-    # Convert port ranges into array
-    local all_ports=()
-    IFS=',' read -ra ranges <<< "$PORTS"
-    for range in "${ranges[@]}"; do
-        if [[ "$range" == *-* ]]; then
-            start=$(echo "$range" | cut -d'-' -f1)
-            end=$(echo "$range" | cut -d'-' -f2)
-            for ((p=start; p<=end; p++)); do
-                all_ports+=($p)
-            done
-        else
-            all_ports+=($range)
-        fi
-    done
-    
-    # Count total ports
-    local port_count=${#all_ports[@]}
-    
-    # Calculate ports per thread
-    local ports_per_thread=$(( (port_count + THREADS - 1) / THREADS ))
-    
-    # Function to scan a range of ports
-    scan_port_range() {
-        local target="$1"
-        local start_idx="$2"
-        local end_idx="$3"
-        local out_file="$4"
-        local found=0
-        
-        local tmp_out="${out_file}.$start_idx"
-        > "$tmp_out"
-        
-        for ((i=start_idx; i<end_idx && i<port_count; i++)); do
-            local port=${all_ports[$i]}
-            if timeout 0.5 nc -z -w1 "$target" "$port" 2>/dev/null; then
-                echo "Port:$port/tcp" >> "$tmp_out"
-                found=1
-                if [[ "$VERBOSE" = true && "$SILENT" = false ]]; then
-                    echo "Found open port on $target: $port"
-                fi
-            fi
-        done
-        
-        # Copy results to main file
-        cat "$tmp_out" >> "$out_file"
-        rm "$tmp_out"
-    }
-    
-    # Launch parallel scans
-    for ((t=0; t<THREADS; t++)); do
-        local start_idx=$((t * ports_per_thread))
-        local end_idx=$(((t+1) * ports_per_thread))
-        scan_port_range "$target" "$start_idx" "$end_idx" "$output" &
-        
-        # Limit parallel processes
-        if [[ $((t % 10)) -eq 9 ]]; then
-            wait
-        fi
-    done
-    
-    # Wait for all scans to complete
-    wait
-    
-    if [[ -s "$output" ]]; then
-        return 0
-    else
-        return 1
-    fi
-}
-
-# Process each target
-total_targets=$(wc -l < "$TEMP_DIR/targets.txt")
-counter=0
-
-if [[ "$SILENT" = false ]]; then
-    echo "Processing $total_targets targets..."
-fi
-
-# Use netcat for port scanning (no nmap dependency)
-SCANNER="nc"
-if command -v nc >/dev/null 2>&1; then
-    if [[ "$SILENT" = false ]]; then
-        echo "Using netcat for port scanning"
-    fi
-else
-    echo "Error: Netcat not found. Please install netcat (nc) package."
-    exit 1
-fi
-
-process_target() {
-    local target="$1"
-    local target_id="$2"
-    local output="$TEMP_RESULTS/$target_id.txt"
-    
-    # Skip empty lines and comments
-    [[ -z "$target" || "$target" =~ ^[[:space:]]*# ]] && return
-    
-    # Process with netcat
-    local success=false
-    
-    if scan_with_nc "$target" "$output"; then
-        success=true
-    fi
-    
-    if [[ "$success" != "true" && "$SILENT" = false && "$VERBOSE" = true ]]; then
-        echo "No open ports found on $target"
-    fi
-}
-
-# Process targets in parallel
-cat "$TEMP_DIR/targets.txt" | while read -r target; do
-    counter=$((counter+1))
-    if [[ "$VERBOSE" = true && "$SILENT" = false ]]; then
-        echo "[$counter/$total_targets] Scanning $target"
-    fi
-    
-    # Process in background with limited parallelism
-    process_target "$target" "$counter" &
-    
-    # Limit number of parallel processes
-    if [[ $((counter % PARALLEL)) -eq 0 ]]; then
-        wait
-    fi
-done
-
-# Wait for all processes to finish
-wait
-
-# Combine and format results
-if [[ -n "$OUTPUT" ]]; then
-    # Create the output file based on format
-    if [[ "$JSON" = true ]]; then
-        echo "[" > "$OUTPUT"
-        
-        first_entry=true
-        for result_file in "$TEMP_RESULTS"/*.txt; do
-            [[ ! -s "$result_file" ]] && continue
-            
-            target_id=$(basename "$result_file" .txt)
-            target=$(sed -n "${target_id}p" "$TEMP_DIR/targets.txt")
-            
-            if [[ -f "$result_file" && -s "$result_file" ]]; then
-                # Process netcat output
-                while read -r line; do
-                    [[ -z "$line" ]] && continue
-                    
-                    if [[ "$line" =~ Port:([0-9]+) ]]; then
-                        port="${BASH_REMATCH[1]}"
-                        if [[ "$first_entry" != "true" ]]; then
-                            echo "," >> "$OUTPUT"
-                        fi
-                        first_entry=false
-                        echo -n "  {\"host\":\"$target\",\"port\":$port}" >> "$OUTPUT"
-                    fi
-                done < "$result_file"
-            fi
-        done
-        
-        echo "" >> "$OUTPUT"
-        echo "]" >> "$OUTPUT"
-    else
-        > "$OUTPUT"
-        for result_file in "$TEMP_RESULTS"/*.txt; do
-            [[ ! -s "$result_file" ]] && continue
-            
-            target_id=$(basename "$result_file" .txt)
-            target=$(sed -n "${target_id}p" "$TEMP_DIR/targets.txt")
-            
-            if [[ "$SCANNER" == "nmap" && -f "$result_file" && -s "$result_file" ]]; then
-                # Process nmap output
-                ports=$(cat "$result_file" | grep -oP 'Ports: \K.*' | tr ',' '\n' | grep -v "closed" | grep -v "filtered")
-                
-                while read -r port_info; do
-                    [[ -z "$port_info" ]] && continue
-                    
-                    port_num=$(echo "$port_info" | awk '{print $1}')
-                    if [[ -n "$port_num" ]]; then
-                        echo "$target:$port_num" >> "$OUTPUT"
-                    fi
-                done <<< "$ports"
-            elif [[ "$SCANNER" == "nc" && -f "$result_file" && -s "$result_file" ]]; then
-                # Process netcat output
-                while read -r line; do
-                    [[ -z "$line" ]] && continue
-                    
-                    if [[ "$line" =~ Port:([0-9]+) ]]; then
-                        port="${BASH_REMATCH[1]}"
-                        echo "$target:$port" >> "$OUTPUT"
-                    fi
-                done < "$result_file"
-            fi
-        done
-    fi
-    
-    if [[ "$SILENT" = false ]]; then
-        echo "Results saved to $OUTPUT"
-    fi
-fi
-
-# Clean up
-rm -rf "$TEMP_DIR"
-
-exit 0
-"""
-    
-    try:
-        with open(naabu_path, 'w') as f:
-            f.write(script_content)
-        os.chmod(naabu_path, 0o755)
-        print(f"✓ Created enhanced naabu alternative script at {naabu_path}")
-        return True
-    except Exception as e:
-        print(f"✗ Failed to create naabu alternative script: {e}")
-        return False
-
 def install_security_tools():
     """Install security tools using Go."""
+    print("\n===== Installing Security Tools =====\n")
+
     # Set up Go environment
     setup_go_env()
-    
+
     # List of tools to install
     tools = [
         {"name": "httpx", "repo": "github.com/projectdiscovery/httpx/cmd/httpx"},
-        {"name": "nuclei", "repo": "github.com/projectdiscovery/nuclei/v3/cmd/nuclei"}
+        {"name": "nuclei", "repo": "github.com/projectdiscovery/nuclei/v3/cmd/nuclei"},
+        {"name": "naabu", "repo": "github.com/projectdiscovery/naabu/v2/cmd/naabu"}
     ]
-    
+
     installed_tools = []
-    
+
     for tool in tools:
         # Check if already installed
         if shutil.which(tool["name"]) or os.path.exists(os.path.expanduser(f"~/go/bin/{tool['name']}")):
-            print(f"{tool['name']} is already installed.")
+            print(f"✓ {tool['name']} is already installed.")
             installed_tools.append(tool["name"])
             continue
-            
+
+        # Attempt to install the tool
         print(f"Installing {tool['name']}...")
-        # First try with GO111MODULE=on to avoid module issues
-        os.environ["GO111MODULE"] = "on"
+        os.environ["GO111MODULE"] = "on"  # Ensure Go modules are enabled
+
+        # Debugging output
+        print(f"Debug Info: Installing {tool['name']} from {tool['repo']}")
+        print(f"PATH: {os.environ.get('PATH')}")
+        print(f"GOPATH: {os.environ.get('GOPATH', 'Not Set')}")
+        print(f"GO111MODULE: {os.environ.get('GO111MODULE')}")
+
         if run_cmd(["go", "install", "-v", f"{tool['repo']}@latest"]):
+            print(f"✓ {tool['name']} installed successfully.")
             installed_tools.append(tool["name"])
-            print(f"{tool['name']} installed successfully.")
-        # Try without version constraint if the first attempt failed
-        elif run_cmd(["go", "install", "-v", tool["repo"]]):
-            installed_tools.append(tool["name"])
-            print(f"{tool['name']} installed successfully.")
         else:
-            print(f"Failed to install {tool['name']}")
-    
-    # Try to install naabu, but fallback to alternative if it fails
-    if not shutil.which("naabu") and not os.path.exists(os.path.expanduser("~/go/bin/naabu")):
-        print("Installing naabu...")
-        # Try with CGO disabled (no libpcap dependency)
-        os.environ["CGO_ENABLED"] = "0"
-        if run_cmd(["go", "install", "-v", "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest"]):
-            installed_tools.append("naabu")
-            print("naabu installed successfully with CGO disabled.")
-        # Try an older version that might have fewer dependencies
-        elif run_cmd(["go", "install", "-v", "github.com/projectdiscovery/naabu/v2/cmd/naabu@v2.0.0"]):
-            installed_tools.append("naabu")
-            print("naabu v2.0.0 installed successfully.")
-        else:
-            print("Failed to install naabu with go install. Creating alternative script...")
-            if install_naabu_alternative():
-                installed_tools.append("naabu")
-    else:
-        print("naabu is already installed.")
-        installed_tools.append("naabu")
-    
+            print(f"✗ Failed to install {tool['name']}. Please check your Go environment.")
+            sys.exit(1)  # Exit if any tool fails to install
+
     return installed_tools
 
 def setup_python_venv():
@@ -1096,9 +742,8 @@ def check_and_install_dependencies():
         print("Failed to install Go. Please check your environment.")
         return False
 
-    installed_tools = install_security_tools()
-    if "naabu" not in installed_tools:
-        install_naabu_alternative()
+    # Install security tools
+    install_security_tools()
 
     print("\nAll dependencies are installed and up-to-date.")
     return True
@@ -1184,8 +829,12 @@ def main():
     print("\nFor more options, check the documentation in documentacao/comandos_e_parametros.txt")
 
 if __name__ == "__main__":
+    print("\n===== Starting Vulnerability Analysis Toolkit Setup =====\n")
+
+    # Check and install all dependencies
     if not check_and_install_dependencies():
         print("Dependency installation failed. Exiting.")
-        exit(1)
+        sys.exit(1)
 
+    # Run the main setup and workflow
     main()

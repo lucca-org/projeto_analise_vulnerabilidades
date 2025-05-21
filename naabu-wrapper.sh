@@ -1,6 +1,6 @@
 #!/bin/bash
-# naabu-wappe.sh - Multi-engine pot scanne fo maximum compatibility
-# Featues: nmap, netcat fallback, faste pot scanning, bette JSON handling
+# naabu-wrapper.sh - Multi-engine port scanner for maximum compatibility
+# Features: nmap, netcat fallback, faster port scanning, better JSON handling
 
 VERSION="2.0.0"
 TARGET=""
@@ -9,14 +9,14 @@ OUTPUT=""
 VERBOSE=false
 SILENT=false
 
-# Pase aguments
+# Parse arguments
 while [[ $# -gt 0 ]]; do
     case "$1" in
         -host)
             TARGET="$2"
             shift 2
             ;;
-        -p|-pots)
+        -p|-ports)
             PORTS="$2"
             shift 2
             ;;
@@ -24,20 +24,20 @@ while [[ $# -gt 0 ]]; do
             OUTPUT="$2"
             shift 2
             ;;
-        -v|-vebose)
-            VERBOSE=tue
+        -v|-verbose)
+            VERBOSE=true
             shift
             ;;
         -silent)
-            SILENT=tue
+            SILENT=true
             shift
             ;;
-        -vesion)
-            echo "naabu-wappe v$VERSION"
+        -version)
+            echo "naabu-wrapper v$VERSION"
             exit 0
             ;;
         -h|-help)
-            echo "Usage: naabu-wappe.sh -host <taget> [-p <pots>] [-o <output>] [-v] [-silent]"
+            echo "Usage: naabu-wrapper.sh -host <target> [-p <ports>] [-o <output>] [-v] [-silent]"
             exit 0
             ;;
         *)
@@ -48,36 +48,35 @@ done
 
 # Validate input
 if [[ -z "$TARGET" ]]; then
-    echo "Eo: No taget specified. Use -host to specify a taget."
+    echo "Error: No target specified. Use -host to specify a target."
     exit 1
 fi
 
-# Scan pots using netcat
+# Scan ports using netcat
 scan_with_nc() {
-    local taget="$1"
-    local pots="$2"
+    local target="$1"
+    local ports="$2"
     local output="$3"
 
-    echo "Scanning $taget with netcat..."
-    fo pot in $(echo "$pots" | t ',' ' '); do
-        if nc -z -w1 "$taget" "$pot" 2>/dev/null; then
-            echo "Open pot: $pot" >> "$output"
+    echo "Scanning $target with netcat..."
+    for port in $(echo "$ports" | tr ',' ' '); do
+        if nc -z -w1 "$target" "$port" 2>/dev/null; then
+            echo "Open port: $port" >> "$output"
         fi
     done
 }
 
-# Pefom the scan
+# Perform the scan
 TEMP_OUTPUT=$(mktemp)
 scan_with_nc "$TARGET" "$PORTS" "$TEMP_OUTPUT"
 
-# Save esults
+# Save results
 if [[ -n "$OUTPUT" ]]; then
     mv "$TEMP_OUTPUT" "$OUTPUT"
     echo "Results saved to $OUTPUT"
 else
     cat "$TEMP_OUTPUT"
-    m "$TEMP_OUTPUT"
+    rm "$TEMP_OUTPUT"
 fi
 
 exit 0
-
