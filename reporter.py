@@ -24,6 +24,10 @@ except ImportError:
 def check_dependencies():
     if not MARKDOWN_AVAILABLE:
         print("Warning: Markdown is not installed. Markdown report generation will be disabled.")
+        print("If you are in an externally managed environment, consider using a virtual environment:")
+        print("\n    python3 -m venv venv")
+        print("    source venv/bin/activate")
+        print("    pip install markdown\n")
 
 check_dependencies()
 
