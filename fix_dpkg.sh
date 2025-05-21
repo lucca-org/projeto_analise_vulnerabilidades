@@ -4,6 +4,9 @@
 
 set -e
 
+# Convert line endings of setup_tools.sh to Unix-style
+sed -i 's/\r$//' setup_tools.sh
+
 # Reference setup_tools.sh for consolidated logic
 if [ ! -f "setup_tools.sh" ]; then
     echo "Error: setup_tools.sh not found in the current directory."

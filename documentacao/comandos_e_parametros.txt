@@ -71,3 +71,23 @@ Execution and Configuration
 Others
 -update: Updates the Nuclei binary.
 -update-templates: Updates templates to the latest version.
+
+# Documentation for fix_dpkg.sh
+
+## English
+The `fix_dpkg.sh` script is designed to ensure compatibility and proper execution of the `setup_tools.sh` script. It performs the following steps:
+
+1. Converts the line endings of `setup_tools.sh` to Unix-style using the `sed` command. This step ensures that the script can be executed correctly in Unix-like environments, avoiding issues caused by Windows-style line endings.
+2. Checks if the `setup_tools.sh` file exists in the current directory. If the file is not found, it displays an error message and exits.
+3. Executes the `setup_tools.sh` script to perform its intended setup tasks.
+
+This script is particularly useful in environments where line-ending mismatches might cause execution errors.
+
+## Português
+O script `fix_dpkg.sh` foi projetado para garantir a compatibilidade e a execução correta do script `setup_tools.sh`. Ele realiza os seguintes passos:
+
+1. Converte os finais de linha do arquivo `setup_tools.sh` para o formato Unix usando o comando `sed`. Este passo garante que o script possa ser executado corretamente em ambientes Unix-like, evitando problemas causados por finais de linha no formato Windows.
+2. Verifica se o arquivo `setup_tools.sh` existe no diretório atual. Caso o arquivo não seja encontrado, exibe uma mensagem de erro e encerra a execução.
+3. Executa o script `setup_tools.sh` para realizar as tarefas de configuração pretendidas.
+
+Este script é especialmente útil em ambientes onde incompatibilidades de finais de linha podem causar erros de execução.
