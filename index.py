@@ -1,4 +1,14 @@
 #!/usr/bin/env python3
+"""
+index.py - Main setup and installation script for vulnerability analysis toolkit
+
+This script installs and configures all necessary tools for security scanning:
+- Naabu for port scanning
+- HTTPX for HTTP service discovery
+- Nuclei for vulnerability scanning
+
+No external dependencies on nmap, netcat or other tools outside of these three.
+"""
 import subprocess
 import sys
 import os
@@ -9,6 +19,8 @@ import importlib.util
 import time
 import signal
 import json
+import getpass
+import shlex
 from pathlib import Path
 
 # Configuration constants
@@ -20,20 +32,23 @@ TOOLS_INFO = {
         "name": "httpx",
         "description": "Fast HTTP server probe and technology fingerprinter",
         "repository": "github.com/projectdiscovery/httpx/cmd/httpx",
-        "module_file": "commands/httpx.py"
+        "module_file": "commands/httpx.py",
+        "apt_package": None  # httpx is not typically available via apt
     },
     "nuclei": {
         "name": "nuclei",
         "description": "Fast pattern-based scanning for vulnerabilities",
         "repository": "github.com/projectdiscovery/nuclei/v3/cmd/nuclei",
-        "module_file": "commands/nuclei.py"
+        "module_file": "commands/nuclei.py",
+        "apt_package": "nuclei"  # Can be installed via apt
     },
     "naabu": {
         "name": "naabu",
         "description": "Fast port scanner with SYN/CONNECT modes",
         "repository": "github.com/projectdiscovery/naabu/v2/cmd/naabu",
         "module_file": "commands/naabu.py",
-        "alternative_script": True
+        "alternative_script": True,
+        "apt_package": "naabu"  # Can be installed via apt
     }
 }
 
@@ -67,7 +82,9 @@ def run_with_timeout(func, timeout=SETUP_TIMEOUT):
         signal.alarm(0)
 
 def run_cmd(cmd, shell=False, check=False, use_sudo=False, timeout=300, retry=1, silent=False):
-    """Run a shell command with optional sudo, error handling and retries."""
+    """
+    Run a shell command with improved error handling and retries.
+    """
     if use_sudo and os.geteuid() != 0 and platform.system().lower() != "windows":
         cmd = ["sudo"] + cmd if isinstance(cmd, list) else ["sudo"] + [cmd]
     
@@ -75,10 +92,9 @@ def run_cmd(cmd, shell=False, check=False, use_sudo=False, timeout=300, retry=1,
         try:
             if not silent:
                 print(f"Running: {' '.join(cmd) if isinstance(cmd, list) else cmd}")
-            # Use custom timeout mechanism
+            
             process = subprocess.Popen(cmd, shell=shell, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             
-            # Set a timeout for the command
             try:
                 stdout, stderr = process.communicate(timeout=timeout)
                 if stdout and not stdout.isspace() and not silent:
@@ -236,7 +252,7 @@ def update_shell_rc_files(paths_to_add):
         print("Please manually add the following to your PATH environment variable:")
         for path in paths_to_add:
             print(f"  {path}")
-        return
+        return []
     
     # Determine which shell rc files to update
     shell_rc_files = []
@@ -355,7 +371,7 @@ def manual_go_install():
 def check_and_install_go():
     """Check if Go is installed, and install it if not."""
     # First try existing Go installation
-    if run_cmd(["go", "version"], retry=0):
+    if run_cmd(["go", "version"], retry=0, silent=True):
         print("Go is already installed.")
         # Still set up paths to ensure proper environment
         paths = setup_go_env()
@@ -363,7 +379,7 @@ def check_and_install_go():
         return True
     
     # If not found in PATH, check if /usr/local/go/bin/go exists
-    if os.path.exists("/usr/local/go/bin/go") and run_cmd(["/usr/local/go/bin/go", "version"], retry=0):
+    if os.path.exists("/usr/local/go/bin/go") and run_cmd(["/usr/local/go/bin/go", "version"], retry=0, silent=True):
         print("Go is installed but not in PATH. Setting up environment...")
         paths = setup_go_env()
         update_shell_rc_files(paths)
@@ -372,47 +388,316 @@ def check_and_install_go():
     # If not found, try manual installation
     return manual_go_install()
 
+def get_executable_path(cmd):
+    """Find the path to an executable, checking PATH and common locations."""
+    # First check if it's directly in PATH
+    path = shutil.which(cmd)
+    if path:
+        return path
+    
+    # Check common locations
+    common_locations = [
+        os.path.expanduser(f"~/go/bin/{cmd}"),
+        os.path.expanduser(f"~/.local/bin/{cmd}"),
+        f"/usr/local/bin/{cmd}",
+        f"/usr/bin/{cmd}"
+    ]
+    
+    for location in common_locations:
+        if os.path.exists(location) and os.access(location, os.X_OK):
+            return location
+    
+    return None
+
+def install_apt_packages():
+    """Install required apt packages including nuclei and naabu."""
+    if platform.system().lower() != "linux":
+        print("Skipping apt packages installation - not on Linux")
+        return False
+        
+    print("\n===== Installing required system packages =====\n")
+    
+    # Update package lists
+    run_cmd(["sudo", "apt-get", "update"])
+    
+    # Install build essentials and other dependencies
+    run_cmd(["sudo", "apt-get", "install", "-y", "curl", "wget", "build-essential", "libpcap-dev"])
+    
+    # Try to install nuclei via apt
+    print("\n===== Installing nuclei via apt =====\n")
+    if run_cmd(["sudo", "apt-get", "install", "-y", "nuclei"]):
+        print("✓ Nuclei installed via apt")
+    else:
+        print("Could not install nuclei via apt. Will try Go installation later.")
+    
+    # Try to install naabu via apt
+    print("\n===== Installing naabu via apt =====\n")
+    if run_cmd(["sudo", "apt-get", "install", "-y", "naabu"]):
+        print("✓ Naabu installed via apt")
+    else:
+        print("Could not install naabu via apt. Will try Go installation later.")
+
+    return True
+
 def install_security_tools():
-    """Install security tools using Go."""
+    """Install security tools using both apt and Go."""
     print("\n===== Installing Security Tools =====\n")
 
     # Set up Go environment
     setup_go_env()
+    
+    # Check if tools are already installed
+    tools_installed = {
+        "httpx": False,
+        "nuclei": False,
+        "naabu": False
+    }
+    
+    for tool_name in tools_installed.keys():
+        tool_path = get_executable_path(tool_name)
+        if tool_path:
+            print(f"✓ {tool_name} is already installed at {tool_path}")
+            tools_installed[tool_name] = True
 
-    # List of tools to install
-    tools = [
-        {"name": "httpx", "repo": "github.com/projectdiscovery/httpx/cmd/httpx"},
-        {"name": "nuclei", "repo": "github.com/projectdiscovery/nuclei/v3/cmd/nuclei"},
-        {"name": "naabu", "repo": "github.com/projectdiscovery/naabu/v2/cmd/naabu"}
-    ]
+    # Install nuclei and naabu via apt if not already installed
+    if platform.system().lower() == "linux":
+        if not tools_installed["nuclei"]:
+            print("Attempting to install nuclei via apt...")
+            if run_cmd(["sudo", "apt-get", "install", "-y", "nuclei"]):
+                print("✓ nuclei installed via apt")
+                tools_installed["nuclei"] = True
+        
+        if not tools_installed["naabu"]:
+            print("Attempting to install naabu via apt...")
+            if run_cmd(["sudo", "apt-get", "install", "-y", "naabu"]):
+                print("✓ naabu installed via apt")
+                tools_installed["naabu"] = True
 
-    installed_tools = []
+    # Install any tools not yet installed using Go
+    for tool_name, installed in tools_installed.items():
+        if not installed:
+            tool_info = next((item for item in TOOLS_INFO.values() if item["name"] == tool_name), None)
+            if not tool_info:
+                print(f"! Tool information not found for {tool_name}. Skipping.")
+                continue
+                
+            print(f"Installing {tool_name} using Go...")
+            # Set up Go environment
+            os.environ["GO111MODULE"] = "on"  # Ensure Go modules are enabled
+            
+            # For naabu, disable CGO to avoid libpcap dependency issues
+            if tool_name == "naabu":
+                os.environ["CGO_ENABLED"] = "0"
+                
+            if run_cmd(["go", "install", "-v", f"{tool_info['repository']}@latest"]):
+                print(f"✓ {tool_name} installed successfully via Go")
+                tools_installed[tool_name] = True
+            else:
+                print(f"! Failed to install {tool_name} via Go.")
+                
+                # For naabu, create alternative implementation if needed
+                if tool_name == "naabu" and tool_info.get("alternative_script"):
+                    create_naabu_alternative()
+                    tools_installed[tool_name] = True
 
-    for tool in tools:
-        # Check if already installed
-        if shutil.which(tool["name"]) or os.path.exists(os.path.expanduser(f"~/go/bin/{tool['name']}")):
-            print(f"✓ {tool['name']} is already installed.")
-            installed_tools.append(tool["name"])
-            continue
+    # Verify all tools are installed
+    all_installed = all(tools_installed.values())
+    if all_installed:
+        print("✓ All security tools have been installed successfully!")
+    else:
+        missing = [name for name, installed in tools_installed.items() if not installed]
+        print(f"! Could not install: {', '.join(missing)}")
+        
+    return tools_installed
 
-        # Attempt to install the tool
-        print(f"Installing {tool['name']}...")
-        os.environ["GO111MODULE"] = "on"  # Ensure Go modules are enabled
+def create_naabu_alternative():
+    """Create an alternative naabu implementation using built-in tools."""
+    naabu_path = os.path.expanduser("~/go/bin/naabu")
+    os.makedirs(os.path.dirname(naabu_path), exist_ok=True)
+    
+    script_content = """#!/bin/bash
+# naabu alternative script using built-in TCP connections
+# This implementation avoids using nmap, netcat, or other external tools
 
-        # Debugging output
-        print(f"Debug Info: Installing {tool['name']} from {tool['repo']}")
-        print(f"PATH: {os.environ.get('PATH')}")
-        print(f"GOPATH: {os.environ.get('GOPATH', 'Not Set')}")
-        print(f"GO111MODULE: {os.environ.get('GO111MODULE')}")
+VERSION="1.0.0"
+TARGET=""
+TARGET_FILE=""
+PORTS="1-1000"
+OUTPUT=""
+VERBOSE=false
+SILENT=false
+JSON=false
 
-        if run_cmd(["go", "install", "-v", f"{tool['repo']}@latest"]):
-            print(f"✓ {tool['name']} installed successfully.")
-            installed_tools.append(tool["name"])
-        else:
-            print(f"✗ Failed to install {tool['name']}. Please check your Go environment.")
-            sys.exit(1)  # Exit if any tool fails to install
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        -host)
+            TARGET="$2"
+            shift 2
+            ;;
+        -l)
+            TARGET_FILE="$2"
+            shift 2
+            ;;
+        -p|-ports)
+            PORTS="$2"
+            shift 2
+            ;;
+        -o|-output)
+            OUTPUT="$2"
+            shift 2
+            ;;
+        -v|-verbose)
+            VERBOSE=true
+            shift
+            ;;
+        -json)
+            JSON=true
+            shift
+            ;;
+        -silent)
+            SILENT=true
+            shift
+            ;;
+        -version)
+            echo "naabu-alternative v$VERSION"
+            exit 0
+            ;;
+        -h|-help)
+            echo "Usage: naabu -host <target> [-p <ports>] [-o <output>]"
+            exit 0
+            ;;
+        *)
+            shift
+            ;;
+    esac
+done
 
-    return installed_tools
+# Validate input
+if [[ -z "$TARGET" && -z "$TARGET_FILE" ]]; then
+    echo "Error: No target specified. Use -host or -l."
+    exit 1
+fi
+
+# Create the output directory if needed
+if [[ -n "$OUTPUT" ]]; then
+    mkdir -p "$(dirname "$OUTPUT")" 2>/dev/null
+    > "$OUTPUT"  # Initialize/clear output file
+fi
+
+# Function to check if a port is open using built-in /dev/tcp feature
+check_port() {
+    local host=$1
+    local port=$2
+    local timeout=1
+    
+    # Use bash's built-in /dev/tcp virtual file
+    (echo > /dev/tcp/$host/$port) >/dev/null 2>&1
+    return $?
+}
+
+# Scan a target's ports
+scan_target() {
+    local target=$1
+    local ports=$2
+    local results=""
+    
+    [[ "$SILENT" = false ]] && echo "Scanning $target..."
+    
+    # Parse port ranges
+    if [[ $ports =~ ^([0-9]+)-([0-9]+)$ ]]; then
+        start_port=${BASH_REMATCH[1]}
+        end_port=${BASH_REMATCH[2]}
+        
+        for port in $(seq $start_port $end_port); do
+            if check_port "$target" "$port"; then
+                [[ "$VERBOSE" = true && "$SILENT" = false ]] && echo "Port $port is open on $target"
+                results="${results}${target}:${port}\n"
+            fi
+        done
+    else
+        # Handle comma-separated list
+        IFS=',' read -ra PORT_LIST <<< "$ports"
+        for port in "${PORT_LIST[@]}"; do
+            if check_port "$target" "$port"; then
+                [[ "$VERBOSE" = true && "$SILENT" = false ]] && echo "Port $port is open on $target"
+                results="${results}${target}:${port}\n"
+            fi
+        done
+    fi
+    
+    echo -en "$results"
+}
+
+# Main scanning logic
+results=""
+
+if [[ -n "$TARGET" ]]; then
+    # Single target
+    scan_result=$(scan_target "$TARGET" "$PORTS")
+    results="$results$scan_result"
+elif [[ -n "$TARGET_FILE" && -f "$TARGET_FILE" ]]; then
+    # Multiple targets from file
+    while IFS= read -r target || [[ -n "$target" ]]; do
+        # Skip empty lines and comments
+        [[ -z "$target" || "$target" =~ ^[[:space:]]*# ]] && continue
+        
+        scan_result=$(scan_target "$target" "$PORTS")
+        results="$results$scan_result"
+    done < "$TARGET_FILE"
+fi
+
+# Output handling
+if [[ "$JSON" = true ]]; then
+    # Format as JSON
+    json_output="["
+    first=true
+    
+    while IFS=: read -r host port || [[ -n "$host" ]]; do
+        # Skip empty lines
+        [[ -z "$host" || -z "$port" ]] && continue
+        
+        # Add comma separator if not the first entry
+        if [[ "$first" = true ]]; then
+            first=false
+        else
+            json_output="$json_output,"
+        fi
+        
+        json_output="$json_output\n  {\"host\":\"$host\",\"port\":$port,\"protocol\":\"tcp\"}"
+    done <<< "$results"
+    
+    json_output="$json_output\n]"
+    
+    if [[ -n "$OUTPUT" ]]; then
+        echo -e "$json_output" > "$OUTPUT"
+    else
+        echo -e "$json_output"
+    fi
+else
+    # Simple text output
+    if [[ -n "$OUTPUT" ]]; then
+        echo -e "$results" > "$OUTPUT"
+    else
+        echo -e "$results"
+    fi
+fi
+
+exit 0
+"""
+    
+    try:
+        with open(naabu_path, 'w') as f:
+            f.write(script_content)
+        
+        # Make the script executable
+        os.chmod(naabu_path, 0o755)
+        
+        print(f"✓ Created alternative naabu script at {naabu_path}")
+        return True
+    except Exception as e:
+        print(f"Failed to create alternative naabu script: {e}")
+        return False
 
 def setup_python_venv():
     """Set up a Python virtual environment."""
@@ -436,247 +721,492 @@ def setup_python_venv():
 
 def install_python_packages(venv_path=None):
     """Install required Python packages."""
-    print("\n===== Installing Essential Python Packages =====\n")
+    print("\n===== Installing Python Packages =====\n")
     
-    # First, try to read requirements.txt
+    # Common required packages
+    packages = ["requests", "colorama", "rich", "tqdm", "jinja2", "markdown"]
+    
+    # Read from requirements.txt if it exists
     req_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "requirements.txt")
-    packages = ["requests", "colorama", "rich", "tqdm"]
-    
     if os.path.exists(req_file):
         try:
             with open(req_file, "r") as f:
                 # Filter out commented lines and empty lines
                 req_packages = [line.strip() for line in f 
                                if line.strip() and not line.strip().startswith("#")]
-                
                 if req_packages:
                     packages = req_packages
-                    print(f"Found {len(req_packages)} packages in requirements.txt")
         except Exception as e:
             print(f"Error reading requirements.txt: {e}")
     
-    # Set the pip command
-    pip_cmd = "pip"
-    pip_args = ["install"]
-    
+    # Determine pip command
     if venv_path:
         if platform.system().lower() == "windows":
             pip_cmd = os.path.join(venv_path, "Scripts", "pip")
         else:
             pip_cmd = os.path.join(venv_path, "bin", "pip")
+    else:
+        pip_cmd = "pip3" if shutil.which("pip3") else "pip"
     
-    try:
-        # First try with the virtual environment
-        if run_cmd([pip_cmd] + pip_args + packages):
-            print("✓ Python packages installed successfully")
-            return True
-        
-        # Fall back to system pip if venv pip fails
-        print("Failed to install packages with venv pip. Trying system pip...")
-        if run_cmd([sys.executable, "-m", "pip"] + pip_args + packages):
-            print("✓ Python packages installed successfully with system pip")
-            return True
-        
-        # Try installing each package individually
-        print("Trying to install packages individually...")
-        success_count = 0
-        for package in packages:
-            if run_cmd([sys.executable, "-m", "pip", "install", package]):
-                success_count += 1
-        
-        if success_count > 0:
-            print(f"✓ Successfully installed {success_count} out of {len(packages)} packages")
-            return True
-        
-        print("Failed to install Python packages")
-        return False
-    except Exception as e:
-        print(f"Error installing Python packages: {e}")
-        return False
-
-def import_commands():
-    """Import command modules and verify they work."""
-    commands_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "commands")
-    if not os.path.exists(commands_path):
-        print(f"Commands directory not found: {commands_path}")
-        return {}
-        
-    modules = {}
+    # Install packages
+    if run_cmd([pip_cmd, "install"] + packages):
+        print("✓ Python packages installed successfully")
+        return True
     
-    for file in os.listdir(commands_path):
-        if file.endswith('.py') and not file.startswith('__'):
-            module_name = file[:-3]
-            try:
-                spec = importlib.util.spec_from_file_location(
-                    module_name, 
-                    os.path.join(commands_path, file)
-                )
-                module = importlib.util.module_from_spec(spec)
-                spec.loader.exec_module(module)
-                modules[module_name] = module
-                print(f"Successfully imported {module_name} module")
-            except Exception as e:
-                print(f"Error importing {module_name}: {e}")
+    # Try with system Python if virtual environment fails
+    if pip_cmd != "pip3" and pip_cmd != "pip":
+        if shutil.which("pip3"):
+            if run_cmd(["pip3", "install"] + packages):
+                print("✓ Packages installed with pip3")
+                return True
+        elif shutil.which("pip"):
+            if run_cmd(["pip", "install"] + packages):
+                print("✓ Packages installed with pip")
+                return True
     
-    return modules
+    print("Warning: Failed to install some Python packages")
+    return False
 
 def update_nuclei_templates():
     """Update nuclei templates."""
-    if shutil.which("nuclei") or os.path.exists(os.path.expanduser("~/go/bin/nuclei")):
+    nuclei_path = shutil.which("nuclei")
+    if not nuclei_path:
+        nuclei_path = os.path.expanduser("~/go/bin/nuclei")
+    
+    if os.path.exists(nuclei_path):
         print("\n===== Updating Nuclei Templates =====\n")
-        run_cmd(["nuclei", "-update-templates"], timeout=180)
+        run_cmd([nuclei_path, "-update-templates"], timeout=180)
     else:
         print("Nuclei not found. Skipping template updates.")
 
-def create_documentation_if_missing():
-    """Create basic documentation if it doesn't exist."""
-    docs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "documentacao")
-    doc_file = os.path.join(docs_dir, "comandos_e_parametros.txt")
+def create_command_modules():
+    """Create command module files if they don't exist."""
+    commands_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "commands")
+    os.makedirs(commands_dir, exist_ok=True)
     
-    if not os.path.exists(docs_dir):
-        try:
-            os.makedirs(docs_dir, exist_ok=True)
-        except Exception as e:
-            print(f"Error creating documentation directory: {e}")
-            return False
+    # Create __init__.py
+    init_file = os.path.join(commands_dir, "__init__.py")
+    with open(init_file, "w") as f:
+        f.write('# This file makes the commands directory a proper Python package\n')
+        f.write('__all__ = ["naabu", "httpx", "nuclei"]\n')
     
-    if not os.path.exists(doc_file):
-        try:
-            with open(doc_file, "w") as f:
-                f.write("""=== Vulnerability Analysis Tools - Command Reference ===
-
-This file contains reference documentation for the security tools installed by this project.
-
-== NAABU - Port Scanner ==
-
-Basic Usage:
-  naabu -host example.com -p 80,443,8080-8090 -o ports.txt
-
-Common Parameters:
-  -host          Target host to scan
-  -l             Path to file containing list of hosts to scan
-  -p, -ports     Ports to scan (default: top 100)
-  -o             Output file to write results
-  -json          Write output in JSON format
-  -v             Verbose output
-  -rate          Number of packets per second (default: 1000)
-  -c             Number of concurrent ports to scan (default: 25)
-  -timeout       Timeout in milliseconds (default: 1000)
-
-== HTTPX - HTTP Request Runner ==
-
-Basic Usage:
-  httpx -l hosts.txt -title -status-code -tech-detect -o results.txt
-
-Common Parameters:
-  -u             Target URL to scan
-  -l             Path to file containing list of hosts to scan
-  -o             Output file to write results
-  -json          Write output in JSON format
-  -title         Extract title from response
-  -tech-detect   Perform web technology detection
-  -status-code   Display status code
-  -follow-redirects Follow URL redirects
-  -threads       Number of threads to use (default: 50)
-  -timeout       Timeout in seconds (default: 5)
-
-== NUCLEI - Vulnerability Scanner ==
-
-Basic Usage:
-  nuclei -l urls.txt -t cves/ -severity critical,high -o vulnerabilities.txt
-
-Common Parameters:
-  -u             Target URL to scan
-  -l             Path to file containing list of URLs to scan
-  -t             Templates or template directory to use for scanning
-  -o             Output file to write results
-  -jsonl         Write output in JSONL format
-  -severity      Filter templates by severity (critical, high, medium, low)
-  -tags          Filter templates by tags (e.g., cve,rce,lfi)
-  -c             Maximum number of templates to execute in parallel (default: 25)
-  -timeout       Timeout in seconds (default: 5)
-
-
-
-== WORKFLOW SCRIPT ==
-
-The workflow.py script combines all tools for a complete vulnerability analysis:
-
-Usage:
-  python3 workflow.py example.com [options]
-
-Options:
-  --ports PORTS           Ports to scan with naabu (default: top-1000)
-  --templates TEMPLATES   Templates directory for nuclei
-  --tags TAGS             Tags to use with nuclei (default: cve)
-  --severity SEVERITY     Severity filter for nuclei (default: critical,high)
-  --output-dir DIR        Directory to save results
-  --update-templates      Update nuclei templates before scanning
-  --verbose               Display verbose output
-
-""")
-            print("Created basic documentation file in documentacao/comandos_e_parametros.txt")
-            return True
-        except Exception as e:
-            print(f"Error creating documentation file: {e}")
-            return False
-    
-    return True
-
-def check_utils_file():
-    """Check if utils.py exists and create it if it doesn't."""
-    utils_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "utils.py")
-    if not os.path.exists(utils_path):
-        try:
-            with open(utils_path, "w") as f:
-                f.write("""#!/usr/bin/env python3
-import subprocess
-import socket
+    # Template for command modules
+    module_template = """#!/usr/bin/env python3
 import os
+import subprocess
+import json
+from pathlib import Path
+import shutil
+
+def run_{tool}(*args, **kwargs):
+    \"\"\"Run {tool} with provided arguments.\"\"\"
+    # Find the tool path
+    tool_path = shutil.which("{tool}")
+    if not tool_path:
+        # Check in ~/go/bin
+        go_bin_path = os.path.expanduser("~/go/bin/{tool}")
+        if os.path.exists(go_bin_path):
+            tool_path = go_bin_path
+        else:
+            print(f"{tool} not found in PATH or ~/go/bin")
+            return False
+    
+    cmd = [tool_path]
+    
+    for arg in args:
+        cmd.append(str(arg))
+    
+    for key, value in kwargs.items():
+        key = key.replace("_", "-")
+        if value is True:
+            cmd.append(f"-{key}")
+        elif value is not False and value is not None:
+            cmd.append(f"-{key}")
+            cmd.append(str(value))
+    
+    try:
+        print(f"Running: " + " ".join(cmd))
+        process = subprocess.run(cmd, check=True, stdout=subprocess.PIPE, 
+                               stderr=subprocess.PIPE, text=True)
+        if process.stdout:
+            print(process.stdout)
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"Error running {tool}: {{e}}")
+        if e.stderr:
+            print(e.stderr)
+        return False
+    except Exception as e:
+        print(f"Unexpected error running {tool}: {{e}}")
+        return False
+
+def check_{tool}():
+    \"\"\"Check if {tool} is installed.\"\"\"
+    try:
+        # First check in PATH
+        tool_path = shutil.which("{tool}")
+        if not tool_path:
+            # Check in ~/go/bin
+            go_bin_path = os.path.expanduser("~/go/bin/{tool}")
+            if os.path.exists(go_bin_path):
+                tool_path = go_bin_path
+            else:
+                print(f"{tool} not found")
+                return False
+        
+        process = subprocess.run([tool_path, "-version"], 
+                               capture_output=True, text=True)
+        print(f"{tool} version: {{process.stdout.strip()}}")
+        return True
+    except Exception as e:
+        print(f"Error checking {tool}: {{e}}")
+        return False
+"""
+    
+    # Create command modules
+    for tool in ["naabu", "httpx", "nuclei"]:
+        module_file = os.path.join(commands_dir, f"{tool}.py")
+        if not os.path.exists(module_file):
+            with open(module_file, "w") as f:
+                f.write(module_template.format(tool=tool))
+    
+    print("Command modules created successfully")
+
+def create_workflow_script():
+    """Create the main workflow script if it doesn't exist."""
+    workflow_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "workflow.py")
+    
+    if not os.path.exists(workflow_path):
+        workflow_content = """#!/usr/bin/env python3
+\"\"\"
+workflow.py - Automated vulnerability scanning workflow
+Combines naabu, httpx, and nuclei for comprehensive security scanning
+\"\"\"
+
+import os
+import sys
+import argparse
+import datetime
+import time
+import signal
+from pathlib import Path
+import traceback
+
+# Add current directory to path for local imports
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+# Import our modules
+try:
+    from commands import naabu, httpx, nuclei
+except ImportError as e:
+    print(f"Error importing modules: {e}")
+    print("Make sure you've run index.py first to set up the environment.")
+    sys.exit(1)
+
+def signal_handler(sig, frame):
+    \"\"\"Handle CTRL+C gracefully.\"\"\"
+    print("\\n[!] Scan interrupted by user. Partial results may be available.")
+    sys.exit(130)  # Standard exit code for SIGINT
+
+def create_output_directory(target_name):
+    \"\"\"Create a timestamped output directory.\"\"\"
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    output_dir = f"results_{target_name}_{timestamp}"
+    
+    try:
+        os.makedirs(output_dir, exist_ok=True)
+        return output_dir
+    except Exception as e:
+        print(f"Error creating output directory: {e}")
+        return None
+
+def run_port_scan(target, output_dir, ports=None, verbose=False):
+    \"\"\"Run port scanning with naabu.\"\"\"
+    print("\\n[+] Step 1: Port scanning with naabu")
+    ports_output = os.path.join(output_dir, "ports.txt")
+    ports_json = os.path.join(output_dir, "ports.json")
+    
+    # Run naabu
+    naabu_args = {
+        "host": target,
+        "p": ports or "top-1000",
+        "o": ports_output,
+        "json": True,
+        "silent": not verbose,
+    }
+    
+    # Convert dict to kwargs
+    success = naabu.run_naabu(**naabu_args)
+    
+    if not success:
+        print("[!] Port scan failed. Please check naabu installation.")
+        # Create a minimal result with common ports
+        with open(ports_output, "w") as f:
+            f.write(f"{target}:80\\n{target}:443\\n")
+        return ports_output
+    
+    return ports_output
+
+def run_http_probe(ports_file, output_dir, verbose=False):
+    \"\"\"Run HTTP service detection with httpx.\"\"\"
+    print("\\n[+] Step 2: HTTP service detection with httpx")
+    http_output = os.path.join(output_dir, "http_services.txt")
+    http_json = os.path.join(output_dir, "http_services.json")
+    
+    # Run httpx
+    httpx_args = {
+        "l": ports_file,
+        "o": http_output,
+        "title": True,
+        "status_code": True,
+        "tech_detect": True,
+        "follow_redirects": True,
+        "silent": not verbose,
+    }
+    
+    # Convert dict to kwargs
+    success = httpx.run_httpx(**httpx_args)
+    
+    if not success:
+        print("[!] HTTP probe failed. Please check httpx installation.")
+        # Create a minimal result
+        with open(http_output, "w") as f:
+            f.write(f"http://{target}\\nhttps://{target}\\n")
+    
+    return http_output
+
+def run_vulnerability_scan(http_file, output_dir, templates=None, tags="cve", severity="critical,high", verbose=False):
+    \"\"\"Run vulnerability scanning with nuclei.\"\"\"
+    print("\\n[+] Step 3: Vulnerability scanning with nuclei")
+    vuln_output = os.path.join(output_dir, "vulnerabilities.txt")
+    vuln_json = os.path.join(output_dir, "vulnerabilities.jsonl")
+    
+    # Create output directory for storing responses
+    nuclei_resp_dir = os.path.join(output_dir, "nuclei_responses")
+    os.makedirs(nuclei_resp_dir, exist_ok=True)
+    
+    # Run nuclei
+    nuclei_args = {
+        "l": http_file,
+        "o": vuln_output,
+        "jsonl": True,
+        "silent": not verbose,
+        "store_resp": True,
+    }
+    
+    if templates:
+        nuclei_args["t"] = templates
+    if tags:
+        nuclei_args["tags"] = tags
+    if severity:
+        nuclei_args["severity"] = severity
+    
+    # Convert dict to kwargs
+    success = nuclei.run_nuclei(**nuclei_args)
+    
+    if not success:
+        print("[!] Vulnerability scan failed. Please check nuclei installation.")
+    
+    return vuln_output
+
+def generate_summary(output_dir, target):
+    \"\"\"Generate a basic summary of findings.\"\"\"
+    print("\\n[+] Generating summary report")
+    
+    # Import reporter if available
+    try:
+        from reporter import generate_report
+        success = generate_report(output_dir, target)
+        if success:
+            print("[+] Advanced report generated successfully.")
+            return True
+    except ImportError:
+        # Fall back to basic summary
+        pass
+        
+    # Generate basic summary
+    summary_file = os.path.join(output_dir, "summary.txt")
+    
+    try:
+        with open(summary_file, "w") as f:
+            f.write(f"SECURITY SCAN SUMMARY\\n")
+            f.write(f"Target: {target}\\n")
+            f.write(f"Date: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\\n\\n")
+            
+            # Count ports
+            ports_file = os.path.join(output_dir, "ports.txt")
+            port_count = 0
+            if os.path.exists(ports_file):
+                with open(ports_file, "r") as pf:
+                    port_count = len([l for l in pf.readlines() if l.strip()])
+            
+            # Count HTTP services
+            http_file = os.path.join(output_dir, "http_services.txt")
+            http_count = 0
+            if os.path.exists(http_file):
+                with open(http_file, "r") as hf:
+                    http_count = len([l for l in hf.readlines() if l.strip()])
+            
+            # Count vulnerabilities
+            vuln_file = os.path.join(output_dir, "vulnerabilities.txt")
+            vuln_count = 0
+            if os.path.exists(vuln_file):
+                with open(vuln_file, "r") as vf:
+                    vuln_count = len([l for l in vf.readlines() if l.strip()])
+            
+            f.write(f"Open ports: {port_count}\\n")
+            f.write(f"HTTP services: {http_count}\\n")
+            f.write(f"Vulnerabilities found: {vuln_count}\\n")
+        
+        print(f"[+] Summary report saved to {summary_file}")
+        return True
+    except Exception as e:
+        print(f"[!] Error generating summary: {e}")
+        return False
+
+def main():
+    parser = argparse.ArgumentParser(description='Automated vulnerability scanning workflow')
+    parser.add_argument('target', help='Target to scan (IP or domain)')
+    parser.add_argument('-p', '--ports', help='Ports to scan (e.g., 80,443,8000-9000)')
+    parser.add_argument('-t', '--templates', help='Custom nuclei templates')
+    parser.add_argument('--tags', default='cve', help='Nuclei template tags (default: cve)')
+    parser.add_argument('--severity', default='critical,high', help='Severity filter (default: critical,high)')
+    parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose output')
+    parser.add_argument('-o', '--output-dir', help='Custom output directory')
+    parser.add_argument('--update-templates', action='store_true', help='Update nuclei templates')
+    
+    args = parser.parse_args()
+    
+    # Set up signal handler for graceful exit on CTRL+C
+    signal.signal(signal.SIGINT, signal_handler)
+    
+    # Update nuclei templates if requested
+    if args.update_templates:
+        print("[+] Updating nuclei templates...")
+        nuclei.run_nuclei(update_templates=True)
+    
+    # Create output directory
+    target_name = args.target.replace('https://', '').replace('http://', '').split('/')[0]
+    output_dir = args.output_dir or create_output_directory(target_name)
+    if not output_dir:
+        print("[-] Failed to create output directory.")
+        sys.exit(1)
+    
+    print(f"[+] Starting vulnerability assessment against {args.target}")
+    print(f"[+] Results will be saved to {output_dir}")
+    
+    start_time = time.time()
+    
+    try:
+        # Step 1: Port scanning
+        ports_file = run_port_scan(args.target, output_dir, args.ports, args.verbose)
+        
+        # Step 2: HTTP service detection
+        http_file = run_http_probe(ports_file, output_dir, args.verbose)
+        
+        # Step 3: Vulnerability scanning
+        vuln_file = run_vulnerability_scan(http_file, output_dir, args.templates, 
+                                         args.tags, args.severity, args.verbose)
+        
+        # Step 4: Generate summary
+        generate_summary(output_dir, args.target)
+        
+        elapsed_time = time.time() - start_time
+        print(f"\\n[+] Scan completed in {elapsed_time:.2f} seconds")
+        print(f"[+] Results saved to {output_dir}")
+        
+    except Exception as e:
+        print(f"\\n[-] Error during scan: {e}")
+        if args.verbose:
+            traceback.print_exc()
+        sys.exit(1)
+
+if __name__ == "__main__":
+    main()
+"""
+        
+        with open(workflow_path, "w") as f:
+            f.write(workflow_content)
+        
+        # Make the script executable
+        os.chmod(workflow_path, 0o755)
+        print(f"Created workflow script at {workflow_path}")
+
+def create_utils_file():
+    """Create utils.py file with helper functions."""
+    utils_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "utils.py")
+    
+    if not os.path.exists(utils_file):
+        utils_content = """#!/usr/bin/env python3
+import os
+import sys
+import socket
+import platform
+import subprocess
+import shutil
 import time
 
-def run_cmd(cmd, shell=False, check=False, timeout=300, retry=1):
-    \"\"\"Run a shell command with error handling and retries.\"\"\"
+def run_cmd(cmd, shell=False, check=False, use_sudo=False, timeout=300, retry=1, silent=False):
+    \"\"\"
+    Run a shell command with improved error handling and retries.
+    \"\"\"
+    if use_sudo and os.geteuid() != 0 and platform.system().lower() != "windows":
+        cmd = ["sudo"] + cmd if isinstance(cmd, list) else ["sudo"] + [cmd]
+    
     for attempt in range(retry + 1):
         try:
-            print(f"Running: {' '.join(cmd) if isinstance(cmd, list) else cmd}")
+            if not silent:
+                print(f"Running: {' '.join(cmd) if isinstance(cmd, list) else cmd}")
             
-            process = subprocess.run(
-                cmd,
-                shell=shell,
-                check=check,
-                text=True,
-                capture_output=True,
-                timeout=timeout
-            )
+            process = subprocess.Popen(cmd, shell=shell, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
             
-            if process.stdout and not process.stdout.isspace():
-                print(process.stdout)
-            
-            if process.returncode != 0:
-                if process.stderr:
-                    print(f"Error: {process.stderr}")
+            try:
+                stdout, stderr = process.communicate(timeout=timeout)
+                if stdout and not stdout.isspace() and not silent:
+                    print(stdout)
                 
+                if process.returncode != 0:
+                    if stderr and not silent:
+                        print(f"Error: {stderr}")
+                    
+                    if attempt < retry:
+                        if not silent:
+                            print(f"Command failed. Retrying ({attempt+1}/{retry})...")
+                        time.sleep(2)  # Add delay between retries
+                        continue
+                    
+                    if check:
+                        raise subprocess.CalledProcessError(process.returncode, cmd)
+                    return False
+                
+                return True
+            except subprocess.TimeoutExpired:
+                # Kill the process if it times out
+                process.kill()
+                process.wait()
+                if not silent:
+                    print(f"Command timed out after {timeout} seconds: {cmd}")
                 if attempt < retry:
-                    print(f"Command failed. Retrying ({attempt+1}/{retry})...")
+                    if not silent:
+                        print(f"Retrying ({attempt+1}/{retry})...")
                     time.sleep(2)
                     continue
                 return False
-            
-            return True
-        
-        except subprocess.TimeoutExpired:
-            print(f"Command timed out after {timeout} seconds.")
+        except subprocess.CalledProcessError as e:
+            if not silent:
+                print(f"Command failed: {e}")
             if attempt < retry:
-                print(f"Retrying ({attempt+1}/{retry})...")
+                if not silent:
+                    print(f"Retrying ({attempt+1}/{retry})...")
                 time.sleep(2)
                 continue
             return False
-            
         except Exception as e:
-            print(f"Error running command: {str(e)}")
+            if not silent:
+                print(f"Error running command {cmd}: {str(e)}")
             if attempt < retry:
-                print(f"Retrying ({attempt+1}/{retry})...")
+                if not silent:
+                    print(f"Retrying ({attempt+1}/{retry})...")
                 time.sleep(2)
                 continue
             return False
@@ -685,18 +1215,18 @@ def run_cmd(cmd, shell=False, check=False, timeout=300, retry=1):
 
 def check_network():
     \"\"\"Check for network connectivity.\"\"\"
-    try:
-        # Try connecting to Google DNS
-        socket.create_connection(("8.8.8.8", 53), 3)
-        return True
-    except Exception:
+    dns_servers = ["8.8.8.8", "1.1.1.1", "9.9.9.9"]
+    
+    for dns in dns_servers:
         try:
-            # Try Cloudflare DNS as fallback
-            socket.create_connection(("1.1.1.1", 53), 3)
+            # Try connecting to DNS server
+            socket.create_connection((dns, 53), 3)
             return True
         except Exception:
-            print("No network connection detected.")
-            return False
+            continue
+    
+    print("No network connection detected. Please check your internet connection.")
+    return False
 
 def create_directory_if_not_exists(directory):
     \"\"\"Create a directory if it doesn't exist.\"\"\"
@@ -707,134 +1237,29 @@ def create_directory_if_not_exists(directory):
         print(f"Error creating directory {directory}: {e}")
         return False
 
-def get_file_size(file_path):
-    \"\"\"Get file size in a human-readable format.\"\"\"
-    try:
-        size_bytes = os.path.getsize(file_path)
-        for unit in ['B', 'KB', 'MB', 'GB']:
-            if size_bytes < 1024 or unit == 'GB':
-                return f"{size_bytes:.2f} {unit}"
-            size_bytes /= 1024
-    except Exception:
-        return "Unknown size"
-""")
-            print("Created utils.py file with helper functions")
-            return True
-        except Exception as e:
-            print(f"Error creating utils.py: {e}")
-            return False
-    return True
-
-def check_and_install_dependencies():
-    """Check and install all required dependencies."""
-    print("\n===== Checking and Installing Dependencies =====\n")
-
-    # Check and install Python dependencies
-    print("Checking Python dependencies...")
-    venv_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".venv")
-    if not os.path.exists(venv_path):
-        setup_python_venv()
-    install_python_packages(venv_path)
-
-    # Check and install Go and Go tools
-    print("Checking Go and Go tools...")
-    if not check_and_install_go():
-        print("Failed to install Go. Please check your environment.")
-        return False
-
-    # Install security tools
-    install_security_tools()
-
-    print("\nAll dependencies are installed and up-to-date.")
-    return True
-
-def main():
-    print("\n===== Vulnerability Analysis Tools Setup =====\n")
+def get_executable_path(cmd):
+    \"\"\"Find the path to an executable, checking PATH and common locations.\"\"\"
+    # First check if it's directly in PATH
+    path = shutil.which(cmd)
+    if path:
+        return path
     
-    # Skip network check if user wants to proceed without network
-    if not check_network():
-        response = input("No network detected. Would you like to continue with local setup only? (y/N): ")
-        if not response.lower().startswith('y'):
-            print("Exiting.")
-            sys.exit(1)
+    # Check common locations
+    common_locations = [
+        os.path.expanduser(f"~/go/bin/{cmd}"),
+        os.path.expanduser(f"~/.local/bin/{cmd}"),
+        f"/usr/local/bin/{cmd}",
+        f"/usr/bin/{cmd}"
+    ]
     
-    # Check utils file
-    check_utils_file()
+    for location in common_locations:
+        if os.path.exists(location) and os.access(location, os.X_OK):
+            return location
     
-    # If on Linux, fix dpkg issues first
-    if platform.system().lower() == "linux":
-        fix_dpkg_interruptions()
-    
-    # Set up Python environment
-    venv_path = setup_python_venv()
-    install_python_packages(venv_path)
-    
-    # Install Go using a more robust method
-    if not check_and_install_go():
-        print("⚠️ Warning: Go installation failed. Some tools may not work correctly.")
-        response = input("Continue with installation? (y/N): ")
-        if not response.lower().startswith('y'):
-            print("Exiting.")
-            sys.exit(1)
-    
-    # Install security tools
-    installed_tools = install_security_tools()
-    
-    # Update nuclei templates
-    update_nuclei_templates()
-    
-    # Create documentation if missing
-    create_documentation_if_missing()
-    
-    # Import and test command modules
-    print("\n===== Testing Command Modules =====\n")
-    modules = import_commands()
-    
-    # Display summary
-    print("\n===== Summary =====")
-    print("✓ Dependencies installation completed.")
-    
-    # Find and update shell config file
-    shell = os.environ.get("SHELL", "")
-    if "zsh" in shell:
-        shell_rc = os.path.expanduser("~/.zshrc")
-    else:
-        shell_rc = os.path.expanduser("~/.bashrc")
-    
-    print(f"✓ Shell configuration updated: {shell_rc}")
-    print(f"✓ Please run: source {shell_rc} or restart your terminal to update PATH.")
-    print("✓ All systems ready for vulnerability analysis.")
-      # Check which tools are installed
-    tools_installed = []
-    for tool in ["httpx", "nuclei", "naabu"]:
-        if shutil.which(tool) or os.path.exists(os.path.expanduser(f"~/go/bin/{tool}")):
-            tools_installed.append(tool)
-    
-    if tools_installed:
-        print("\n===== Quick Start =====")
-        print(f"Available tools: {', '.join(tools_installed)}")
-        print("To scan a target:")
-        if "naabu" in tools_installed:
-            print("1. Map open ports: naabu -host example.com -p 80,443,8080-8090 -o ports.txt")
-        if "httpx" in tools_installed:
-            print("2. Probe for HTTP services: httpx -l ports.txt -title -tech-detect -o http_services.txt")
-        if "nuclei" in tools_installed:
-            print("3. Scan for vulnerabilities: nuclei -l http_services.txt -t cves/ -severity critical,high -o vulnerabilities.txt")
+    return None
+"""
         
-        workflow_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "workflow.py")
-        if os.path.exists(workflow_path) and all(tool in tools_installed for tool in ["naabu", "httpx", "nuclei"]):
-            print("\nOr use the automated workflow script:")
-            print("python3 workflow.py example.com")
-    
-    print("\nFor more options, check the documentation in documentacao/comandos_e_parametros.txt")
-
-if __name__ == "__main__":
-    print("\n===== Starting Vulnerability Analysis Toolkit Setup =====\n")
-
-    # Check and install all dependencies
-    if not check_and_install_dependencies():
-        print("Dependency installation failed. Exiting.")
-        sys.exit(1)
-
-    # Run the main setup and workflow
-    main()
+        with open(utils_file, "w") as f:
+            f.write(utils_content)
+        
+        print(f"Created utils file at {utils_file}")
