@@ -420,8 +420,11 @@ def install_apt_packages():
     # Update package lists
     run_cmd(["sudo", "apt-get", "update"])
     
-    # Install build essentials and other dependencies
-    run_cmd(["sudo", "apt-get", "install", "-y", "curl", "wget", "build-essential", "libpcap-dev"])
+    # Install dependencies individually
+    run_cmd(["sudo", "apt-get", "install", "-y", "libpcap-dev"])
+    run_cmd(["sudo", "apt-get", "install", "-y", "curl"])
+    run_cmd(["sudo", "apt-get", "install", "-y", "wget"])
+    run_cmd(["sudo", "apt-get", "install", "-y", "build-essential"])
     
     # Try to install nuclei via apt
     print("\n===== Installing nuclei via apt =====\n")
