@@ -415,14 +415,14 @@ def install_apt_packages():
         print("Skipping apt packages installation - not on Linux")
         return False
         
-    print("\n===== Installing required system packages =====\n")
-    
-    # Update package lists
+    print("\n===== Updating package lists =====\n")
     print("Running: apt-get update")
     run_cmd(["sudo", "apt-get", "update"])
     
+    print("\n===== Installing required system packages =====\n")
+    
     # Install dependencies individually with status messages
-    print("Installing libpcap-dev...")
+    print("Installing libpcap development files...")
     run_cmd(["sudo", "apt-get", "install", "-y", "libpcap-dev"])
     
     print("Installing curl...")
