@@ -421,18 +421,22 @@ def install_apt_packages():
     
     print("\n===== Installing required system packages =====\n")
     
-    # Install dependencies individually with status messages
+    # Install dependencies individually with status messages and update after each
     print("Installing libpcap development files...")
     run_cmd(["sudo", "apt-get", "install", "-y", "libpcap-dev"])
+    run_cmd(["sudo", "apt-get", "update"], silent=True)
     
     print("Installing curl...")
     run_cmd(["sudo", "apt-get", "install", "-y", "curl"])
+    run_cmd(["sudo", "apt-get", "update"], silent=True)
     
     print("Installing wget...")
     run_cmd(["sudo", "apt-get", "install", "-y", "wget"])
+    run_cmd(["sudo", "apt-get", "update"], silent=True)
     
     print("Installing build-essential...")
     run_cmd(["sudo", "apt-get", "install", "-y", "build-essential"])
+    run_cmd(["sudo", "apt-get", "update"], silent=True)
     
     # Try to install nuclei via apt
     print("\n===== Installing nuclei via apt =====\n")
@@ -440,6 +444,7 @@ def install_apt_packages():
         print("✓ Nuclei installed via apt")
     else:
         print("Could not install nuclei via apt. Will try Go installation later.")
+    run_cmd(["sudo", "apt-get", "update"], silent=True)
     
     # Try to install naabu via apt
     print("\n===== Installing naabu via apt =====\n")
@@ -447,7 +452,7 @@ def install_apt_packages():
         print("✓ Naabu installed via apt")
     else:
         print("Could not install naabu via apt. Will try Go installation later.")
-        
+
     print("Apt package installation completed")
     return True
 
