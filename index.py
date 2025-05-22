@@ -170,6 +170,11 @@ def fix_dpkg_interruptions():
     # First kill any hung processes
     kill_hung_processes()
     
+    # Directly address the "dpkg was interrupted" error
+    print("Running 'sudo dpkg --configure -a' to fix interrupted dpkg...")
+    if run_cmd(["sudo", "dpkg", "--configure", "-a"], timeout=300, retry=3):
+        print("✓ Applied primary dpkg fix")
+    
     # Remove lock files - be careful with this!
     run_cmd(["sudo", "rm", "-f", "/var/lib/dpkg/lock"], silent=True)
     run_cmd(["sudo", "rm", "-f", "/var/lib/dpkg/lock-frontend"], silent=True)
@@ -215,7 +220,15 @@ def fix_dpkg_interruptions():
             # Final update
             run_cmd(["sudo", "apt-get", "update"], silent=True)
     
-    return success
+    # Verify dpkg is working correctly
+    print("Verifying dpkg is working correctly...")
+    if run_cmd(["sudo", "apt-get", "update"], retry=0, silent=True) and \
+       run_cmd(["apt-cache", "search", "bash"], retry=0, silent=True):
+        print("✓ Package management system is working correctly")
+        return True
+    else:
+        print("⚠️ Package management system may still have issues")
+        return False
 
 def check_network():
     """Check for network connectivity."""
@@ -414,6 +427,10 @@ def install_apt_packages():
     if platform.system().lower() != "linux":
         print("Skipping apt packages installation - not on Linux")
         return False
+    
+    # Make sure to fix any dpkg issues first
+    print("\n===== Fixing any dpkg interruptions =====\n")
+    fix_dpkg_interruptions()
         
     print("\n===== Updating package lists =====\n")
     print("Running: apt-get update")
@@ -452,6 +469,7 @@ def install_apt_packages():
         print("✓ Naabu installed via apt")
     else:
         print("Could not install naabu via apt. Will try Go installation later.")
+    run_cmd(["sudo", "apt-get", "update"], silent=True)
 
     print("Apt package installation completed")
     return True
