@@ -444,33 +444,39 @@ def install_apt_packages():
         print("WARNING: Package management system issues were detected.")
         print("Some package installations may fail.")
         print("Try running 'sudo apt --fix-broken install' manually.")
-        
+    
+    # Kill any hanging apt processes before continuing
+    kill_hung_processes()
+    
     print("\n===== Updating package lists =====\n")
     print("Running: apt-get update")
     run_cmd(["sudo", "apt-get", "update"])
     
-    # Removed apt-get upgrade step
+    # REMOVED: The apt-get upgrade step that was causing hangs and locks
+    # Instead, clean apt cache and ensure we have a stable starting point
+    print("\n===== Cleaning apt cache =====\n")
+    run_cmd("sudo DEBIAN_FRONTEND=noninteractive apt-get clean", shell=True)
     
     print("\n===== Installing required system packages =====\n")
     
     # First try with fix-broken
     run_cmd("sudo DEBIAN_FRONTEND=noninteractive apt --fix-broken install -y", shell=True)
     
-    # Install dependencies individually with status messages and update after each
+    # Install dependencies individually with status messages but without update after each
+    # This prevents excessive updates that can cause locks
     print("Installing libpcap development files...")
     run_cmd("sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libpcap-dev", shell=True)
-    run_cmd(["sudo", "apt-get", "update"], silent=True)
     
     print("Installing curl...")
     run_cmd("sudo DEBIAN_FRONTEND=noninteractive apt-get install -y curl", shell=True)
-    run_cmd(["sudo", "apt-get", "update"], silent=True)
     
     print("Installing wget...")
     run_cmd("sudo DEBIAN_FRONTEND=noninteractive apt-get install -y wget", shell=True)
-    run_cmd(["sudo", "apt-get", "update"], silent=True)
     
     print("Installing build-essential...")
     run_cmd("sudo DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential", shell=True)
+    
+    # Run a single update before installing security tools
     run_cmd(["sudo", "apt-get", "update"], silent=True)
     
     # Try to install nuclei via apt
@@ -479,7 +485,6 @@ def install_apt_packages():
         print("✓ Nuclei installed via apt")
     else:
         print("Could not install nuclei via apt. Will try Go installation later.")
-    run_cmd(["sudo", "apt-get", "update"], silent=True)
     
     # Try to install naabu via apt
     print("\n===== Installing naabu via apt =====\n")
@@ -487,7 +492,6 @@ def install_apt_packages():
         print("✓ Naabu installed via apt")
     else:
         print("Could not install naabu via apt. Will try Go installation later.")
-    run_cmd(["sudo", "apt-get", "update"], silent=True)
 
     print("Apt package installation completed")
     return True
