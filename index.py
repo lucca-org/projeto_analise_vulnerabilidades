@@ -449,11 +449,7 @@ def install_apt_packages():
     print("Running: apt-get update")
     run_cmd(["sudo", "apt-get", "update"])
     
-    # Add system upgrade step
-    print("\n===== Upgrading system packages =====\n")
-    print("Running: apt-get upgrade")
-    # Use -y flag to automatically answer yes to prompts
-    run_cmd("sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y", shell=True)
+    # Removed apt-get upgrade step
     
     print("\n===== Installing required system packages =====\n")
     
