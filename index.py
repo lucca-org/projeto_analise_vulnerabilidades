@@ -69,17 +69,27 @@ def run_with_timeout(func, timeout=SETUP_TIMEOUT):
     # Set the timeout handler
     signal.signal(signal.SIGALRM, timeout_handler)
     signal.alarm(timeout)
+    
     try:
         result = func()
-        # Cancel the timeout
-        signal.alarm(0)
+        signal.alarm(0)  # Cancel the alarm
         return result
     except TimeoutError:
         print(f"Operation timed out after {timeout} seconds")
         return False
-    finally:
-        # Ensure the alarm is canceled
-        signal.alarm(0)
+    except Exception as e:
+        signal.alarm(0)  # Cancel the alarm
+        print(f"Error: {e}")
+        return False
+
+def kill_hung_processes():
+    """Kill any hung apt or dpkg processes."""
+    if platform.system().lower() != "linux":
+        return
+        
+    processes = ["apt", "apt-get", "dpkg"]
+    for proc in processes:
+        run_cmd(["sudo", "killall", "-9", proc], silent=True)
 
 def run_cmd(cmd, shell=False, check=False, use_sudo=False, timeout=300, retry=1, silent=False):
     """
@@ -148,18 +158,6 @@ def run_cmd(cmd, shell=False, check=False, use_sudo=False, timeout=300, retry=1,
     
     return False
 
-def kill_hung_processes(process_names=None):
-    """Kill hung processes that might be preventing package management operations."""
-    if platform.system().lower() != "linux":
-        return
-    
-    if process_names is None:
-        process_names = ["dpkg", "apt", "apt-get", "aptitude"]
-    
-    for proc_name in process_names:
-        run_cmd(["pkill", "-9", proc_name], silent=True)
-        run_cmd(["killall", "-9", proc_name], silent=True)
-
 def fix_dpkg_interruptions():
     """Fix any interrupted dpkg operations with multiple approaches."""
     if platform.system().lower() != "linux":
@@ -170,10 +168,14 @@ def fix_dpkg_interruptions():
     # First kill any hung processes
     kill_hung_processes()
     
-    # Directly address the "dpkg was interrupted" error
-    print("Running 'sudo dpkg --configure -a' to fix interrupted dpkg...")
-    if run_cmd(["sudo", "dpkg", "--configure", "-a"], timeout=300, retry=3):
-        print("✓ Applied primary dpkg fix")
+    # Directly address the "dpkg was interrupted" error with non-interactive frontend
+    print("Running 'sudo DEBIAN_FRONTEND=noninteractive dpkg --configure -a' to fix interrupted dpkg...")
+    # Use shell=True to allow environment variable setting
+    if run_cmd("sudo DEBIAN_FRONTEND=noninteractive dpkg --configure -a", shell=True, timeout=300, retry=3):
+        print("✓ Applied primary dpkg fix with non-interactive frontend")
+    else:
+        print("Initial dpkg fix failed, trying standard method...")
+        run_cmd(["sudo", "dpkg", "--configure", "-a"], timeout=300, retry=2)
     
     # Remove lock files - be careful with this!
     run_cmd(["sudo", "rm", "-f", "/var/lib/dpkg/lock"], silent=True)
@@ -193,13 +195,21 @@ def fix_dpkg_interruptions():
         print(f"Dpkg fix attempt {attempt+1}/{MAX_DPKG_FIX_ATTEMPTS}...")
         
         # Try various approaches in sequence
-        if run_cmd(["sudo", "dpkg", "--configure", "-a"], timeout=120, retry=0):
+        if run_cmd("sudo DEBIAN_FRONTEND=noninteractive dpkg --configure -a", shell=True, timeout=120, retry=0):
             success = True
         
         if run_cmd(["sudo", "apt-get", "update", "--fix-missing"], retry=0):
             success = True
         
-        if run_cmd(["sudo", "apt-get", "install", "-f", "-y"], retry=0):
+        if run_cmd("sudo DEBIAN_FRONTEND=noninteractive apt-get install -f -y", shell=True, retry=0):
+            success = True
+            
+        # Run apt fix-broken install specifically
+        if run_cmd("sudo DEBIAN_FRONTEND=noninteractive apt --fix-broken install -y", shell=True, retry=0):
+            success = True
+        
+        # Specifically fix libc6 and libc-bin issues which you encountered
+        if run_cmd("sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libc-bin=2.41-6 libc6=2.41-6", shell=True, retry=0, silent=True):
             success = True
         
         # If we've succeeded, break out of the loop
@@ -430,34 +440,46 @@ def install_apt_packages():
     
     # Make sure to fix any dpkg issues first
     print("\n===== Fixing any dpkg interruptions =====\n")
-    fix_dpkg_interruptions()
+    if not fix_dpkg_interruptions():
+        print("WARNING: Package management system issues were detected.")
+        print("Some package installations may fail.")
+        print("Try running 'sudo apt --fix-broken install' manually.")
         
     print("\n===== Updating package lists =====\n")
     print("Running: apt-get update")
     run_cmd(["sudo", "apt-get", "update"])
     
+    # Add system upgrade step
+    print("\n===== Upgrading system packages =====\n")
+    print("Running: apt-get upgrade")
+    # Use -y flag to automatically answer yes to prompts
+    run_cmd("sudo DEBIAN_FRONTEND=noninteractive apt-get upgrade -y", shell=True)
+    
     print("\n===== Installing required system packages =====\n")
+    
+    # First try with fix-broken
+    run_cmd("sudo DEBIAN_FRONTEND=noninteractive apt --fix-broken install -y", shell=True)
     
     # Install dependencies individually with status messages and update after each
     print("Installing libpcap development files...")
-    run_cmd(["sudo", "apt-get", "install", "-y", "libpcap-dev"])
+    run_cmd("sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libpcap-dev", shell=True)
     run_cmd(["sudo", "apt-get", "update"], silent=True)
     
     print("Installing curl...")
-    run_cmd(["sudo", "apt-get", "install", "-y", "curl"])
+    run_cmd("sudo DEBIAN_FRONTEND=noninteractive apt-get install -y curl", shell=True)
     run_cmd(["sudo", "apt-get", "update"], silent=True)
     
     print("Installing wget...")
-    run_cmd(["sudo", "apt-get", "install", "-y", "wget"])
+    run_cmd("sudo DEBIAN_FRONTEND=noninteractive apt-get install -y wget", shell=True)
     run_cmd(["sudo", "apt-get", "update"], silent=True)
     
     print("Installing build-essential...")
-    run_cmd(["sudo", "apt-get", "install", "-y", "build-essential"])
+    run_cmd("sudo DEBIAN_FRONTEND=noninteractive apt-get install -y build-essential", shell=True)
     run_cmd(["sudo", "apt-get", "update"], silent=True)
     
     # Try to install nuclei via apt
     print("\n===== Installing nuclei via apt =====\n")
-    if run_cmd(["sudo", "apt-get", "install", "-y", "nuclei"]):
+    if run_cmd("sudo DEBIAN_FRONTEND=noninteractive apt-get install -y nuclei", shell=True):
         print("✓ Nuclei installed via apt")
     else:
         print("Could not install nuclei via apt. Will try Go installation later.")
@@ -465,7 +487,7 @@ def install_apt_packages():
     
     # Try to install naabu via apt
     print("\n===== Installing naabu via apt =====\n")
-    if run_cmd(["sudo", "apt-get", "install", "-y", "naabu"]):
+    if run_cmd("sudo DEBIAN_FRONTEND=noninteractive apt-get install -y naabu", shell=True):
         print("✓ Naabu installed via apt")
     else:
         print("Could not install naabu via apt. Will try Go installation later.")
@@ -758,21 +780,19 @@ def install_python_packages(venv_path=None):
     """Install required Python packages."""
     print("\n===== Installing Python Packages =====\n")
     
-    # Common required packages
-    packages = ["requests", "colorama", "rich", "tqdm", "jinja2", "markdown"]
-    
-    # Read from requirements.txt if it exists
-    req_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "requirements.txt")
-    if os.path.exists(req_file):
-        try:
-            with open(req_file, "r") as f:
-                # Filter out commented lines and empty lines
-                req_packages = [line.strip() for line in f 
-                               if line.strip() and not line.strip().startswith("#")]
-                if req_packages:
-                    packages = req_packages
-        except Exception as e:
-            print(f"Error reading requirements.txt: {e}")
+    # Remove duplicate packages from requirements.txt
+    packages = [
+        "requests==2.31.0", 
+        "colorama==0.4.6", 
+        "jinja2==3.1.2", 
+        "markdown==3.4.3", 
+        "rich==13.3.5", 
+        "tqdm==4.65.0", 
+        "pathlib==1.0.1", 
+        "pytest-httpx==0.24.0", 
+        "jsonschema==4.19.0", 
+        "pyyaml==6.0.1"
+    ]
     
     # Determine pip command
     if venv_path:
@@ -1299,6 +1319,17 @@ def get_executable_path(cmd):
         
         print(f"Created utils file at {utils_file}")
 
+def create_documentation():
+    """Create documentation directory and files."""
+    docs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "documentacao")
+    os.makedirs(docs_dir, exist_ok=True)
+    
+    doc_file = os.path.join(docs_dir, "comandos_e_parametros.txt")
+    if not os.path.exists(doc_file):
+        # The file already exists in your workspace
+        pass
+    print("Documentation verified")
+
 def check_and_install_dependencies():
     """Check and install all required dependencies."""
     print("\n===== Checking and Installing Dependencies =====\n")
@@ -1319,11 +1350,12 @@ def check_and_install_dependencies():
         # Try to install naabu and nuclei via apt
         print("Running install_apt_packages()...")
         install_apt_packages()
-
-    # Continue with other installations...
-    # [rest of the function remains the same]
+    
+    # Check and install Go
+    check_and_install_go()
 
     # Install security tools
+    print("\n===== Installing Security Tools =====\n")
     install_security_tools()
     
     # Update nuclei templates
@@ -1343,17 +1375,6 @@ def check_and_install_dependencies():
 
     print("\nDependency setup completed.")
     return True
-
-def create_documentation():
-    """Create documentation directory and files."""
-    docs_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "documentacao")
-    os.makedirs(docs_dir, exist_ok=True)
-    
-    doc_file = os.path.join(docs_dir, "comandos_e_parametros.txt")
-    if not os.path.exists(doc_file):
-        # The file already exists in your workspace
-        pass
-    print("Documentation verified")
 
 def main():
     """Main installation function."""
