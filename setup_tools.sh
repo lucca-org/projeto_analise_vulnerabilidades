@@ -43,29 +43,12 @@ install_apt_packages() {
     # Essential packages
     sudo apt-get install -y \
         curl wget git python3 python3-pip libpcap-dev \
-        build-essential || {
+        build-essential || \
         echo "Warning: Some packages failed to install. Continuing anyway."
-    }
     
-    # Install naabu via apt
-    echo -e "\n${BLUE}[+] Installing naabu via apt...${NC}"
-    if ! command -v naabu >/dev/null 2>&1; then
-        sudo apt-get install -y naabu || {
-            echo -e "${YELLOW}Could not install naabu via apt. Will try Go installation later.${NC}"
-        }
-    else
-        echo -e "${GREEN}naabu is already installed${NC}"
-    fi
-    
-    # Install nuclei via apt
-    echo -e "\n${BLUE}[+] Installing nuclei via apt...${NC}"
-    if ! command -v nuclei >/dev/null 2>&1; then
-        sudo apt-get install -y nuclei || {
-            echo -e "${YELLOW}Could not install nuclei via apt. Will try Go installation later.${NC}"
-        }
-    else
-        echo -e "${GREEN}nuclei is already installed${NC}"
-    fi
+    # Try to install security tools via apt
+    sudo apt-get install -y nuclei naabu httpx || \
+        echo "Some security tools not available via apt. Will install via Go."
 }
 
 # Function to install Go

@@ -1429,6 +1429,37 @@ def main():
     
     print("\nAll required files have been created and the environment is ready for use.")
 
+def fix_script_line_endings():
+    """Fix line endings in shell scripts to ensure they work on Linux."""
+    print("\n===== Fixing script line endings =====\n")
+    
+    # Check if dos2unix is installed
+    if platform.system().lower() == "linux":
+        dos2unix_installed = shutil.which("dos2unix")
+        if not dos2unix_installed:
+            print("dos2unix not found, installing...")
+            run_cmd("sudo DEBIAN_FRONTEND=noninteractive apt-get install -y dos2unix", shell=True)
+        
+        # Check again to make sure it was installed
+        dos2unix_installed = shutil.which("dos2unix")
+        if dos2unix_installed:
+            print(f"Using dos2unix at: {dos2unix_installed}")
+            # Fix line endings in setup_tools.sh
+            if os.path.exists("setup_tools.sh"):
+                print("Fixing line endings in setup_tools.sh...")
+                run_cmd(["dos2unix", "setup_tools.sh"])
+                print("✓ Line endings fixed in setup_tools.sh")
+            else:
+                print("Warning: setup_tools.sh not found")
+        else:
+            print("Failed to install dos2unix, script line endings may cause issues")
+    
+    # Also make the script executable
+    if os.path.exists("setup_tools.sh"):
+        run_cmd(["chmod", "+x", "setup_tools.sh"])
+
+
+# Add this function call right before running main setup
 if __name__ == "__main__":
     try:
         print("\n===== Starting Vulnerability Analysis Toolkit Setup =====\n")
@@ -1436,6 +1467,9 @@ if __name__ == "__main__":
         # Check and install all dependencies
         print("Step 1: Checking and installing dependencies...")
         check_and_install_dependencies()
+        
+        # Fix line endings in shell scripts
+        fix_script_line_endings()
         
         # Run the main setup
         print("Step 2: Running main setup...")
