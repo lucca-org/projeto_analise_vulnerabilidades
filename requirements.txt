@@ -1,5 +1,5 @@
 # Core dependencies
-requests==2.31.0
+requests==2.32.2
 colorama==0.4.6
 markdown==3.4.3
 
