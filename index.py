@@ -66,21 +66,37 @@ def run_with_timeout(func, timeout=SETUP_TIMEOUT):
             print(f"Error: {e}")
             return False
             
-    # Set the timeout handler
-    signal.signal(signal.SIGALRM, timeout_handler)
-    signal.alarm(timeout)
-    
+    # Set the timeout handler on Unix systems
     try:
-        result = func()
-        signal.alarm(0)  # Cancel the alarm
-        return result
-    except TimeoutError:
-        print(f"Operation timed out after {timeout} seconds")
-        return False
-    except Exception as e:
-        signal.alarm(0)  # Cancel the alarm
-        print(f"Error: {e}")
-        return False
+        # These signals are only available on Unix systems
+        if hasattr(signal, 'SIGALRM'):
+            signal.signal(signal.SIGALRM, timeout_handler) # type: ignore
+            if hasattr(signal, 'alarm'):
+                signal.alarm(timeout) # type: ignore
+            
+            try:
+                result = func()
+                if hasattr(signal, 'alarm'):
+                    signal.alarm(0)  # type: ignore # Cancel the alarm
+                return result
+            except TimeoutError:
+                print(f"Operation timed out after {timeout} seconds")
+                return False
+            except Exception as e:
+                if hasattr(signal, 'alarm'):
+                    signal.alarm(0)  # type: ignore # Cancel the alarm
+                print(f"Error: {e}")
+                return False
+        else:
+            # Fall back to no timeout if SIGALRM isn't available
+            return func()
+    except AttributeError:
+        # If signal module doesn't have required attributes, just run the function without timeout
+        try:
+            return func()
+        except Exception as e:
+            print(f"Error: {e}")
+            return False
 
 def kill_hung_processes():
     """Kill any hung apt or dpkg processes."""
@@ -95,8 +111,15 @@ def run_cmd(cmd, shell=False, check=False, use_sudo=False, timeout=300, retry=1,
     """
     Run a shell command with improved error handling and retries.
     """
-    if use_sudo and os.geteuid() != 0 and platform.system().lower() != "windows":
-        cmd = ["sudo"] + cmd if isinstance(cmd, list) else ["sudo"] + [cmd]
+    # Check for sudo in a platform-independent way
+    if use_sudo and platform.system().lower() != "windows":
+        try:
+            # os.geteuid() is only available on Unix-like systems
+            if hasattr(os, 'geteuid') and os.geteuid() != 0: # type: ignore
+                cmd = ["sudo"] + cmd if isinstance(cmd, list) else ["sudo"] + [cmd]
+        except AttributeError:
+            # We're not on a Unix system, so we can't use sudo
+            pass
     
     for attempt in range(retry + 1):
         try:
@@ -806,6 +829,11 @@ def install_python_packages(venv_path=None):
     # Install packages
     if run_cmd([pip_cmd, "install"] + packages):
         print("✓ Python packages installed successfully")
+        
+        # Ensure markdown is installed (separately to handle any special cases)
+        run_cmd([pip_cmd, "install", "markdown"])
+        print("✓ Markdown installed for report generation")
+        
         return True
     
     # Try with system Python if virtual environment fails
@@ -933,10 +961,10 @@ def create_workflow_script():
     
     if not os.path.exists(workflow_path):
         workflow_content = """#!/usr/bin/env python3
-\"\"\"
+\"""
 workflow.py - Automated vulnerability scanning workflow
 Combines naabu, httpx, and nuclei for comprehensive security scanning
-\"\"\"
+\"""
 
 import os
 import sys
@@ -959,12 +987,12 @@ except ImportError as e:
     sys.exit(1)
 
 def signal_handler(sig, frame):
-    \"\"\"Handle CTRL+C gracefully.\"\"\"
+    \"""Handle CTRL+C gracefully.\"""
     print("\\n[!] Scan interrupted by user. Partial results may be available.")
     sys.exit(130)  # Standard exit code for SIGINT
 
 def create_output_directory(target_name):
-    \"\"\"Create a timestamped output directory.\"\"\"
+    \"""Create a timestamped output directory.\"""
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     output_dir = f"results_{target_name}_{timestamp}"
     
@@ -976,7 +1004,7 @@ def create_output_directory(target_name):
         return None
 
 def run_port_scan(target, output_dir, ports=None, verbose=False):
-    \"\"\"Run port scanning with naabu.\"\"\"
+    \"""Run port scanning with naabu.\"""
     print("\\n[+] Step 1: Port scanning with naabu")
     ports_output = os.path.join(output_dir, "ports.txt")
     ports_json = os.path.join(output_dir, "ports.json")
@@ -1003,7 +1031,7 @@ def run_port_scan(target, output_dir, ports=None, verbose=False):
     return ports_output
 
 def run_http_probe(ports_file, output_dir, verbose=False):
-    \"\"\"Run HTTP service detection with httpx.\"\"\"
+    \"""Run HTTP service detection with httpx.\"""
     print("\\n[+] Step 2: HTTP service detection with httpx")
     http_output = os.path.join(output_dir, "http_services.txt")
     http_json = os.path.join(output_dir, "http_services.json")
@@ -1031,7 +1059,7 @@ def run_http_probe(ports_file, output_dir, verbose=False):
     return http_output
 
 def run_vulnerability_scan(http_file, output_dir, templates=None, tags="cve", severity="critical,high", verbose=False):
-    \"\"\"Run vulnerability scanning with nuclei.\"\"\"
+    \"""Run vulnerability scanning with nuclei.\"""
     print("\\n[+] Step 3: Vulnerability scanning with nuclei")
     vuln_output = os.path.join(output_dir, "vulnerabilities.txt")
     vuln_json = os.path.join(output_dir, "vulnerabilities.jsonl")
@@ -1065,7 +1093,7 @@ def run_vulnerability_scan(http_file, output_dir, templates=None, tags="cve", se
     return vuln_output
 
 def generate_summary(output_dir, target):
-    \"\"\"Generate a basic summary of findings.\"\"\"
+    \"""Generate a basic summary of findings.\"""
     print("\\n[+] Generating summary report")
     
     # Import reporter if available
@@ -1122,7 +1150,7 @@ def generate_summary(output_dir, target):
 def main():
     parser = argparse.ArgumentParser(description='Automated vulnerability scanning workflow')
     parser.add_argument('target', help='Target to scan (IP or domain)')
-    parser.add_argument('-p', '--ports', help='Ports to scan (e.g., 80,443,8000-9000)')
+    parser.add_argument('-p', '--ports', help='Ports to scan (e.g., 80,443,8000-8090)')
     parser.add_argument('-t', '--templates', help='Custom nuclei templates')
     parser.add_argument('--tags', default='cve', help='Nuclei template tags (default: cve)')
     parser.add_argument('--severity', default='critical,high', help='Severity filter (default: critical,high)')
@@ -1269,7 +1297,7 @@ def run_cmd(cmd, shell=False, check=False, use_sudo=False, timeout=300, retry=1,
     return False
 
 def check_network():
-    \"\"\"Check for network connectivity.\"\"\"
+    \"\"\"Check for network connectivity.\"""
     dns_servers = ["8.8.8.8", "1.1.1.1", "9.9.9.9"]
     
     for dns in dns_servers:
@@ -1284,7 +1312,7 @@ def check_network():
     return False
 
 def create_directory_if_not_exists(directory):
-    \"\"\"Create a directory if it doesn't exist.\"\"\"
+    \"\"\"Create a directory if it doesn't exist.\"""
     try:
         os.makedirs(directory, exist_ok=True)
         return True
@@ -1293,7 +1321,7 @@ def create_directory_if_not_exists(directory):
         return False
 
 def get_executable_path(cmd):
-    \"\"\"Find the path to an executable, checking PATH and common locations.\"\"\"
+    \"\"\"Find the path to an executable, checking PATH and common locations.\"""
     # First check if it's directly in PATH
     path = shutil.which(cmd)
     if path:
@@ -1386,9 +1414,15 @@ def main():
     print("\nNo additional tools like nmap or netcat will be used.\n")
     
     # Check for sudo
-    if platform.system().lower() == "linux" and os.geteuid() != 0:
-        print("Some operations may require sudo privileges.")
-        print("You might be prompted for your password during installation.")
+    if platform.system().lower() == "linux":
+        try:
+            # os.geteuid() is only available on Unix-like systems
+            if hasattr(os, 'geteuid') and os.geteuid() != 0: # type: ignore
+                print("Some operations may require sudo privileges.")
+                print("You might be prompted for your password during installation.")
+        except AttributeError:
+            # We're not on a Unix system
+            print("Running on a non-Unix system. Some features may be limited.")
     
     input("Press Enter to continue...")
     

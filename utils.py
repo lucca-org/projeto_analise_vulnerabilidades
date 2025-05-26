@@ -9,7 +9,12 @@ import json
 from pathlib import Path
 from typing import List, Dict, Any, Union, Optional, Tuple
 
-def run_cmd(cmd: Union[str, List[str]], shell: bool = False, check: bool = False, use_sudo: bool = False, timeout: int = 300, retry: int = 1, silent: bool = False) -> bool:
+# Constants for reuse across modules
+DEFAULT_TIMEOUT = 300
+DEFAULT_RETRY = 1
+SECURITY_TOOLS = ["naabu", "httpx", "nuclei"]
+
+def run_cmd(cmd: Union[str, List[str]], shell: bool = False, check: bool = False, use_sudo: bool = False, timeout: int = DEFAULT_TIMEOUT, retry: int = DEFAULT_RETRY, silent: bool = False) -> bool:
     """Enhanced command runner with better retry logic and error detection."""
     if isinstance(cmd, list):
         cmd_str = ' '.join(cmd)
@@ -21,12 +26,18 @@ def run_cmd(cmd: Union[str, List[str]], shell: bool = False, check: bool = False
             if not silent:
                 print(f"Running: {cmd_str}")
             
-            # Handle sudo and Windows special case
-            if use_sudo and os.name != 'nt' and os.geteuid() != 0:
-                if isinstance(cmd, list):
-                    cmd = ["sudo"] + cmd
-                else:
-                    cmd = f"sudo {cmd}"
+            # Handle sudo and Windows special case in a platform-independent way
+            if use_sudo and platform.system().lower() != "windows":
+                try:
+                    # os.geteuid() is only available on Unix-like systems
+                    if hasattr(os, 'geteuid') and os.geteuid() != 0: # type: ignore
+                        if isinstance(cmd, list):
+                            cmd = ["sudo"] + cmd
+                        else:
+                            cmd = f"sudo {cmd}"
+                except AttributeError:
+                    # We're not on a Unix system, so we can't use sudo
+                    pass
             
             # Start process
             process = subprocess.Popen(
@@ -222,3 +233,68 @@ def get_executable_path(cmd: str) -> Optional[str]:
                 return path
     
     return None
+
+def get_system_memory_gb() -> float:
+    """
+    Get system memory in GB in a platform-independent way
+    
+    Returns:
+        Memory in GB (float)
+    """
+    try:
+        if platform.system() == "Linux":
+            with open('/proc/meminfo', 'r') as f:
+                for line in f:
+                    if line.startswith('MemTotal:'):
+                        # Extract value and convert from KB to GB
+                        mem_kb = int(line.split()[1])
+                        return mem_kb / (1024 * 1024)
+        elif platform.system() == "Windows":
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            c_ulong = ctypes.c_ulong
+            class MEMORYSTATUS(ctypes.Structure):
+                _fields_ = [
+                    ('dwLength', c_ulong),
+                    ('dwMemoryLoad', c_ulong),
+                    ('dwTotalPhys', c_ulong),
+                    ('dwAvailPhys', c_ulong),
+                    ('dwTotalPageFile', c_ulong),
+                    ('dwAvailPageFile', c_ulong),
+                    ('dwTotalVirtual', c_ulong),
+                    ('dwAvailVirtual', c_ulong)
+                ]
+            memory_status = MEMORYSTATUS()
+            memory_status.dwLength = ctypes.sizeof(MEMORYSTATUS)
+            kernel32.GlobalMemoryStatus(ctypes.byref(memory_status))
+            return memory_status.dwTotalPhys / (1024 * 1024 * 1024)
+        elif platform.system() == "Darwin":  # macOS
+            result = subprocess.run(['sysctl', '-n', 'hw.memsize'], 
+                                  capture_output=True, text=True)
+            mem_bytes = int(result.stdout.strip())
+            return mem_bytes / (1024 * 1024 * 1024)
+    except Exception as e:
+        print(f"Error detecting system memory: {e}")
+    
+    # Default to a conservative 4GB if detection fails
+    return 4.0
+
+# Add utility to safely handle both Windows and Unix paths
+def normalize_path(path: str) -> str:
+    """Convert file paths to the correct format for the current OS."""
+    if platform.system().lower() == "windows":
+        return path.replace('/', '\\')
+    else:
+        return path.replace('\\', '/')
+
+# Add utility for ensuring proper file permissions 
+def ensure_executable(file_path: str) -> bool:
+    """Make sure a file is executable (Unix only)."""
+    if platform.system().lower() != "windows":
+        try:
+            os.chmod(file_path, 0o755)
+            return True
+        except Exception as e:
+            print(f"Error making {file_path} executable: {e}")
+            return False
+    return True

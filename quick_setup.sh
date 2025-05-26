@@ -1,12 +1,5 @@
 #!/bin/bash
-# quick_setup.sh - Simplified script referencing setup_tools.sh
+# quick_setup.sh - Links to main setup script
 
-set -e
-
-if [ ! -f "setup_tools.sh" ]; then
-    echo "Error: setup_tools.sh not found in the current directory."
-    exit 1
-fi
-
-bash setup_tools.sh
+. "$(dirname "$0")/setup_tools.sh"
 

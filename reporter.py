@@ -12,22 +12,57 @@ import re
 import traceback
 from typing import Dict, List, Any, Optional, Union
 
-# Added fallback logic for missing `markdown` library
+# Import modules with fallback handling
 try:
     import markdown
     MARKDOWN_AVAILABLE = True
 except ImportError:
     MARKDOWN_AVAILABLE = False
-    print("Warning: Markdown library is not installed. Markdown report generation will be disabled.")
+    print("Warning: Markdown library is not installed. Install with: pip install markdown")
+
+try:
+    from utils import safe_read_json, create_directory_if_not_exists, normalize_path
+    UTILS_AVAILABLE = True
+except ImportError:
+    UTILS_AVAILABLE = False
+    print("Warning: utils.py module not found. Using internal functions.")
+    
+    # Fallback functions if utils.py is not available
+    def safe_read_json(json_file, default=None):
+        if not os.path.exists(json_file):
+            return default
+        try:
+            with open(json_file, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Error reading {json_file}: {e}")
+            return default
+            
+    def create_directory_if_not_exists(directory):
+        try:
+            os.makedirs(directory, exist_ok=True)
+            return True
+        except Exception as e:
+            print(f"Error creating directory {directory}: {e}")
+            return False
+            
+    def normalize_path(path):
+        if os.name == 'nt':  # Windows
+            return path.replace('/', '\\')
+        else:
+            return path.replace('\\', '/')
 
 # Add a warning for missing dependencies
 def check_dependencies():
+    missing_deps = []
     if not MARKDOWN_AVAILABLE:
-        print("Warning: Markdown is not installed. Markdown report generation will be disabled.")
-        print("If you are in an externally managed environment, consider using a virtual environment:")
-        print("\n    python3 -m venv venv")
-        print("    source venv/bin/activate")
-        print("    pip install markdown\n")
+        missing_deps.append("markdown")
+    
+    if missing_deps:
+        print(f"Warning: Missing dependencies: {', '.join(missing_deps)}")
+        print("Some report formats will be unavailable.")
+        print("Install missing dependencies with:")
+        print(f"    pip install {' '.join(missing_deps)}")
 
 check_dependencies()
 

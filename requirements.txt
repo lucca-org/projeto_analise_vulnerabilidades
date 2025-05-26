@@ -1,10 +1,10 @@
 # Core dependencies
 requests==2.31.0
 colorama==0.4.6
+markdown==3.4.3
 
 # Reporting dependencies
 jinja2==3.1.2
-markdown==3.4.3
 rich==13.3.5
 
 # Progress and formatting
@@ -13,20 +13,11 @@ tqdm==4.65.0
 # Utility
 pathlib==1.0.1
 
-# API testing
-pytest-httpx==0.24.0
-
 # JSON processing
 jsonschema==4.19.0
 
-# Terminal formatting
-colorama==0.4.6
-rich==13.5.2
-
-# Progress bars
-tqdm==4.66.1
-
-# Report generation
-jinja2==3.1.2
-markdown
+# YAML processing
 pyyaml==6.0.1
+
+# HTTP testing
+pytest-httpx==0.24.0

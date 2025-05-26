@@ -1,10 +1,4 @@
 #!/bin/bash
-# manual_install.sh - Simplified scipt efeencing setup_tools.sh
+# manual_install.sh - Links to main setup script
 
-set -e
-
-if [ ! -f "setup_tools.sh" ]; then
-    exit 1
-fiz
-
-bash setup_tools.sh
+. "$(dirname "$0")/setup_tools.sh"

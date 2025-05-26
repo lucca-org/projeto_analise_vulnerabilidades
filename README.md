@@ -69,37 +69,29 @@ chmod +x fix_dpkg.sh
 
 ```bash
 # Simple scan of a domain
-python3 workflow.py example.com
+python workflow.py example.com
 
 # Scan an IP address
-python3 workflow.py 192.168.1.1
+python workflow.py 192.168.1.1
 
 # Scan with verbose output
-python3 workflow.py example.com -v
+python workflow.py example.com -v
 ```
 
 ### Advanced Options
 
 ```bash
 # Scan specific ports
-python3 workflow.py example.com -p 80,443,8000-8100
+python workflow.py example.com --ports 80,443,8000-8100
 
 # Focus on specific vulnerability types
-python3 workflow.py example.com --tags cve,rce,injection
+python workflow.py example.com --tags cve,rce,injection
 
 # Only report critical and high severity vulnerabilities
-python3 workflow.py example.com --severity critical,high
+python workflow.py example.com --severity critical,high
 
 # Complete example with multiple options
-python3 workflow.py example.com -p 80,443,8000-8100 --tags cve,rce --severity critical,high -v --timeout 7200
-```
-
-### Only Generate Reports
-
-If you've already run a scan and just want to regenerate the reports:
-
-```bash
-python3 workflow.py example.com --report-only results_example.com_20250520_123456
+python workflow.py example.com --ports 80,443,8000-8100 --tags cve,rce --severity critical,high -v --timeout 7200
 ```
 
 ### Command-line Arguments
@@ -116,6 +108,9 @@ python3 workflow.py example.com --report-only results_example.com_20250520_12345
 | `--update-templates` | Update nuclei templates before scanning |
 | `--timeout` | Maximum scan time in seconds (default: 3600) |
 | `--report-only` | Generate report for existing results directory |
+| `--auto-config` | Use automatic configuration based on system capabilities |
+| `--scan-code` | Scan web application code for vulnerabilities |
+| `--config-file` | Use custom configuration file |
 
 ## Reports and Output
 
