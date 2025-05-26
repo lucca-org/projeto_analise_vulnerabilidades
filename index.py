@@ -33,7 +33,10 @@ TOOLS_INFO = {
         "description": "Fast HTTP server probe and technology fingerprinter",
         "repository": "github.com/projectdiscovery/httpx/cmd/httpx",
         "module_file": "commands/httpx.py",
-        "apt_package": None  # httpx is not typically available via apt
+        "apt_package": "httpx-toolkit",  # Alternative apt package name
+        "python_package": "httpx",       # Python package with similar name (but different functionality)
+        "snap_package": "httpx",         # Snap package if available
+        "go_repository": "github.com/projectdiscovery/httpx/cmd/httpx@latest"  # Explicit go repository with version
     },
     "nuclei": {
         "name": "nuclei",
@@ -519,6 +522,277 @@ def install_apt_packages():
     print("Apt package installation completed")
     return True
 
+def install_httpx():
+    """Install httpx using multiple methods with fallbacks."""
+    print("\n===== Installing httpx =====\n")
+    
+    # Check if httpx is already installed
+    httpx_path = get_executable_path("httpx")
+    if httpx_path:
+        print(f"✓ httpx is already installed at {httpx_path}")
+        return True
+    
+    # Method 1: Try installing with Go (preferred method)
+    print("Attempting to install httpx using Go...")
+    go_installed = check_and_install_go()
+    
+    if go_installed:
+        print("Using Go to install httpx...")
+        # Set up Go environment
+        os.environ["GO111MODULE"] = "on"  # Ensure Go modules are enabled
+        
+        # Try regular go install command
+        if run_cmd(["go", "install", "-v", TOOLS_INFO["httpx"]["go_repository"]], retry=2):
+            print("✓ httpx installed successfully via Go")
+            # Update PATH to include Go binaries
+            setup_go_env()
+            return True
+        
+        # If failed, try alternative go get command
+        print("First go install attempt failed, trying alternative method...")
+        if run_cmd(["go", "get", "-v", TOOLS_INFO["httpx"]["repository"]], retry=2):
+            print("✓ httpx installed successfully via Go (alternative method)")
+            # Update PATH to include Go binaries
+            setup_go_env()
+            return True
+    
+    # Method 2: Try installing with apt
+    if platform.system().lower() == "linux":
+        print("Attempting to install httpx using apt...")
+        # Fix any package management issues first
+        fix_dpkg_interruptions()
+        
+        # Try different apt package names
+        apt_package_names = ["httpx", "httpx-toolkit", "golang-github-projectdiscovery-httpx"]
+        
+        for package in apt_package_names:
+            print(f"Trying to install {package}...")
+            if run_cmd(["sudo", "apt-get", "install", "-y", package], retry=2):
+                # Verify installation
+                if get_executable_path("httpx"):
+                    print(f"✓ httpx installed successfully via apt using package {package}")
+                    return True
+                else:
+                    print(f"Package {package} installed but httpx executable not found.")
+            else:
+                print(f"Failed to install {package} via apt.")
+    
+    # Method 3: Try installing with snap if available
+    if platform.system().lower() == "linux" and shutil.which("snap"):
+        print("Attempting to install httpx using snap...")
+        if run_cmd(["sudo", "snap", "install", "httpx"], retry=2):
+            # Verify installation
+            if get_executable_path("httpx"):
+                print("✓ httpx installed successfully via snap")
+                return True
+            else:
+                print("Snap package installed but httpx executable not found.")
+    
+    # Method 4: Download pre-built binary directly
+    print("Attempting to download pre-built httpx binary...")
+    try:
+        # Determine system and architecture
+        system = platform.system().lower()
+        arch = platform.machine().lower()
+        
+        # Map architecture names
+        arch_map = {
+            "x86_64": "amd64",
+            "amd64": "amd64",
+            "i386": "386",
+            "i686": "386",
+            "armv7l": "arm",
+            "armv6l": "arm",
+            "aarch64": "arm64",
+            "arm64": "arm64"
+        }
+        
+        if arch in arch_map:
+            mapped_arch = arch_map[arch]
+        else:
+            mapped_arch = "amd64"  # Default to amd64 if unknown
+        
+        # Set release URL based on system
+        if system == "linux":
+            release_url = f"https://github.com/projectdiscovery/httpx/releases/latest/download/httpx_{system}_{mapped_arch}.zip"
+        elif system == "darwin":
+            release_url = f"https://github.com/projectdiscovery/httpx/releases/latest/download/httpx_{system}_{mapped_arch}.zip"
+        elif system == "windows":
+            release_url = f"https://github.com/projectdiscovery/httpx/releases/latest/download/httpx_{system}_{mapped_arch}.zip"
+        else:
+            print(f"Unsupported system: {system}")
+            return False
+        
+        # Create installation directory
+        install_dir = os.path.expanduser("~/.local/bin")
+        os.makedirs(install_dir, exist_ok=True)
+        
+        # Download zip file
+        zip_path = os.path.join(os.path.expanduser("~"), "httpx.zip")
+        
+        # Try wget first
+        if shutil.which("wget"):
+            if not run_cmd(["wget", release_url, "-O", zip_path]):
+                print("Failed to download httpx with wget.")
+                # Try curl as fallback
+                if shutil.which("curl"):
+                    if not run_cmd(["curl", "-L", release_url, "-o", zip_path]):
+                        print("Failed to download httpx with curl as well.")
+                        return False
+                else:
+                    return False
+        elif shutil.which("curl"):
+            if not run_cmd(["curl", "-L", release_url, "-o", zip_path]):
+                print("Failed to download httpx with curl.")
+                return False
+        else:
+            print("Neither wget nor curl is available for downloading. Please install either tool.")
+            return False
+        
+        # Extract the zip file
+        import zipfile
+        try:
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(install_dir)
+            
+            # Make executable
+            httpx_path = os.path.join(install_dir, "httpx")
+            if os.path.exists(httpx_path):
+                os.chmod(httpx_path, 0o755)
+                print(f"✓ httpx installed successfully to {httpx_path}")
+                
+                # Update PATH
+                if install_dir not in os.environ.get("PATH", ""):
+                    os.environ["PATH"] = os.environ.get("PATH", "") + os.pathsep + install_dir
+                    update_shell_rc_files([install_dir])
+                
+                return True
+            else:
+                print("Extracted zip but httpx executable not found.")
+        except Exception as e:
+            print(f"Error extracting httpx zip file: {e}")
+        finally:
+            # Clean up
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
+    
+    except Exception as e:
+        print(f"Error downloading pre-built httpx binary: {e}")
+    
+    # If all installation methods failed, create a Python-based wrapper as last resort
+    print("All installation methods failed. Creating a Python-based httpx wrapper...")
+    
+    httpx_wrapper_path = os.path.expanduser("~/.local/bin/httpx")
+    os.makedirs(os.path.dirname(httpx_wrapper_path), exist_ok=True)
+    
+    httpx_wrapper_content = """#!/usr/bin/env python3
+import sys
+import subprocess
+import argparse
+import requests
+import json
+import time
+import os
+
+def main():
+    print("httpx wrapper (simple HTTP probe)")
+    parser = argparse.ArgumentParser(description="Simple HTTP probe")
+    parser.add_argument("-l", help="Input file with targets")
+    parser.add_argument("-o", help="Output file")
+    parser.add_argument("-silent", action="store_true", help="Silent mode")
+    parser.add_argument("-title", action="store_true", help="Display title")
+    parser.add_argument("-status-code", action="store_true", help="Display status code")
+    parser.add_argument("-tech-detect", action="store_true", help="Technology detection")
+    parser.add_argument("-follow-redirects", action="store_true", help="Follow redirects")
+    
+    args, unknown = parser.parse_known_args()
+    
+    targets = []
+    if args.l:
+        try:
+            with open(args.l, "r") as f:
+                targets = [line.strip() for line in f if line.strip()]
+        except Exception as e:
+            print(f"Error reading input file: {e}")
+            return 1
+    
+    results = []
+    for target in targets:
+        if not target.startswith(("http://", "https://")):
+            target = f"http://{target}"
+        
+        try:
+            print(f"Probing {target}...")
+            response = requests.get(target, timeout=10, allow_redirects=args.follow_redirects)
+            
+            result = {
+                "url": target,
+                "status_code": response.status_code,
+                "content_length": len(response.content)
+            }
+            
+            if args.title:
+                import re
+                title_match = re.search(r"<title>(.*?)</title>", response.text, re.IGNORECASE)
+                result["title"] = title_match.group(1) if title_match else "No Title"
+            
+            results.append(result)
+            
+            if not args.silent:
+                output = target
+                if args.status_code:
+                    output += f" [{response.status_code}]"
+                if args.title and "title" in result:
+                    output += f" [{result['title']}]"
+                print(output)
+                
+        except Exception as e:
+            if not args.silent:
+                print(f"Error probing {target}: {e}")
+    
+    if args.o:
+        try:
+            with open(args.o, "w") as f:
+                for result in results:
+                    output = result["url"]
+                    if args.status_code:
+                        output += f" [{result['status_code']}]"
+                    if args.title and "title" in result:
+                        output += f" [{result['title']}]"
+                    f.write(output + "\\n")
+            print(f"Results written to {args.o}")
+        except Exception as e:
+            print(f"Error writing output file: {e}")
+            
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())
+"""
+    
+    try:
+        with open(httpx_wrapper_path, "w") as f:
+            f.write(httpx_wrapper_content)
+        
+        # Make the script executable
+        os.chmod(httpx_wrapper_path, 0o755)
+        
+        # Install Python requests module for the wrapper
+        run_cmd([sys.executable, "-m", "pip", "install", "requests"])
+        
+        print(f"✓ Created httpx wrapper script at {httpx_wrapper_path}")
+        
+        # Update PATH
+        install_dir = os.path.dirname(httpx_wrapper_path)
+        if install_dir not in os.environ.get("PATH", ""):
+            os.environ["PATH"] = os.environ.get("PATH", "") + os.pathsep + install_dir
+            update_shell_rc_files([install_dir])
+        
+        return True
+    except Exception as e:
+        print(f"Error creating httpx wrapper: {e}")
+        return False
+
 def install_security_tools():
     """Install security tools using both apt and Go."""
     print("\n===== Installing Security Tools =====\n")
@@ -539,6 +813,10 @@ def install_security_tools():
             print(f"✓ {tool_name} is already installed at {tool_path}")
             tools_installed[tool_name] = True
 
+    # Try to install httpx with specialized function that tries multiple methods
+    if not tools_installed["httpx"]:
+        tools_installed["httpx"] = install_httpx()
+    
     # Install nuclei and naabu via apt if not already installed
     if platform.system().lower() == "linux":
         if not tools_installed["nuclei"]:
@@ -555,7 +833,7 @@ def install_security_tools():
 
     # Install any tools not yet installed using Go
     for tool_name, installed in tools_installed.items():
-        if not installed:
+        if not installed and tool_name != "httpx":  # Skip httpx as we already tried to install it
             tool_info = next((item for item in TOOLS_INFO.values() if item["name"] == tool_name), None)
             if not tool_info:
                 print(f"! Tool information not found for {tool_name}. Skipping.")
@@ -882,7 +1160,7 @@ from pathlib import Path
 import shutil
 
 def run_{tool}(*args, **kwargs):
-    \"\"\"Run {tool} with provided arguments.\"\"\"
+    \"\"\"Run {tool} with provided arguments.\"""
     # Find the tool path
     tool_path = shutil.which("{tool}")
     if not tool_path:
@@ -924,7 +1202,7 @@ def run_{tool}(*args, **kwargs):
         return False
 
 def check_{tool}():
-    \"\"\"Check if {tool} is installed.\"\"\"
+    \"\"\"Check if {tool} is installed.\"""
     try:
         # First check in PATH
         tool_path = shutil.which("{tool}")
