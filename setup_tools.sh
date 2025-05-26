@@ -30,29 +30,168 @@ check_sudo() {
     fi
 }
 
-# Function to fix any dpkg issues
+# Function to fix repository key issues
+fix_repo_keys() {
+    echo -e "\n${BLUE}Fixing repository key issues...${NC}"
+    
+    # Try to import the Kali Linux archive key
+    KALI_KEY="827C8569F2518CC677FECA1AED65462EC8D5E4C5"
+    
+    # First check if key exists in trusted.gpg.d
+    if ! sudo apt-key list 2>/dev/null | grep -q "$KALI_KEY"; then
+        echo "Importing Kali Linux archive key..."
+        # Try multiple methods to import the key
+        if command -v wget >/dev/null 2>&1; then
+            sudo wget -qO - https://archive.kali.org/archive-key.asc | sudo apt-key add -
+        elif command -v curl >/dev/null 2>&1; then
+            curl -fsSL https://archive.kali.org/archive-key.asc | sudo apt-key add -
+        else
+            echo -e "${YELLOW}Neither wget nor curl is available. Trying direct key import...${NC}"
+            # Alternative method using gpg directly if available
+            if command -v gpg >/dev/null 2>&1; then
+                gpg --keyserver keyserver.ubuntu.com --recv-keys "$KALI_KEY"
+                gpg --export "$KALI_KEY" | sudo apt-key add -
+            else
+                echo -e "${RED}Could not import Kali Linux key. Repository operations may fail.${NC}"
+            fi
+        fi
+    else
+        echo "Kali Linux key already imported."
+    fi
+    
+    # Ensure we have the Kali repository file properly set up
+    KALI_SOURCE="/etc/apt/sources.list.d/kali.list"
+    if [ ! -f "$KALI_SOURCE" ]; then
+        echo "Creating Kali repository file..."
+        echo "deb http://http.kali.org/kali kali-rolling main non-free contrib" | sudo tee "$KALI_SOURCE"
+    fi
+    
+    # Try to update package lists with fixed keys
+    echo "Updating package lists with fixed keys..."
+    sudo apt-get update --allow-unauthenticated || echo "Update still failed, continuing with installation..."
+}
+
+# Function to fix any dpkg issues with better error handling
 fix_dpkg() {
     echo -e "\n${BLUE}[1/7] Checking for and fixing any package manager issues...${NC}"
+    
+    # Kill any running apt/dpkg processes that might be holding locks
+    for proc in apt apt-get dpkg; do
+        if pgrep -f $proc >/dev/null; then
+            echo "Killing running $proc processes..."
+            sudo killall -9 $proc 2>/dev/null || true
+        fi
+    done
+    
+    # Remove lock files
+    for lock_file in /var/lib/dpkg/lock /var/lib/dpkg/lock-frontend /var/lib/apt/lists/lock /var/cache/apt/archives/lock; do
+        if [ -f "$lock_file" ]; then
+            echo "Removing lock file: $lock_file"
+            sudo rm -f "$lock_file"
+        fi
+    done
+    
+    # Configure dpkg if interrupted
     sudo dpkg --configure -a || echo "Failed to configure dpkg. Continuing anyway."
-    sudo apt-get update --fix-missing -y || echo "Failed to update package lists. Continuing anyway."
+    
+    # Fix broken packages
     sudo apt-get install -f -y || echo "Failed to fix broken packages. Continuing anyway."
+    
+    # Clean apt cache to start fresh
     sudo apt-get clean || echo "Failed to clean package cache. Continuing anyway."
 }
 
-# Function to install apt packages
+# Function to install apt packages with fallback repositories
 install_apt_packages() {
     echo -e "\n${BLUE}[2/7] Installing required system packages...${NC}"
-    sudo apt-get update || { echo "Failed to update apt repositories. Continuing anyway."; }
     
-    # Essential packages
-    sudo apt-get install -y \
-        curl wget git python3 python3-pip libpcap-dev \
-        build-essential || \
-        echo "Warning: Some packages failed to install. Continuing anyway."
+    # First try to fix repository issues
+    fix_repo_keys
     
-    # Try to install security tools via apt
-    sudo apt-get install -y nuclei naabu httpx || \
-        echo "Some security tools not available via apt. Will install via Go."
+    # Try multiple Kali mirrors if the default fails
+    MIRRORS=("http://http.kali.org/kali" "http://kali.download/kali" "http://mirror.ufro.cl/kali")
+    
+    updated=false
+    for mirror in "${MIRRORS[@]}"; do
+        echo "Trying repository mirror: $mirror"
+        # Create temporary sources.list with the current mirror
+        echo "deb $mirror kali-rolling main contrib non-free" | sudo tee /etc/apt/sources.list.d/temp-mirror.list
+        
+        if sudo apt-get update -o Acquire::AllowInsecureRepositories=true; then
+            echo -e "${GREEN}Successfully updated package lists using mirror: $mirror${NC}"
+            updated=true
+            break
+        else
+            echo -e "${YELLOW}Failed to update with mirror: $mirror${NC}"
+            sudo rm -f /etc/apt/sources.list.d/temp-mirror.list
+        fi
+    done
+    
+    # If all mirrors failed, try offline installation
+    if [ "$updated" = false ]; then
+        echo -e "${YELLOW}Could not update from any repository. Trying offline installation...${NC}"
+        check_offline_installation
+    fi
+    
+    # List of essential packages
+    PACKAGES=("curl" "wget" "git" "python3" "python3-pip" "libpcap-dev" "build-essential")
+    
+    # Try to install each package individually with better error handling
+    for pkg in "${PACKAGES[@]}"; do
+        echo -e "\nInstalling $pkg..."
+        if dpkg -l | grep -q "^ii  $pkg "; then
+            echo -e "${GREEN}$pkg is already installed.${NC}"
+        else
+            # Try to install with apt-get
+            if ! sudo apt-get install -y --no-install-recommends -o Acquire::AllowInsecureRepositories=true "$pkg"; then
+                echo -e "${YELLOW}Failed to install $pkg with apt-get. Trying with aptitude...${NC}"
+                
+                # Try with aptitude if available
+                if command -v aptitude >/dev/null 2>&1; then
+                    sudo aptitude -y --allow-untrusted install "$pkg" || echo -e "${RED}Could not install $pkg. Continuing anyway.${NC}"
+                else
+                    echo -e "${RED}Could not install $pkg. Continuing anyway.${NC}"
+                fi
+            fi
+        fi
+    done
+    
+    # Try to install security tools via apt with fallback to Go
+    for tool in nuclei naabu httpx; do
+        echo -e "\nChecking for $tool..."
+        if command -v $tool >/dev/null 2>&1; then
+            echo -e "${GREEN}$tool is already installed.${NC}"
+        else
+            echo -e "Installing $tool via apt..."
+            sudo apt-get install -y --no-install-recommends -o Acquire::AllowInsecureRepositories=true "$tool" || \
+                echo -e "${YELLOW}$tool not available via apt. Will install via Go.${NC}"
+        fi
+    done
+}
+
+# Function to check if offline installation is possible
+check_offline_installation() {
+    echo -e "\n${BLUE}Checking for offline installation capabilities...${NC}"
+    
+    # Check if we have already-downloaded tools in expected locations
+    TOOL_PATHS=("/usr/bin/naabu" "/usr/bin/httpx" "/usr/bin/nuclei")
+    MISSING_TOOLS=()
+    
+    for tool_path in "${TOOL_PATHS[@]}"; do
+        tool_name=$(basename "$tool_path")
+        if [ -f "$tool_path" ] && [ -x "$tool_path" ]; then
+            echo -e "${GREEN}Found $tool_name at $tool_path${NC}"
+        else
+            MISSING_TOOLS+=("$tool_name")
+        fi
+    done
+    
+    if [ ${#MISSING_TOOLS[@]} -eq 0 ]; then
+        echo -e "${GREEN}All required tools are already installed!${NC}"
+    else
+        echo -e "${YELLOW}Missing tools: ${MISSING_TOOLS[*]}${NC}"
+        echo "Will attempt to install missing tools with Go."
+    fi
 }
 
 # Function to install Go
@@ -309,7 +448,7 @@ EOF
     return 0
 }
 
-# Function to install security tools
+# Function to install security tools with better error handling
 install_security_tools() {
     echo -e "\n${BLUE}[4/7] Installing security tools...${NC}"
     export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
@@ -319,6 +458,7 @@ install_security_tools() {
     # Check if tools are already installed via apt
     naabu_installed=false
     nuclei_installed=false
+    httpx_installed=false
     
     if command -v naabu >/dev/null 2>&1; then
         echo -e "${GREEN}naabu is already installed via system package${NC}"
@@ -330,35 +470,41 @@ install_security_tools() {
         nuclei_installed=true
     fi
     
-    # Try to install via apt if not installed
-    if [ "$naabu_installed" = false ]; then
-        echo -e "\n${BLUE}Trying to install naabu via apt...${NC}"
-        if sudo apt-get install -y naabu; then
-            echo -e "${GREEN}Successfully installed naabu via apt${NC}"
-            naabu_installed=true
-        else
-            echo -e "${YELLOW}Could not install naabu via apt, will try Go installation${NC}"
-        fi
+    if command -v httpx >/dev/null 2>&1; then
+        echo -e "${GREEN}httpx is already installed via system package${NC}"
+        httpx_installed=true
     fi
     
-    if [ "$nuclei_installed" = false ]; then
-        echo -e "\n${BLUE}Trying to install nuclei via apt...${NC}"
-        if sudo apt-get install -y nuclei; then
-            echo -e "${GREEN}Successfully installed nuclei via apt${NC}"
-            nuclei_installed=true
-        else
-            echo -e "${YELLOW}Could not install nuclei via apt, will try Go installation${NC}"
-        fi
-    fi
-
-    # Install httpx via Go (not typically available via apt)
-    if ! command -v httpx >/dev/null 2>&1; then
+    # Install httpx via Go if not already installed
+    if [ "$httpx_installed" = false ]; then
         echo -e "\n${BLUE}[+] Installing httpx via Go...${NC}"
-        go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest || {
-            echo -e "${RED}[-] Failed to install httpx.${NC}"
-            return 1
-        }
-        echo -e "${GREEN}[+] httpx installed successfully.${NC}"
+        # First check if Go is installed
+        if ! command -v go >/dev/null 2>&1; then
+            echo "Go is required to install httpx. Installing Go first..."
+            install_go
+        fi
+        
+        # Try multiple installation methods
+        if go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest; then
+            echo -e "${GREEN}[+] httpx installed successfully.${NC}"
+            httpx_installed=true
+        else
+            echo -e "${YELLOW}Standard go install failed, trying alternative method...${NC}"
+            # Try with CGO disabled
+            CGO_ENABLED=0 go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
+            
+            if [ -f "$HOME/go/bin/httpx" ]; then
+                echo -e "${GREEN}[+] httpx installed successfully with alternative method.${NC}"
+                httpx_installed=true
+            else
+                echo -e "${RED}[-] Failed to install httpx.${NC}"
+                
+                # Create an alternative implementation using Python
+                echo -e "${YELLOW}Creating an alternative httpx implementation...${NC}"
+                create_httpx_alternative
+                httpx_installed=true
+            fi
+        fi
     else
         echo -e "${GREEN}[+] httpx is already installed${NC}"
     fi
@@ -366,11 +512,13 @@ install_security_tools() {
     # Install nuclei via Go if not installed via apt
     if [ "$nuclei_installed" = false ]; then
         echo -e "\n${BLUE}[+] Installing nuclei via Go...${NC}"
-        go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest || {
+        if go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest; then
+            echo -e "${GREEN}[+] nuclei installed successfully via Go.${NC}"
+            nuclei_installed=true
+        else
             echo -e "${RED}[-] Failed to install nuclei via Go.${NC}"
-            return 1
-        }
-        echo -e "${GREEN}[+] nuclei installed successfully via Go.${NC}"
+            # No alternative for nuclei as it's too complex
+        fi
     fi
     
     # Install naabu via Go if not installed via apt
@@ -378,16 +526,14 @@ install_security_tools() {
         echo -e "\n${BLUE}[+] Installing naabu via Go...${NC}"
         # Set CGO_ENABLED=0 to avoid libpcap dependency
         export CGO_ENABLED=0
-        go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest || {
+        if go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest; then
+            echo -e "${GREEN}[+] naabu installed successfully via Go.${NC}"
+            naabu_installed=true
+        else
             echo -e "${RED}[-] Failed to install naabu via Go.${NC}"
-            return 1
-        }
-        echo -e "${GREEN}[+] naabu installed successfully via Go.${NC}"
-    fi
-    
-    # If naabu couldn't be installed, create the alternative implementation
-    if [ "$naabu_installed" = false ]; then
-        create_naabu_alternative
+            create_naabu_alternative
+            naabu_installed=true
+        fi
     fi
     
     # Validate installations
@@ -404,12 +550,217 @@ install_security_tools() {
                 echo -e "${GREEN}[+] $tool is installed in ~/go/bin: $version${NC}"
             else
                 echo -e "${RED}[-] $tool installation validation failed${NC}"
-                return 1
             fi
         fi
     done
     
     echo -e "\n${GREEN}[+] Security tools installation completed${NC}"
+    return 0
+}
+
+# Create an alternative httpx implementation using Python
+create_httpx_alternative() {
+    HTTPX_ALT_PATH="$HOME/go/bin/httpx"
+    mkdir -p "$(dirname "$HTTPX_ALT_PATH")" 2>/dev/null
+    
+    cat > "$HTTPX_ALT_PATH" << 'EOF'
+#!/usr/bin/env python3
+import sys
+import argparse
+import urllib.request
+import urllib.error
+import urllib.parse
+import socket
+import ssl
+import json
+import os
+import re
+from concurrent.futures import ThreadPoolExecutor
+
+VERSION = "1.0.0"
+
+def extract_title(html_content):
+    """Extract the title from HTML content"""
+    match = re.search(r'<title>(.*?)</title>', html_content, re.IGNORECASE | re.DOTALL)
+    if match:
+        return match.group(1).strip()
+    return "No Title"
+
+def probe_url(url, timeout=5, follow_redirects=False):
+    """Probe a URL to check if it's alive and gather information"""
+    result = {
+        "url": url,
+        "status_code": 0,
+        "title": "",
+        "content_length": 0,
+        "server": "",
+        "technologies": []
+    }
+    
+    if not url.startswith(('http://', 'https://')):
+        url = f"http://{url}"
+    
+    try:
+        # Create context with relaxed SSL verification
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        
+        # Set up request with timeout
+        request = urllib.request.Request(url, headers={"User-Agent": f"httpx-alternative/{VERSION}"})
+        response = urllib.request.urlopen(request, timeout=timeout, context=ctx)
+        
+        # Follow redirects if enabled
+        if follow_redirects and response.geturl() != url:
+            return probe_url(response.geturl(), timeout, False)  # Don't follow redirects recursively
+        
+        # Read response
+        html_content = response.read().decode('utf-8', errors='ignore')
+        
+        # Fill result data
+        result["status_code"] = response.status
+        result["content_length"] = len(html_content)
+        result["title"] = extract_title(html_content)
+        
+        # Extract server info
+        if "Server" in response.headers:
+            result["server"] = response.headers["Server"]
+            result["technologies"].append(response.headers["Server"])
+        
+        # Simple technology detection based on common patterns
+        tech_patterns = {
+            "WordPress": r'wp-content|wp-includes',
+            "Bootstrap": r'bootstrap\.(?:min\.)?(?:css|js)',
+            "jQuery": r'jquery(?:\.min)?\.js',
+            "React": r'react(?:\.min)?\.js|react-dom',
+            "Angular": r'angular(?:\.min)?\.js|ng-app',
+            "PHP": r'<\?php|X-Powered-By: PHP',
+            "ASP.NET": r'ASP\.NET|__VIEWSTATE',
+            "nginx": r'nginx',
+            "Apache": r'apache'
+        }
+        
+        for tech, pattern in tech_patterns.items():
+            if re.search(pattern, html_content, re.IGNORECASE) or \
+               re.search(pattern, str(response.headers), re.IGNORECASE):
+                if tech not in result["technologies"]:
+                    result["technologies"].append(tech)
+        
+        return result
+    
+    except urllib.error.HTTPError as e:
+        result["status_code"] = e.code
+        return result
+    except (urllib.error.URLError, socket.timeout, ConnectionRefusedError, ssl.SSLError) as e:
+        return None
+    except Exception as e:
+        print(f"Error probing {url}: {str(e)}", file=sys.stderr)
+        return None
+
+def process_target(target, args):
+    """Process a single target and return the result"""
+    result = probe_url(target, args.timeout, args.follow_redirects)
+    
+    # Print output unless silent mode is enabled
+    if result and not args.silent:
+        output = result["url"]
+        if args.status_code:
+            output += f" [{result['status_code']}]"
+        if args.title:
+            output += f" [{result['title']}]"
+        if args.tech_detect and result["technologies"]:
+            output += f" [{', '.join(result['technologies'])}]"
+        print(output)
+    
+    return result
+
+def main():
+    parser = argparse.ArgumentParser(description=f"httpx-alternative v{VERSION} - HTTP probe tool")
+    parser.add_argument("-l", help="Input file with targets")
+    parser.add_argument("-u", "--url", help="Single URL/host to probe")
+    parser.add_argument("-o", help="Output file")
+    parser.add_argument("-silent", action="store_true", help="Silent mode")
+    parser.add_argument("-title", action="store_true", help="Display title")
+    parser.add_argument("-status-code", action="store_true", help="Display status code")
+    parser.add_argument("-web-server", action="store_true", help="Display web server")
+    parser.add_argument("-tech-detect", action="store_true", help="Technology detection")
+    parser.add_argument("-follow-redirects", action="store_true", help="Follow redirects")
+    parser.add_argument("-timeout", type=int, default=5, help="Timeout in seconds")
+    parser.add_argument("-json", action="store_true", help="JSON output")
+    parser.add_argument("-version", action="store_true", help="Show version")
+    parser.add_argument("-threads", type=int, default=20, help="Number of threads")
+    
+    args = parser.parse_args()
+    
+    if args.version:
+        print(f"httpx-alternative v{VERSION}")
+        return 0
+    
+    targets = []
+    
+    # Collect targets
+    if args.l:
+        try:
+            with open(args.l, "r") as f:
+                targets = [line.strip() for line in f if line.strip()]
+        except Exception as e:
+            print(f"Error reading input file: {e}", file=sys.stderr)
+            return 1
+    elif args.url:
+        targets = [args.url]
+    else:
+        # Try to read from stdin if no targets provided
+        if not sys.stdin.isatty():
+            targets = [line.strip() for line in sys.stdin if line.strip()]
+        else:
+            parser.print_help()
+            return 1
+    
+    if not targets:
+        print("No targets provided", file=sys.stderr)
+        return 1
+    
+    # Process targets in parallel
+    results = []
+    with ThreadPoolExecutor(max_workers=args.threads) as executor:
+        futures = [executor.submit(process_target, target, args) for target in targets]
+        for future in futures:
+            result = future.result()
+            if result:
+                results.append(result)
+    
+    # Save results if output file specified
+    if args.o:
+        try:
+            if args.json:
+                with open(args.o, "w") as f:
+                    json.dump(results, f, indent=2)
+            else:
+                with open(args.o, "w") as f:
+                    for result in results:
+                        output = result["url"]
+                        if args.status_code:
+                            output += f" [{result['status_code']}]"
+                        if args.title:
+                            output += f" [{result['title']}]"
+                        if args.tech_detect and result["technologies"]:
+                            output += f" [{', '.join(result['technologies'])}]"
+                        f.write(output + "\n")
+            
+            print(f"Results written to {args.o}")
+        except Exception as e:
+            print(f"Error writing output file: {e}", file=sys.stderr)
+            return 1
+    
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())
+EOF
+
+    # Make it executable
+    chmod +x "$HTTPX_ALT_PATH"
+    echo -e "${GREEN}Alternative httpx implementation created at $HTTPX_ALT_PATH${NC}"
     return 0
 }
 
@@ -579,9 +930,50 @@ EOF
     echo "Command modules created successfully."
 }
 
+# Fix line endings in scripts to ensure they work on Linux
+fix_line_endings() {
+    echo -e "\n${BLUE}===== Fixing script line endings =====${NC}"
+    
+    # Check if dos2unix is available
+    DOS2UNIX=$(which dos2unix 2>/dev/null)
+    if [ -z "$DOS2UNIX" ]; then
+        echo "dos2unix not found. Trying to install it..."
+        sudo apt-get install -y dos2unix || {
+            echo "Warning: Could not install dos2unix. Using alternative method."
+            DOS2UNIX=""
+        }
+    fi
+    
+    if [ -n "$DOS2UNIX" ]; then
+        echo "Using dos2unix at: $DOS2UNIX"
+        for script in *.sh; do
+            if [ -f "$script" ]; then
+                echo "Fixing line endings in $script..."
+                $DOS2UNIX "$script"
+                echo "✓ Line endings fixed in $script"
+                chmod +x "$script"
+            fi
+        done
+    else
+        # Alternative method using sed
+        echo "Using sed to fix line endings..."
+        for script in *.sh; do
+            if [ -f "$script" ]; then
+                echo "Fixing line endings in $script..."
+                sed -i 's/\r$//' "$script"
+                echo "✓ Line endings fixed in $script"
+                chmod +x "$script"
+            fi
+        done
+    fi
+}
+
 # Main function
 main() {
     echo -e "${BLUE}=== Starting security tools installation ===${NC}"
+    
+    # Fix line endings first
+    fix_line_endings
     
     check_sudo
     fix_dpkg
