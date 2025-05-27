@@ -14,7 +14,7 @@ from typing import Dict, List, Any, Optional, Union
 
 # Import modules with fallback handling
 try:
-    import markdown
+    import markdown # type: ignore
     MARKDOWN_AVAILABLE = True
 except ImportError:
     MARKDOWN_AVAILABLE = False

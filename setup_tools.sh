@@ -34,41 +34,33 @@ check_sudo() {
 fix_repo_keys() {
     echo -e "\n${BLUE}Fixing repository key issues...${NC}"
     
-    # Try to import the Kali Linux archive key
-    KALI_KEY="827C8569F2518CC677FECA1AED65462EC8D5E4C5"
-    
-    # First check if key exists in trusted.gpg.d
-    if ! sudo apt-key list 2>/dev/null | grep -q "$KALI_KEY"; then
-        echo "Importing Kali Linux archive key..."
-        # Try multiple methods to import the key
-        if command -v wget >/dev/null 2>&1; then
-            sudo wget -qO - https://archive.kali.org/archive-key.asc | sudo apt-key add -
-        elif command -v curl >/dev/null 2>&1; then
-            curl -fsSL https://archive.kali.org/archive-key.asc | sudo apt-key add -
-        else
-            echo -e "${YELLOW}Neither wget nor curl is available. Trying direct key import...${NC}"
-            # Alternative method using gpg directly if available
-            if command -v gpg >/dev/null 2>&1; then
-                gpg --keyserver keyserver.ubuntu.com --recv-keys "$KALI_KEY"
-                gpg --export "$KALI_KEY" | sudo apt-key add -
-            else
-                echo -e "${RED}Could not import Kali Linux key. Repository operations may fail.${NC}"
-            fi
-        fi
+    # Create keyring directory if it doesn't exist
+    sudo mkdir -p /etc/apt/keyrings
+
+    # Download and add the Kali Linux archive key using the modern approach
+    echo "Importing Kali Linux archive key..."
+    if command -v wget >/dev/null 2>&1; then
+        wget -qO - https://archive.kali.org/archive-key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/kali-archive-keyring.gpg
+    elif command -v curl >/dev/null 2>&1; then
+        curl -fsSL https://archive.kali.org/archive-key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/kali-archive-keyring.gpg
     else
-        echo "Kali Linux key already imported."
+        echo -e "${YELLOW}Neither wget nor curl is available. Manual key import required.${NC}"
+        return
     fi
     
-    # Ensure we have the Kali repository file properly set up
+    # Set proper permissions
+    sudo chmod 644 /etc/apt/keyrings/kali-archive-keyring.gpg
+    
+    # Create a source file that uses the new key
     KALI_SOURCE="/etc/apt/sources.list.d/kali.list"
     if [ ! -f "$KALI_SOURCE" ]; then
         echo "Creating Kali repository file..."
-        echo "deb http://http.kali.org/kali kali-rolling main non-free contrib" | sudo tee "$KALI_SOURCE"
+        echo "deb [signed-by=/etc/apt/keyrings/kali-archive-keyring.gpg] http://http.kali.org/kali kali-rolling main non-free contrib" | sudo tee "$KALI_SOURCE"
     fi
     
-    # Try to update package lists with fixed keys
-    echo "Updating package lists with fixed keys..."
-    sudo apt-get update --allow-unauthenticated || echo "Update still failed, continuing with installation..."
+    # Update package lists
+    echo "Updating package lists with new keys..."
+    sudo apt-get update || echo "Update still failed, continuing with installation..."
 }
 
 # Function to fix any dpkg issues with better error handling
