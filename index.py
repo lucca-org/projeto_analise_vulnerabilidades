@@ -9,19 +9,22 @@ This script installs and configures all necessary tools for security scanning:
 
 No external dependencies on nmap, netcat or other tools outside of these three.
 """
-import subprocess
-import sys
 import os
-import socket
+import sys
 import platform
+import subprocess
 import shutil
-import importlib.util
 import time
 import signal
-import json
-import getpass
-import shlex
+import importlib.util
+import socket
 from pathlib import Path
+
+# Exit if running on Windows
+if platform.system().lower() == "windows":
+    print("This toolkit is designed for Debian/Kali Linux only.")
+    print("Windows is not supported.")
+    sys.exit(1)
 
 # Configuration constants
 GO_VERSION = "1.21.0"
@@ -33,7 +36,10 @@ TOOLS_INFO = {
         "description": "Fast HTTP server probe and technology fingerprinter",
         "repository": "github.com/projectdiscovery/httpx/cmd/httpx",
         "module_file": "commands/httpx.py",
-        "apt_package": None  # httpx is not typically available via apt
+        "apt_package": "httpx-toolkit",  # Alternative apt package name
+        "python_package": "httpx",       # Python package with similar name (but different functionality)
+        "snap_package": "httpx",         # Snap package if available
+        "go_repository": "github.com/projectdiscovery/httpx/cmd/httpx@latest"  # Explicit go repository with version
     },
     "nuclei": {
         "name": "nuclei",
@@ -52,6 +58,69 @@ TOOLS_INFO = {
     }
 }
 
+def check_linux_distro():
+    """Check if running on Debian/Kali Linux."""
+    try:
+        if not os.path.exists("/etc/os-release"):
+            return "unknown"
+            
+        with open("/etc/os-release", "r") as f:
+            content = f.read().lower()
+            if "kali" in content:
+                return "kali"
+            elif "debian" in content or "ubuntu" in content:
+                return "debian"
+            else:
+                return "other_linux"
+    except Exception:
+        return "unknown"
+
+def run_setup_py():
+    """Run the setup.py script in the install directory."""
+    print("Running setup.py first...")
+    
+    # Get the path to setup.py
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    setup_path = os.path.join(script_dir, "install", "setup.py")
+    
+    if not os.path.exists(setup_path):
+        print(f"Error: setup.py not found at {setup_path}")
+        return False
+    
+    # Make setup.py executable
+    os.chmod(setup_path, 0o755)
+    
+    # Run setup.py with Python
+    try:
+        process = subprocess.run([sys.executable, setup_path], check=False)
+        return process.returncode == 0
+    except Exception as e:
+        print(f"Error running setup.py: {e}")
+        return False
+
+def run_bash_script():
+    """Run setup_tools.sh script directly."""
+    print("Running setup_tools.sh...")
+    
+    # Get the path to setup_tools.sh
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    bash_script = os.path.join(script_dir, "setup_tools.sh")
+    
+    if not os.path.exists(bash_script):
+        print(f"Error: setup_tools.sh not found at {bash_script}")
+        return False
+    
+    # Make script executable
+    os.chmod(bash_script, 0o755)
+    
+    # Run the script with bash
+    try:
+        process = subprocess.run(["bash", bash_script], check=False)
+        return process.returncode == 0
+    except Exception as e:
+        print(f"Error running setup_tools.sh: {e}")
+        return False
+
 def timeout_handler(signum, frame):
     """Handle timeouts for functions."""
     raise TimeoutError("Operation timed out")
@@ -64,31 +133,18 @@ def run_with_timeout(func, timeout=SETUP_TIMEOUT):
             return func()
         except Exception as e:
             print(f"Error: {e}")
-            return False
+            return None
             
     # Set the timeout handler on Unix systems
     try:
         # These signals are only available on Unix systems
         if hasattr(signal, 'SIGALRM'):
-            signal.signal(signal.SIGALRM, timeout_handler) # type: ignore
-            if hasattr(signal, 'alarm'):
-                signal.alarm(timeout) # type: ignore
-            
-            try:
-                result = func()
-                if hasattr(signal, 'alarm'):
-                    signal.alarm(0)  # type: ignore # Cancel the alarm
-                return result
-            except TimeoutError:
-                print(f"Operation timed out after {timeout} seconds")
-                return False
-            except Exception as e:
-                if hasattr(signal, 'alarm'):
-                    signal.alarm(0)  # type: ignore # Cancel the alarm
-                print(f"Error: {e}")
-                return False
+            signal.signal(signal.SIGALRM, timeout_handler)
+            signal.alarm(timeout)
+            result = func()
+            signal.alarm(0)  # Reset the alarm
+            return result
         else:
-            # Fall back to no timeout if SIGALRM isn't available
             return func()
     except AttributeError:
         # If signal module doesn't have required attributes, just run the function without timeout
@@ -96,7 +152,7 @@ def run_with_timeout(func, timeout=SETUP_TIMEOUT):
             return func()
         except Exception as e:
             print(f"Error: {e}")
-            return False
+            return None
 
 def kill_hung_processes():
     """Kill any hung apt or dpkg processes."""
@@ -105,7 +161,7 @@ def kill_hung_processes():
         
     processes = ["apt", "apt-get", "dpkg"]
     for proc in processes:
-        run_cmd(["sudo", "killall", "-9", proc], silent=True)
+        subprocess.run(["sudo", "killall", "-9", proc], stderr=subprocess.PIPE, stdout=subprocess.PIPE)
 
 def run_cmd(cmd, shell=False, check=False, use_sudo=False, timeout=300, retry=1, silent=False):
     """
@@ -114,52 +170,32 @@ def run_cmd(cmd, shell=False, check=False, use_sudo=False, timeout=300, retry=1,
     # Check for sudo in a platform-independent way
     if use_sudo and platform.system().lower() != "windows":
         try:
-            # os.geteuid() is only available on Unix-like systems
-            if hasattr(os, 'geteuid') and os.geteuid() != 0: # type: ignore
-                cmd = ["sudo"] + cmd if isinstance(cmd, list) else ["sudo"] + [cmd]
+            if hasattr(os, 'geteuid') and os.geteuid() != 0:
+                if isinstance(cmd, list):
+                    cmd = ["sudo"] + cmd
+                else:
+                    cmd = "sudo " + cmd
         except AttributeError:
-            # We're not on a Unix system, so we can't use sudo
             pass
     
     for attempt in range(retry + 1):
         try:
             if not silent:
-                print(f"Running: {' '.join(cmd) if isinstance(cmd, list) else cmd}")
+                if isinstance(cmd, list):
+                    print(f"Running: {' '.join(cmd)}")
+                else:
+                    print(f"Running: {cmd}")
             
-            process = subprocess.Popen(cmd, shell=shell, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-            
-            try:
-                stdout, stderr = process.communicate(timeout=timeout)
-                if stdout and not stdout.isspace() and not silent:
-                    print(stdout)
-                
-                if process.returncode != 0:
-                    if stderr and not silent:
-                        print(f"Error: {stderr}")
-                    
-                    if attempt < retry:
-                        if not silent:
-                            print(f"Command failed. Retrying ({attempt+1}/{retry})...")
-                        time.sleep(2)  # Add delay between retries
-                        continue
-                    
-                    if check:
-                        raise subprocess.CalledProcessError(process.returncode, cmd)
-                    return False
-                
-                return True
-            except subprocess.TimeoutExpired:
-                # Kill the process if it times out
-                process.kill()
-                process.wait()
-                if not silent:
-                    print(f"Command timed out after {timeout} seconds: {cmd}")
-                if attempt < retry:
-                    if not silent:
-                        print(f"Retrying ({attempt+1}/{retry})...")
-                    time.sleep(2)
-                    continue
-                return False
+            process = subprocess.run(
+                cmd, 
+                shell=shell, 
+                check=check, 
+                timeout=timeout,
+                stdout=subprocess.PIPE if silent else None,
+                stderr=subprocess.PIPE if silent else None,
+                text=True
+            )
+            return process.returncode == 0
         except subprocess.CalledProcessError as e:
             if not silent:
                 print(f"Command failed: {e}")
@@ -171,7 +207,7 @@ def run_cmd(cmd, shell=False, check=False, use_sudo=False, timeout=300, retry=1,
             return False
         except Exception as e:
             if not silent:
-                print(f"Error running command {cmd}: {str(e)}")
+                print(f"Error running command: {e}")
             if attempt < retry:
                 if not silent:
                     print(f"Retrying ({attempt+1}/{retry})...")
@@ -519,6 +555,277 @@ def install_apt_packages():
     print("Apt package installation completed")
     return True
 
+def install_httpx():
+    """Install httpx using multiple methods with fallbacks."""
+    print("\n===== Installing httpx =====\n")
+    
+    # Check if httpx is already installed
+    httpx_path = get_executable_path("httpx")
+    if httpx_path:
+        print(f"✓ httpx is already installed at {httpx_path}")
+        return True
+    
+    # Method 1: Try installing with Go (preferred method)
+    print("Attempting to install httpx using Go...")
+    go_installed = check_and_install_go()
+    
+    if go_installed:
+        print("Using Go to install httpx...")
+        # Set up Go environment
+        os.environ["GO111MODULE"] = "on"  # Ensure Go modules are enabled
+        
+        # Try regular go install command
+        if run_cmd(["go", "install", "-v", TOOLS_INFO["httpx"]["go_repository"]], retry=2):
+            print("✓ httpx installed successfully via Go")
+            # Update PATH to include Go binaries
+            setup_go_env()
+            return True
+        
+        # If failed, try alternative go get command
+        print("First go install attempt failed, trying alternative method...")
+        if run_cmd(["go", "get", "-v", TOOLS_INFO["httpx"]["repository"]], retry=2):
+            print("✓ httpx installed successfully via Go (alternative method)")
+            # Update PATH to include Go binaries
+            setup_go_env()
+            return True
+    
+    # Method 2: Try installing with apt
+    if platform.system().lower() == "linux":
+        print("Attempting to install httpx using apt...")
+        # Fix any package management issues first
+        fix_dpkg_interruptions()
+        
+        # Try different apt package names
+        apt_package_names = ["httpx", "httpx-toolkit", "golang-github-projectdiscovery-httpx"]
+        
+        for package in apt_package_names:
+            print(f"Trying to install {package}...")
+            if run_cmd(["sudo", "apt-get", "install", "-y", package], retry=2):
+                # Verify installation
+                if get_executable_path("httpx"):
+                    print(f"✓ httpx installed successfully via apt using package {package}")
+                    return True
+                else:
+                    print(f"Package {package} installed but httpx executable not found.")
+            else:
+                print(f"Failed to install {package} via apt.")
+    
+    # Method 3: Try installing with snap if available
+    if platform.system().lower() == "linux" and shutil.which("snap"):
+        print("Attempting to install httpx using snap...")
+        if run_cmd(["sudo", "snap", "install", "httpx"], retry=2):
+            # Verify installation
+            if get_executable_path("httpx"):
+                print("✓ httpx installed successfully via snap")
+                return True
+            else:
+                print("Snap package installed but httpx executable not found.")
+    
+    # Method 4: Download pre-built binary directly
+    print("Attempting to download pre-built httpx binary...")
+    try:
+        # Determine system and architecture
+        system = platform.system().lower()
+        arch = platform.machine().lower()
+        
+        # Map architecture names
+        arch_map = {
+            "x86_64": "amd64",
+            "amd64": "amd64",
+            "i386": "386",
+            "i686": "386",
+            "armv7l": "arm",
+            "armv6l": "arm",
+            "aarch64": "arm64",
+            "arm64": "arm64"
+        }
+        
+        if arch in arch_map:
+            mapped_arch = arch_map[arch]
+        else:
+            mapped_arch = "amd64"  # Default to amd64 if unknown
+        
+        # Set release URL based on system
+        if system == "linux":
+            release_url = f"https://github.com/projectdiscovery/httpx/releases/latest/download/httpx_{system}_{mapped_arch}.zip"
+        elif system == "darwin":
+            release_url = f"https://github.com/projectdiscovery/httpx/releases/latest/download/httpx_{system}_{mapped_arch}.zip"
+        elif system == "windows":
+            release_url = f"https://github.com/projectdiscovery/httpx/releases/latest/download/httpx_{system}_{mapped_arch}.zip"
+        else:
+            print(f"Unsupported system: {system}")
+            return False
+        
+        # Create installation directory
+        install_dir = os.path.expanduser("~/.local/bin")
+        os.makedirs(install_dir, exist_ok=True)
+        
+        # Download zip file
+        zip_path = os.path.join(os.path.expanduser("~"), "httpx.zip")
+        
+        # Try wget first
+        if shutil.which("wget"):
+            if not run_cmd(["wget", release_url, "-O", zip_path]):
+                print("Failed to download httpx with wget.")
+                # Try curl as fallback
+                if shutil.which("curl"):
+                    if not run_cmd(["curl", "-L", release_url, "-o", zip_path]):
+                        print("Failed to download httpx with curl as well.")
+                        return False
+                else:
+                    return False
+        elif shutil.which("curl"):
+            if not run_cmd(["curl", "-L", release_url, "-o", zip_path]):
+                print("Failed to download httpx with curl.")
+                return False
+        else:
+            print("Neither wget nor curl is available for downloading. Please install either tool.")
+            return False
+        
+        # Extract the zip file
+        import zipfile
+        try:
+            with zipfile.ZipFile(zip_path, 'r') as zip_ref:
+                zip_ref.extractall(install_dir)
+            
+            # Make executable
+            httpx_path = os.path.join(install_dir, "httpx")
+            if os.path.exists(httpx_path):
+                os.chmod(httpx_path, 0o755)
+                print(f"✓ httpx installed successfully to {httpx_path}")
+                
+                # Update PATH
+                if install_dir not in os.environ.get("PATH", ""):
+                    os.environ["PATH"] = os.environ.get("PATH", "") + os.pathsep + install_dir
+                    update_shell_rc_files([install_dir])
+                
+                return True
+            else:
+                print("Extracted zip but httpx executable not found.")
+        except Exception as e:
+            print(f"Error extracting httpx zip file: {e}")
+        finally:
+            # Clean up
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
+    
+    except Exception as e:
+        print(f"Error downloading pre-built httpx binary: {e}")
+    
+    # If all installation methods failed, create a Python-based wrapper as last resort
+    print("All installation methods failed. Creating a Python-based httpx wrapper...")
+    
+    httpx_wrapper_path = os.path.expanduser("~/.local/bin/httpx")
+    os.makedirs(os.path.dirname(httpx_wrapper_path), exist_ok=True)
+    
+    httpx_wrapper_content = """#!/usr/bin/env python3
+import sys
+import subprocess
+import argparse
+import requests
+import json
+import time
+import os
+
+def main():
+    print("httpx wrapper (simple HTTP probe)")
+    parser = argparse.ArgumentParser(description="Simple HTTP probe")
+    parser.add_argument("-l", help="Input file with targets")
+    parser.add_argument("-o", help="Output file")
+    parser.add_argument("-silent", action="store_true", help="Silent mode")
+    parser.add_argument("-title", action="store_true", help="Display title")
+    parser.add_argument("-status-code", action="store_true", help="Display status code")
+    parser.add_argument("-tech-detect", action="store_true", help="Technology detection")
+    parser.add_argument("-follow-redirects", action="store_true", help="Follow redirects")
+    
+    args, unknown = parser.parse_known_args()
+    
+    targets = []
+    if args.l:
+        try:
+            with open(args.l, "r") as f:
+                targets = [line.strip() for line in f if line.strip()]
+        except Exception as e:
+            print(f"Error reading input file: {e}")
+            return 1
+    
+    results = []
+    for target in targets:
+        if not target.startswith(("http://", "https://")):
+            target = f"http://{target}"
+        
+        try:
+            print(f"Probing {target}...")
+            response = requests.get(target, timeout=10, allow_redirects=args.follow_redirects)
+            
+            result = {
+                "url": target,
+                "status_code": response.status_code,
+                "content_length": len(response.content)
+            }
+            
+            if args.title:
+                import re
+                title_match = re.search(r"<title>(.*?)</title>", response.text, re.IGNORECASE)
+                result["title"] = title_match.group(1) if title_match else "No Title"
+            
+            results.append(result)
+            
+            if not args.silent:
+                output = target
+                if args.status_code:
+                    output += f" [{response.status_code}]"
+                if args.title and "title" in result:
+                    output += f" [{result['title']}]"
+                print(output)
+                
+        except Exception as e:
+            if not args.silent:
+                print(f"Error probing {target}: {e}")
+    
+    if args.o:
+        try:
+            with open(args.o, "w") as f:
+                for result in results:
+                    output = result["url"]
+                    if args.status_code:
+                        output += f" [{result['status_code']}]"
+                    if args.title and "title" in result:
+                        output += f" [{result['title']}]"
+                    f.write(output + "\\n")
+            print(f"Results written to {args.o}")
+        except Exception as e:
+            print(f"Error writing output file: {e}")
+            
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())
+"""
+    
+    try:
+        with open(httpx_wrapper_path, "w") as f:
+            f.write(httpx_wrapper_content)
+        
+        # Make the script executable
+        os.chmod(httpx_wrapper_path, 0o755)
+        
+        # Install Python requests module for the wrapper
+        run_cmd([sys.executable, "-m", "pip", "install", "requests"])
+        
+        print(f"✓ Created httpx wrapper script at {httpx_wrapper_path}")
+        
+        # Update PATH
+        install_dir = os.path.dirname(httpx_wrapper_path)
+        if install_dir not in os.environ.get("PATH", ""):
+            os.environ["PATH"] = os.environ.get("PATH", "") + os.pathsep + install_dir
+            update_shell_rc_files([install_dir])
+        
+        return True
+    except Exception as e:
+        print(f"Error creating httpx wrapper: {e}")
+        return False
+
 def install_security_tools():
     """Install security tools using both apt and Go."""
     print("\n===== Installing Security Tools =====\n")
@@ -539,6 +846,10 @@ def install_security_tools():
             print(f"✓ {tool_name} is already installed at {tool_path}")
             tools_installed[tool_name] = True
 
+    # Try to install httpx with specialized function that tries multiple methods
+    if not tools_installed["httpx"]:
+        tools_installed["httpx"] = install_httpx()
+    
     # Install nuclei and naabu via apt if not already installed
     if platform.system().lower() == "linux":
         if not tools_installed["nuclei"]:
@@ -555,7 +866,7 @@ def install_security_tools():
 
     # Install any tools not yet installed using Go
     for tool_name, installed in tools_installed.items():
-        if not installed:
+        if not installed and tool_name != "httpx":  # Skip httpx as we already tried to install it
             tool_info = next((item for item in TOOLS_INFO.values() if item["name"] == tool_name), None)
             if not tool_info:
                 print(f"! Tool information not found for {tool_name}. Skipping.")
@@ -882,7 +1193,7 @@ from pathlib import Path
 import shutil
 
 def run_{tool}(*args, **kwargs):
-    \"\"\"Run {tool} with provided arguments.\"\"\"
+    \"\"\"Run {tool} with provided arguments.\"""
     # Find the tool path
     tool_path = shutil.which("{tool}")
     if not tool_path:
@@ -924,7 +1235,7 @@ def run_{tool}(*args, **kwargs):
         return False
 
 def check_{tool}():
-    \"\"\"Check if {tool} is installed.\"\"\"
+    \"\"\"Check if {tool} is installed.\"""
     try:
         # First check in PATH
         tool_path = shutil.which("{tool}")
@@ -1407,6 +1718,27 @@ def check_and_install_dependencies():
 def main():
     """Main installation function."""
     print("\n===== Vulnerability Analysis Toolkit Setup =====\n")
+    
+    # Verify running on Linux
+    if platform.system().lower() != "linux":
+        print("Error: This toolkit is designed for Debian/Kali Linux only.")
+        print("Windows is not supported.")
+        sys.exit(1)
+    
+    # Check Linux distribution
+    distro = check_linux_distro()
+    print(f"Detected Linux distribution: {distro}")
+    
+    if distro not in ["kali", "debian"]:
+        print("Warning: This toolkit is optimized for Kali Linux and Debian-based systems.")
+        print("Some features may not work correctly on your distribution.")
+    
+    # First run setup.py
+    setup_success = run_setup_py()
+    if not setup_success:
+        print("Warning: setup.py didn't complete successfully. Continuing with installation...")
+    
+    # Main installation
     print("This script will install and configure the following tools:")
     print("  - Naabu: Fast port scanner")
     print("  - HTTPX: HTTP server probe")
@@ -1415,107 +1747,43 @@ def main():
     
     # Check for sudo
     if platform.system().lower() == "linux":
-        try:
-            # os.geteuid() is only available on Unix-like systems
-            if hasattr(os, 'geteuid') and os.geteuid() != 0: # type: ignore
-                print("Some operations may require sudo privileges.")
-                print("You might be prompted for your password during installation.")
-        except AttributeError:
-            # We're not on a Unix system
-            print("Running on a non-Unix system. Some features may be limited.")
+        if os.geteuid() != 0:
+            print("This script requires sudo privileges for some operations.")
+            try:
+                subprocess.run(["sudo", "true"], check=True)
+            except:
+                print("Failed to obtain sudo privileges. Some operations may fail.")
     
-    input("Press Enter to continue...")
+    try:
+        input("Press Enter to continue...")
+    except KeyboardInterrupt:
+        print("\nSetup cancelled.")
+        sys.exit(1)
     
-    # First try to install tools via apt
+    # Try running the bash script directly if on Linux
     if platform.system().lower() == "linux":
-        print("\n===== Checking for apt installation of tools =====\n")
-        subprocess.run(["sudo", "apt-get", "update"])
+        print("\nRunning setup_tools.sh to complete the installation...")
+        success = run_bash_script()
         
-        # Try installing naabu and nuclei via apt
-        print("\n===== Installing naabu and nuclei via apt =====\n")
-        subprocess.run(["sudo", "apt-get", "install", "-y", "naabu", "nuclei"])
-    
-    # Install all security tools
-    print("\n===== Installing security tools =====\n")
-    tools = install_security_tools()
-    
-    # Update nuclei templates
-    update_nuclei_templates()
-    
-    # Display summary
-    print("\n===== Installation Summary =====\n")
-    
-    # Check which tools are available
-    for tool_name in ["naabu", "httpx", "nuclei"]:
-        path = get_executable_path(tool_name)
-        if path:
-            print(f"✓ {tool_name}: {path}")
+        if success:
+            print("\n✅ Installation completed successfully!")
         else:
-            print(f"✗ {tool_name}: Not found")
+            print("\n⚠️ Installation completed with some issues.")
+            print("Please check the output for error messages.")
+    else:
+        print("Error: This toolkit is designed for Debian/Kali Linux only.")
+        print("Windows is not supported.")
+        sys.exit(1)
     
-    print("\n===== Quick Start =====\n")
-    print("1. Scan a target:")
-    print("   python workflow.py example.com")
-    print("\n2. Scan with specific ports:")
-    print("   python workflow.py example.com --ports 80,443,8000-8090")
-    print("\n3. Scan with advanced options:")
-    print("   python workflow.py example.com --tags cve,rce --severity critical,high --verbose")
-    
-    print("\nAll required files have been created and the environment is ready for use.")
-
-def fix_script_line_endings():
-    """Fix line endings in shell scripts to ensure they work on Linux."""
-    print("\n===== Fixing script line endings =====\n")
-    
-    # Check if dos2unix is installed
-    if platform.system().lower() == "linux":
-        dos2unix_installed = shutil.which("dos2unix")
-        if not dos2unix_installed:
-            print("dos2unix not found, installing...")
-            run_cmd("sudo DEBIAN_FRONTEND=noninteractive apt-get install -y dos2unix", shell=True)
-        
-        # Check again to make sure it was installed
-        dos2unix_installed = shutil.which("dos2unix")
-        if dos2unix_installed:
-            print(f"Using dos2unix at: {dos2unix_installed}")
-            # Fix line endings in setup_tools.sh
-            if os.path.exists("setup_tools.sh"):
-                print("Fixing line endings in setup_tools.sh...")
-                run_cmd(["dos2unix", "setup_tools.sh"])
-                print("✓ Line endings fixed in setup_tools.sh")
-            else:
-                print("Warning: setup_tools.sh not found")
-        else:
-            print("Failed to install dos2unix, script line endings may cause issues")
-    
-    # Also make the script executable
-    if os.path.exists("setup_tools.sh"):
-        run_cmd(["chmod", "+x", "setup_tools.sh"])
-
+    return True
 
 # Add this function call right before running main setup
 if __name__ == "__main__":
     try:
-        print("\n===== Starting Vulnerability Analysis Toolkit Setup =====\n")
-        
-        # Check and install all dependencies
-        print("Step 1: Checking and installing dependencies...")
-        check_and_install_dependencies()
-        
-        # Fix line endings in shell scripts
-        fix_script_line_endings()
-        
-        # Run the main setup
-        print("Step 2: Running main setup...")
         main()
-        
-        print("\n===== Setup Completed Successfully =====\n")
-        
     except KeyboardInterrupt:
-        print("\n\nSetup interrupted by user.")
+        print("\nInstallation interrupted by user.")
         sys.exit(1)
     except Exception as e:
-        print(f"\n\nError during setup: {e}")
-        import traceback
-        traceback.print_exc()
+        print(f"\nAn error occurred during installation: {e}")
         sys.exit(1)
