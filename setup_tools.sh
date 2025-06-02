@@ -16,7 +16,7 @@ echo "This script will install and configure all necessary tools for security sc
 echo -e "${YELLOW}Note: This script is for Linux systems. Windows is not supported.${NC}"
 
 # Function to check for root/sudo access
-function check_sudo() {  # Ensure the script explicitly uses bash syntax
+check_sudo() {
     if [ "$(id -u)" != "0" ]; then
         echo -e "${YELLOW}This script requires sudo for some operations.${NC}"
         # Check if user can use sudo
@@ -221,13 +221,6 @@ install_go() {
     echo -e "${GREEN}Go installed successfully. You may need to restart your terminal or run 'source ~/.bashrc'${NC}"
 }
 
-# Fix syntax error near line 801
-if [ some_condition ]; then
-    # ...existing code...
-else
-    # ...existing code...
-fi  # Ensure this matches the opening if statement
-
 # Function to handle script execution gracefully
 function run_script() {
     local script_path="$1"
@@ -239,9 +232,6 @@ function run_script() {
         exit 1
     fi
 }
-
-# Example usage in setup_tools.sh
-run_script "./setup_tools.sh"
 
 # Create alternative naabu implementations when needed
 create_naabu_alternative() {
@@ -479,3 +469,35 @@ install_security_tools() {
         fi
     fi
 }
+
+# Main script execution
+
+# Check for sudo access
+check_sudo
+
+# Step 1: Fix any package manager issues first
+fix_dpkg
+
+# Step 2: Install required system packages
+install_apt_packages
+
+# Step 3: Install Go if needed
+install_go
+
+# Step 4: Install security tools
+install_security_tools
+
+# Step 5: Create alternative implementations if needed
+if ! command -v naabu >/dev/null 2>&1 && ! [ -f "$HOME/go/bin/naabu" ]; then
+    create_naabu_alternative
+fi
+
+echo -e "\n${GREEN}=====================================${NC}"
+echo -e "${GREEN}✓ Vulnerability toolkit setup complete${NC}"
+echo -e "${GREEN}=====================================${NC}"
+
+echo -e "\nYou can now use the toolkit by running:"
+echo -e "  python3 workflow.py example.com"
+echo -e "  python3 code_scanner.py /path/to/project"
+
+exit 0
