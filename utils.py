@@ -236,17 +236,13 @@ def get_executable_path(cmd: str) -> Optional[str]:
 
 def get_system_memory_gb() -> float:
     """
-    Get system memory in GB in a platform-independent way
-    
-    Returns:
-        Memory in GB (float)
+    Get the total system memory in GB.
     """
     try:
         if platform.system() == "Linux":
             with open('/proc/meminfo', 'r') as f:
                 for line in f:
                     if line.startswith('MemTotal:'):
-                        # Extract value and convert from KB to GB
                         mem_kb = int(line.split()[1])
                         return mem_kb / (1024 * 1024)
         elif platform.system() == "Windows":
@@ -270,19 +266,18 @@ def get_system_memory_gb() -> float:
             return memory_status.dwTotalPhys / (1024 * 1024 * 1024)
         elif platform.system() == "Darwin":  # macOS
             result = subprocess.run(['sysctl', '-n', 'hw.memsize'], 
-                                  capture_output=True, text=True)
+                                      capture_output=True, text=True)
             mem_bytes = int(result.stdout.strip())
             return mem_bytes / (1024 * 1024 * 1024)
     except Exception as e:
         print(f"Error detecting system memory: {e}")
-    
-    # Default to a conservative 4GB if detection fails
-    return 4.0
+    return 4.0  # Default to 4GB if detection fails
 
-# Add utility to safely handle both Windows and Unix paths
 def normalize_path(path: str) -> str:
-    """Convert file paths to the correct format for the current OS."""
-    if platform.system().lower() == "windows":
+    """
+    Normalize file paths for the current operating system.
+    """
+    if os.name == 'nt':  # Windows
         return path.replace('/', '\\')
     else:
         return path.replace('\\', '/')

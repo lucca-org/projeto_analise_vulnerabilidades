@@ -45,12 +45,6 @@ except ImportError:
         except Exception as e:
             print(f"Error creating directory {directory}: {e}")
             return False
-            
-    def normalize_path(path):
-        if os.name == 'nt':  # Windows
-            return path.replace('/', '\\')
-        else:
-            return path.replace('\\', '/')
 
 # Add a warning for missing dependencies
 def check_dependencies():

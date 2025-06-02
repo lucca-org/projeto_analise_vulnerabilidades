@@ -18,6 +18,40 @@ A comprehensive toolkit for automated vulnerability scanning and security analys
 - Internet connection for tool installation
 - Root/sudo access for dependencies
 
+## Setting Up the Environment
+
+### Python Virtual Environment
+1. Install the virtual environment package:
+   ```bash
+   sudo apt install -y python3-venv
+   ```
+2. Create and activate the virtual environment:
+   ```bash
+   python3 -m venv venv
+   source venv/bin/activate
+   ```
+3. Install dependencies:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+### Go Installation
+1. Install Go:
+   ```bash
+   sudo apt update
+   sudo apt install -y golang-go
+   ```
+2. Set up environment variables:
+   ```bash
+   echo 'export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin' >> ~/.bashrc
+   echo 'export GOPATH=$HOME/go' >> ~/.bashrc
+   source ~/.bashrc
+   ```
+3. Verify installation:
+   ```bash
+   go version
+   ```
+
 ## Installation
 
 ### Option 1: Recommended Single-Script Setup (Kali/Debian)

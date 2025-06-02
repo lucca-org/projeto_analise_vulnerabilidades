@@ -38,25 +38,7 @@ echo -e "${GREEN}✓ Backup created${NC}"
 
 # Step 2: Install the Kali archive keyring if needed
 echo -e "\n${BLUE}[2/4] Ensuring Kali archive keyring is installed...${NC}"
-
-# Create keyring directory if it doesn't exist
-mkdir -p /etc/apt/keyrings
-
-# Download and add the Kali Linux archive key using the modern approach
-echo "Importing Kali Linux archive key..."
-if command -v wget >/dev/null 2>&1; then
-    wget -qO - https://archive.kali.org/archive-key.asc | gpg --dearmor -o /etc/apt/keyrings/kali-archive-keyring.gpg
-elif command -v curl >/dev/null 2>&1; then
-    curl -fsSL https://archive.kali.org/archive-key.asc | gpg --dearmor -o /etc/apt/keyrings/kali-archive-keyring.gpg
-else
-    echo -e "${RED}Neither wget nor curl is available to fetch the key.${NC}"
-    echo "Please install either wget or curl."
-    exit 1
-fi
-
-# Set proper permissions
-chmod 644 /etc/apt/keyrings/kali-archive-keyring.gpg
-echo -e "${GREEN}✓ Kali archive key setup completed${NC}"
+bash ./fix_repo_keys.sh  # Call the reusable script
 
 # Step 3: Test mirrors and create optimized sources.list
 echo -e "\n${BLUE}[3/4] Testing repository mirrors...${NC}"

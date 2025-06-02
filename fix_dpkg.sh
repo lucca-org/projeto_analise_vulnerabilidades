@@ -22,52 +22,9 @@ if [ "$EUID" -ne 0 ]; then
   exit $?
 fi
 
-# Step 0: Fix repository key issues (new step)
+# Step 0: Fix repository key issues
 echo -e "\n${BLUE}[0/7] Fixing repository key issues...${NC}"
-
-# Create keyring directory if it doesn't exist
-mkdir -p /etc/apt/keyrings
-
-# Download and add the Kali Linux archive key using the modern approach
-echo -n "Checking for Kali Linux archive key... "
-if [ ! -f "/etc/apt/keyrings/kali-archive-keyring.gpg" ]; then
-    echo -e "${YELLOW}missing${NC}"
-    echo "Importing Kali Linux archive key..."
-    
-    # First try wget
-    if command -v wget >/dev/null 2>&1; then
-        wget -qO - https://archive.kali.org/archive-key.asc | gpg --dearmor -o /etc/apt/keyrings/kali-archive-keyring.gpg
-    # Then try curl
-    elif command -v curl >/dev/null 2>&1; then
-        curl -fsSL https://archive.kali.org/archive-key.asc | gpg --dearmor -o /etc/apt/keyrings/kali-archive-keyring.gpg
-    # Finally try direct download with gpg
-    else
-        echo -e "${RED}Neither wget nor curl is available. Cannot download key.${NC}"
-        exit 1
-    fi
-    
-    # Set proper permissions
-    chmod 644 /etc/apt/keyrings/kali-archive-keyring.gpg
-    echo -e "${GREEN}✓ Kali Linux archive key imported${NC}"
-else
-    echo -e "${GREEN}found${NC}"
-fi
-
-# Try fixing sources.list files
-echo "Checking APT sources configuration..."
-# Create a backup of sources.list
-cp /etc/apt/sources.list /etc/apt/sources.list.backup
-
-# Add multiple repository mirrors for better reliability
-echo "Adding multiple repository mirrors for better reliability..."
-cat > /etc/apt/sources.list.d/kali-reliable-mirrors.list << EOF
-# Added by fix_dpkg.sh script - Multiple reliable mirrors
-deb [signed-by=/etc/apt/keyrings/kali-archive-keyring.gpg] http://kali.download/kali kali-rolling main contrib non-free
-deb [signed-by=/etc/apt/keyrings/kali-archive-keyring.gpg] http://mirror.ufro.cl/kali kali-rolling main contrib non-free
-deb [signed-by=/etc/apt/keyrings/kali-archive-keyring.gpg] http://ftp.acc.umu.se/mirror/kali.org/kali kali-rolling main contrib non-free
-EOF
-
-echo -e "${GREEN}✓ Added multiple repository mirrors${NC}"
+bash ./fix_repo_keys.sh  # Call the reusable script
 
 # Step 1: Kill processes that might be holding locks
 echo -e "\n${BLUE}[1/7] Killing processes that might be holding locks...${NC}"
