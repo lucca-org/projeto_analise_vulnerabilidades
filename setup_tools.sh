@@ -191,7 +191,9 @@ check_offline_installation() {
 install_go() {
     if command -v go >/dev/null 2>&1; then
         echo -e "${GREEN}Go is already installed.${NC}"
-        return
+        go_version=$(go version 2>/dev/null)
+        echo -e "Current Go version: ${go_version:-unknown}"
+        return 0
     fi
 
     echo -e "\n${BLUE}[3/7] Installing Go...${NC}"
@@ -211,99 +213,137 @@ install_go() {
         if [ -x "$go_path" ]; then
             echo -e "${GREEN}Found Go at $go_path${NC}"
             # Add to PATH if not already there
-            if ! echo $PATH | grep -q "$(dirname $go_path)"; then
-                export PATH=$PATH:$(dirname $go_path)
-                echo "Added $(dirname $go_path) to PATH"
+            if ! echo "$PATH" | grep -q "$(dirname "$go_path")"; then
+                export PATH="$PATH:$(dirname "$go_path")"
+                echo "Added $(dirname "$go_path") to PATH"
             fi
-            return
+            return 0
         fi
     done
 
+    # Create temporary directory for downloads
+    TMP_DIR=$(mktemp -d)
+    GO_TAR="$TMP_DIR/go.tar.gz"
+    
     # Try with wget first
     if command -v wget >/dev/null 2>&1; then
         echo "Downloading Go with wget..."
-        wget -q --show-progress https://golang.org/dl/go${GO_VERSION}.linux-${GOARCH}.tar.gz -O /tmp/go.tar.gz || {
+        if wget -q --show-progress "https://golang.org/dl/go${GO_VERSION}.linux-${GOARCH}.tar.gz" -O "$GO_TAR"; then
+            echo "Download successful"
+        else
             echo -e "${YELLOW}Failed to download Go with wget. Trying with curl...${NC}"
             if command -v curl >/dev/null 2>&1; then
                 echo "Downloading Go with curl..."
-                curl -L https://golang.org/dl/go${GO_VERSION}.linux-${GOARCH}.tar.gz -o /tmp/go.tar.gz || {
+                if curl -L "https://golang.org/dl/go${GO_VERSION}.linux-${GOARCH}.tar.gz" -o "$GO_TAR"; then
+                    echo "Download successful"
+                else
                     echo -e "${RED}Failed to download Go. Please check your network connection.${NC}"
+                    rm -rf "$TMP_DIR"
                     return 1
-                }
+                fi
             else
                 echo -e "${RED}Neither wget nor curl is available. Cannot download Go.${NC}"
+                rm -rf "$TMP_DIR"
                 return 1
-            }
-        }
+            fi
+        fi
     elif command -v curl >/dev/null 2>&1; then
         echo "Downloading Go with curl..."
-        curl -L https://golang.org/dl/go${GO_VERSION}.linux-${GOARCH}.tar.gz -o /tmp/go.tar.gz || {
+        if curl -L "https://golang.org/dl/go${GO_VERSION}.linux-${GOARCH}.tar.gz" -o "$GO_TAR"; then
+            echo "Download successful"
+        else
             echo -e "${RED}Failed to download Go. Please check your network connection.${NC}"
+            rm -rf "$TMP_DIR"
             return 1
-        }
+        fi
     else
         echo -e "${RED}Neither wget nor curl is available. Cannot download Go.${NC}"
+        rm -rf "$TMP_DIR"
         return 1
     fi
     
     # Attempt to remove previous Go installation
     echo "Removing previous Go installation if it exists..."
-    sudo rm -rf /usr/local/go
+    sudo rm -rf /usr/local/go 2>/dev/null || true
     
     # Extract Go to /usr/local with fallback to user's home directory
     echo "Extracting Go..."
-    if ! sudo tar -C /usr/local -xzf /tmp/go.tar.gz; then
-        echo -e "${YELLOW}Failed to extract Go to /usr/local (permission issues?). Trying user's home directory...${NC}"
-        mkdir -p $HOME/go-install
-        tar -C $HOME/go-install -xzf /tmp/go.tar.gz || { 
-            echo -e "${RED}Failed to extract Go. Installation aborted.${NC}"; 
-            rm /tmp/go.tar.gz;
-            return 1; 
-        }
-        
-        # Set Go paths for user installation
-        export PATH=$PATH:$HOME/go-install/go/bin:$HOME/go/bin
-        
-        # Update shell configuration files for user installation
-        for config_file in ~/.bashrc ~/.zshrc ~/.profile; do
-            if [ -f "$config_file" ]; then
-                grep -q "export PATH=.*$HOME/go-install/go/bin" "$config_file" || {
-                    echo "export PATH=\$PATH:$HOME/go-install/go/bin:$HOME/go/bin" >> "$config_file"
-                    echo "Updated $config_file with Go path."
-                }
-            fi
-        done
-        
-        echo -e "${GREEN}Go installed successfully in $HOME/go-install${NC}"
-    else
-        # Clean up
-        rm /tmp/go.tar.gz
+    if sudo tar -C /usr/local -xzf "$GO_TAR"; then
+        echo -e "${GREEN}Go extracted to /usr/local/go${NC}"
+        rm -f "$GO_TAR"
         
         # Update PATH for system installation
-        export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
+        export PATH="$PATH:/usr/local/go/bin:$HOME/go/bin"
         
         # Update shell configuration files
         for config_file in ~/.bashrc ~/.zshrc ~/.profile; do
             if [ -f "$config_file" ]; then
-                grep -q "export PATH=.*\/usr\/local\/go\/bin" "$config_file" || {
+                if ! grep -q "export PATH=.*\/usr\/local\/go\/bin" "$config_file"; then
                     echo 'export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin' >> "$config_file"
                     echo "Updated $config_file with Go path."
-                }
+                fi
             fi
         done
         
         echo -e "${GREEN}Go installed successfully in /usr/local/go${NC}"
+    else
+        echo -e "${YELLOW}Failed to extract Go to /usr/local (permission issues?). Trying user's home directory...${NC}"
+        mkdir -p "$HOME/go-install"
+        if tar -C "$HOME/go-install" -xzf "$GO_TAR"; then
+            echo -e "${GREEN}Go extracted to $HOME/go-install/go${NC}"
+            rm -f "$GO_TAR"
+            
+            # Set Go paths for user installation
+            export PATH="$PATH:$HOME/go-install/go/bin:$HOME/go/bin"
+            
+            # Update shell configuration files for user installation
+            for config_file in ~/.bashrc ~/.zshrc ~/.profile; do
+                if [ -f "$config_file" ];then
+                    if ! grep -q "export PATH=.*$HOME/go-install/go/bin" "$config_file"; then
+                        echo "export PATH=\$PATH:$HOME/go-install/go/bin:$HOME/go/bin" >> "$config_file"
+                        echo "Updated $config_file with Go path."
+                    fi
+                fi
+            done
+            
+            echo -e "${GREEN}Go installed successfully in $HOME/go-install${NC}"
+        else
+            echo -e "${RED}Failed to extract Go. Installation aborted.${NC}"
+            rm -rf "$TMP_DIR"
+            return 1
+        fi
     fi
     
-    # Source the profile to update current session
-    source ~/.profile 2>/dev/null || source ~/.bashrc 2>/dev/null || source ~/.zshrc 2>/dev/null || true
+    # Clean up
+    rm -rf "$TMP_DIR"
+    
+    # Try to make go command available in current shell
+    hash -r 2>/dev/null || true
     
     # Verify Go installation
     if command -v go >/dev/null 2>&1; then
         echo -e "${GREEN}Go is now available in your PATH. Version: $(go version)${NC}"
+        return 0
     else
-        echo -e "${YELLOW}Go is installed but not available in PATH. You may need to restart your terminal or manually set PATH.${NC}"
-        echo "Manual PATH setting: export PATH=\$PATH:/usr/local/go/bin:\$HOME/go/bin"
+        # If Go is not in PATH yet, try with full path
+        if [ -x "/usr/local/go/bin/go" ]; then
+            echo -e "${YELLOW}Go is installed but not in PATH. Using full path for now.${NC}"
+            export PATH="$PATH:/usr/local/go/bin"
+            hash -r 2>/dev/null || true
+            return 0
+        elif [ -x "$HOME/go-install/go/bin/go" ]; then
+            echo -e "${YELLOW}Go is installed but not in PATH. Using full path for now.${NC}"
+            export PATH="$PATH:$HOME/go-install/go/bin"
+            hash -r 2>/dev/null || true
+            return 0
+        else
+            echo -e "${RED}Go installation verification failed.${NC}"
+            echo -e "${YELLOW}Please add Go to your PATH manually:${NC}"
+            echo "export PATH=\$PATH:/usr/local/go/bin:\$HOME/go/bin"
+            echo "or"
+            echo "export PATH=\$PATH:$HOME/go-install/go/bin:\$HOME/go/bin"
+            return 1
+        fi
     fi
 }
 
@@ -337,7 +377,24 @@ create_naabu_alternative() {
 # naabu alternative implementation
 # This script provides a basic port scanning capability without external dependencies
 
-# ...existing code...
+TARGET="$1"
+PORTS="$2"
+
+if [ "$1" == "-h" ] || [ "$1" == "--help" ] || [ -z "$1" ]; then
+    echo "Simple port scanner (naabu alternative)"
+    echo "Usage: $(basename $0) <target> [ports]"
+    echo "Example: $(basename $0) example.com 80,443"
+    exit 0
+fi
+
+if [ -z "$PORTS" ]; then
+    PORTS="80,443,8080,8443"
+fi
+
+echo "Scanning $TARGET for open ports ($PORTS)..."
+for port in $(echo $PORTS | tr ',' ' '); do
+    (echo > /dev/tcp/$TARGET/$port) >/dev/null 2>&1 && echo "Port $port is open"
+done
 EOF
     
     # Make it executable
