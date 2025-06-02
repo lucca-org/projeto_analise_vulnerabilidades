@@ -11,55 +11,8 @@ import subprocess
 from pathlib import Path
 from typing import Dict, Any, Optional, List, Union
 
-# Import utilities if available
-try:
-    from utils import get_system_memory_gb
-except ImportError:
-    # Include the function directly if utils module is not available
-    def get_system_memory_gb() -> float:
-        """
-        Get the total system memory in GB
-        
-        Returns:
-            Memory in GB (float)
-        """
-        try:
-            if platform.system() == "Linux":
-                with open('/proc/meminfo', 'r') as f:
-                    for line in f:
-                        if line.startswith('MemTotal:'):
-                            # Extract value and convert from KB to GB
-                            mem_kb = int(line.split()[1])
-                            return mem_kb / (1024 * 1024)
-            elif platform.system() == "Windows":
-                import ctypes
-                kernel32 = ctypes.windll.kernel32
-                c_ulong = ctypes.c_ulong
-                class MEMORYSTATUS(ctypes.Structure):
-                    _fields_ = [
-                        ('dwLength', c_ulong),
-                        ('dwMemoryLoad', c_ulong),
-                        ('dwTotalPhys', c_ulong),
-                        ('dwAvailPhys', c_ulong),
-                        ('dwTotalPageFile', c_ulong),
-                        ('dwAvailPageFile', c_ulong),
-                        ('dwTotalVirtual', c_ulong),
-                        ('dwAvailVirtual', c_ulong)
-                    ]
-                memory_status = MEMORYSTATUS()
-                memory_status.dwLength = ctypes.sizeof(MEMORYSTATUS)
-                kernel32.GlobalMemoryStatus(ctypes.byref(memory_status))
-                return memory_status.dwTotalPhys / (1024 * 1024 * 1024)
-            elif platform.system() == "Darwin":  # macOS
-                result = subprocess.run(['sysctl', '-n', 'hw.memsize'], 
-                                      capture_output=True, text=True)
-                mem_bytes = int(result.stdout.strip())
-                return mem_bytes / (1024 * 1024 * 1024)
-        except Exception as e:
-            print(f"Error detecting system memory: {e}")
-        
-        # Default to a conservative 4GB if detection fails
-        return 4.0
+# Import utilities
+from utils import get_system_memory_gb  # Import centralized function
 
 # Default configuration settings
 DEFAULT_CONFIG = {
