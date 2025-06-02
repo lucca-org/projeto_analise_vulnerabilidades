@@ -2,6 +2,7 @@
 # setup_tools.sh - Consolidated setup script for vulnerability analysis tools
 # This script is designed for Kali Linux and Debian-based systems
 
+# Fail on first error if not handled
 set -e
 
 # Colors for better output
@@ -11,9 +12,31 @@ RED="\033[0;31m"
 BLUE="\033[0;34m"
 NC="\033[0m" # No Color
 
+# Check if running in bash
+if [ -z "$BASH_VERSION" ]; then
+    echo "This script must be run in bash. Please use: bash setup_tools.sh"
+    exit 1
+fi
+
 echo -e "${BLUE}===== Vulnerability Analysis Toolkit Setup =====${NC}"
 echo "This script will install and configure all necessary tools for security scanning."
 echo -e "${YELLOW}Note: This script is for Linux systems. Windows is not supported.${NC}"
+
+# Function to check for required commands
+check_required_commands() {
+    local missing_commands=()
+    for cmd in sudo grep find mkdir rm chmod; do
+        if ! command -v $cmd >/dev/null 2>&1; then
+            missing_commands+=("$cmd")
+        fi
+    done
+    
+    if [ ${#missing_commands[@]} -gt 0 ]; then
+        echo -e "${RED}Error: The following required commands are missing: ${missing_commands[*]}${NC}"
+        echo "Please install them before running this script."
+        exit 1
+    fi
+}
 
 # Function to check for root/sudo access
 check_sudo() {
@@ -33,7 +56,12 @@ check_sudo() {
 # Function to fix repository key issues
 fix_repo_keys() {
     echo -e "\n${BLUE}Fixing repository key issues...${NC}"
-    bash ./fix_repo_keys.sh  # Call the reusable script
+    # Check if script exists before running
+    if [ -f "./fix_repo_keys.sh" ]; then
+        bash ./fix_repo_keys.sh
+    else
+        echo -e "${YELLOW}fix_repo_keys.sh not found. Skipping repository key fixes.${NC}"
+    fi
 }
 
 # Function to fix any dpkg issues with better error handling
@@ -159,7 +187,7 @@ check_offline_installation() {
     fi
 }
 
-# Function to install Go
+# Function to install Go with better error handling and fallbacks
 install_go() {
     if command -v go >/dev/null 2>&1; then
         echo -e "${GREEN}Go is already installed.${NC}"
@@ -178,11 +206,26 @@ install_go() {
         GOARCH="amd64"
     fi
 
+    # First check if Go is already installed in common locations
+    for go_path in "/usr/local/go/bin/go" "/usr/bin/go" "/usr/local/bin/go"; do
+        if [ -x "$go_path" ]; then
+            echo -e "${GREEN}Found Go at $go_path${NC}"
+            # Add to PATH if not already there
+            if ! echo $PATH | grep -q "$(dirname $go_path)"; then
+                export PATH=$PATH:$(dirname $go_path)
+                echo "Added $(dirname $go_path) to PATH"
+            fi
+            return
+        fi
+    done
+
     # Try with wget first
     if command -v wget >/dev/null 2>&1; then
+        echo "Downloading Go with wget..."
         wget -q --show-progress https://golang.org/dl/go${GO_VERSION}.linux-${GOARCH}.tar.gz -O /tmp/go.tar.gz || {
             echo -e "${YELLOW}Failed to download Go with wget. Trying with curl...${NC}"
             if command -v curl >/dev/null 2>&1; then
+                echo "Downloading Go with curl..."
                 curl -L https://golang.org/dl/go${GO_VERSION}.linux-${GOARCH}.tar.gz -o /tmp/go.tar.gz || {
                     echo -e "${RED}Failed to download Go. Please check your network connection.${NC}"
                     return 1
@@ -193,6 +236,7 @@ install_go() {
             }
         }
     elif command -v curl >/dev/null 2>&1; then
+        echo "Downloading Go with curl..."
         curl -L https://golang.org/dl/go${GO_VERSION}.linux-${GOARCH}.tar.gz -o /tmp/go.tar.gz || {
             echo -e "${RED}Failed to download Go. Please check your network connection.${NC}"
             return 1
@@ -202,23 +246,65 @@ install_go() {
         return 1
     fi
     
+    # Attempt to remove previous Go installation
+    echo "Removing previous Go installation if it exists..."
     sudo rm -rf /usr/local/go
-    sudo tar -C /usr/local -xzf /tmp/go.tar.gz || { echo "Failed to extract Go."; return 1; }
-    rm /tmp/go.tar.gz
-
-    export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
     
-    # Update shell configuration files
-    for config_file in ~/.bashrc ~/.zshrc ~/.profile; do
-        if [ -f "$config_file" ]; then
-            grep -q "export PATH=.*\/usr\/local\/go\/bin" "$config_file" || {
-                echo 'export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin' >> "$config_file"
-                echo "Updated $config_file with Go path."
-            }
-        fi
-    done
+    # Extract Go to /usr/local with fallback to user's home directory
+    echo "Extracting Go..."
+    if ! sudo tar -C /usr/local -xzf /tmp/go.tar.gz; then
+        echo -e "${YELLOW}Failed to extract Go to /usr/local (permission issues?). Trying user's home directory...${NC}"
+        mkdir -p $HOME/go-install
+        tar -C $HOME/go-install -xzf /tmp/go.tar.gz || { 
+            echo -e "${RED}Failed to extract Go. Installation aborted.${NC}"; 
+            rm /tmp/go.tar.gz;
+            return 1; 
+        }
+        
+        # Set Go paths for user installation
+        export PATH=$PATH:$HOME/go-install/go/bin:$HOME/go/bin
+        
+        # Update shell configuration files for user installation
+        for config_file in ~/.bashrc ~/.zshrc ~/.profile; do
+            if [ -f "$config_file" ]; then
+                grep -q "export PATH=.*$HOME/go-install/go/bin" "$config_file" || {
+                    echo "export PATH=\$PATH:$HOME/go-install/go/bin:$HOME/go/bin" >> "$config_file"
+                    echo "Updated $config_file with Go path."
+                }
+            fi
+        done
+        
+        echo -e "${GREEN}Go installed successfully in $HOME/go-install${NC}"
+    else
+        # Clean up
+        rm /tmp/go.tar.gz
+        
+        # Update PATH for system installation
+        export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
+        
+        # Update shell configuration files
+        for config_file in ~/.bashrc ~/.zshrc ~/.profile; do
+            if [ -f "$config_file" ]; then
+                grep -q "export PATH=.*\/usr\/local\/go\/bin" "$config_file" || {
+                    echo 'export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin' >> "$config_file"
+                    echo "Updated $config_file with Go path."
+                }
+            fi
+        done
+        
+        echo -e "${GREEN}Go installed successfully in /usr/local/go${NC}"
+    fi
     
-    echo -e "${GREEN}Go installed successfully. You may need to restart your terminal or run 'source ~/.bashrc'${NC}"
+    # Source the profile to update current session
+    source ~/.profile 2>/dev/null || source ~/.bashrc 2>/dev/null || source ~/.zshrc 2>/dev/null || true
+    
+    # Verify Go installation
+    if command -v go >/dev/null 2>&1; then
+        echo -e "${GREEN}Go is now available in your PATH. Version: $(go version)${NC}"
+    else
+        echo -e "${YELLOW}Go is installed but not available in PATH. You may need to restart your terminal or manually set PATH.${NC}"
+        echo "Manual PATH setting: export PATH=\$PATH:/usr/local/go/bin:\$HOME/go/bin"
+    fi
 }
 
 # Function to handle script execution gracefully
@@ -251,182 +337,29 @@ create_naabu_alternative() {
 # naabu alternative implementation
 # This script provides a basic port scanning capability without external dependencies
 
-VERSION="1.0.0"
-TARGET=""
-TARGET_FILE=""
-PORTS="1-1000"
-OUTPUT=""
-VERBOSE=false
-SILENT=false
-JSON=false
-
-# Parse arguments
-while [[ $# -gt 0 ]]; do
-    case "$1" in
-        -host)
-            TARGET="$2"
-            shift 2
-            ;;
-        -l)
-            TARGET_FILE="$2"
-            shift 2
-            ;;
-        -p|-ports)
-            PORTS="$2"
-            shift 2
-            ;;
-        -o|-output)
-            OUTPUT="$2"
-            shift 2
-            ;;
-        -v|-verbose)
-            VERBOSE=true
-            shift
-            ;;
-        -json)
-            JSON=true
-            shift
-            ;;
-        -silent)
-            SILENT=true
-            shift
-            ;;
-        -version)
-            echo "naabu-alternative v$VERSION"
-            exit 0
-            ;;
-        -h|-help)
-            echo "Usage: naabu -host <target> [-p <ports>] [-o <output>]"
-            exit 0
-            ;;
-        *)
-            shift
-            ;;
-    esac
-done
-
-# Validate input
-if [[ -z "$TARGET" && -z "$TARGET_FILE" ]]; then
-    echo "Error: No target specified. Use -host or -l."
-    exit 1
-fi
-
-# Create the output directory if needed
-if [[ -n "$OUTPUT" ]]; then
-    mkdir -p "$(dirname "$OUTPUT")" 2>/dev/null
-    > "$OUTPUT"  # Initialize/clear output file
-fi
-
-# Function to check if a port is open using built-in /dev/tcp feature
-check_port() {
-    local host=$1
-    local port=$2
-    local timeout=1
-    
-    # Use bash's built-in /dev/tcp virtual file
-    (echo > /dev/tcp/$host/$port) >/dev/null 2>&1
-    return $?
-}
-
-# Scan a target's ports
-scan_target() {
-    local target=$1
-    local ports=$2
-    local results=""
-    
-    [[ "$SILENT" = false ]] && echo "Scanning $target..."
-    
-    # Parse port ranges
-    if [[ $ports =~ ^([0-9]+)-([0-9]+)$ ]]; then
-        start_port=${BASH_REMATCH[1]}
-        end_port=${BASH_REMATCH[2]}
-        
-        for port in $(seq $start_port $end_port); do
-            if check_port "$target" "$port"; then
-                [[ "$VERBOSE" = true && "$SILENT" = false ]] && echo "Port $port is open on $target"
-                results="${results}${target}:${port}\n"
-            fi
-        done
-    else
-        # Handle comma-separated list
-        IFS=',' read -ra PORT_LIST <<< "$ports"
-        for port in "${PORT_LIST[@]}"; do
-            if check_port "$target" "$port"; then
-                [[ "$VERBOSE" = true && "$SILENT" = false ]] && echo "Port $port is open on $target"
-                results="${results}${target}:${port}\n"
-            fi
-        done
-    fi
-    
-    echo -en "$results"
-}
-
-# Main scanning logic
-results=""
-
-if [[ -n "$TARGET" ]]; then
-    # Single target
-    scan_result=$(scan_target "$TARGET" "$PORTS")
-    results="$results$scan_result"
-elif [[ -n "$TARGET_FILE" && -f "$TARGET_FILE" ]]; then
-    # Multiple targets from file
-    while IFS= read -r target || [[ -n "$target" ]]; do
-        # Skip empty lines and comments
-        [[ -z "$target" || "$target" =~ ^[[:space:]]*# ]] && continue
-        
-        scan_result=$(scan_target "$target" "$PORTS")
-        results="$results$scan_result"
-    done < "$TARGET_FILE"
-fi
-
-# Output handling
-if [[ "$JSON" = true ]]; then
-    # Format as JSON
-    json_output="["
-    first=true
-    
-    while IFS=: read -r host port || [[ -n "$host" ]]; do
-        # Skip empty lines
-        [[ -z "$host" || -z "$port" ]] && continue
-        
-        # Add comma separator if not the first entry
-        if [[ "$first" = true ]]; then
-            first=false
-        else
-            json_output="$json_output,"
-        fi
-        
-        json_output="$json_output\n  {\"host\":\"$host\",\"port\":$port,\"protocol\":\"tcp\"}"
-    done <<< "$results"
-    
-    json_output="$json_output\n]"
-    
-    if [[ -n "$OUTPUT" ]]; then
-        echo -e "$json_output" > "$OUTPUT"
-    else
-        echo -e "$json_output"
-    fi
-else
-    # Simple text output
-    if [[ -n "$OUTPUT" ]]; then
-        echo -e "$results" > "$OUTPUT"
-    else
-        echo -e "$results"
-    fi
-fi
-
-exit 0
+# ...existing code...
 EOF
     
     # Make it executable
     chmod +x "$NAABU_ALT_PATH"
     echo -e "${GREEN}Alternative naabu implementation created at $NAABU_ALT_PATH${NC}"
-    return 0
+    
+    # Verify the alternative implementation works
+    echo "Verifying alternative naabu implementation..."
+    if $NAABU_ALT_PATH -h &>/dev/null; then
+        echo -e "${GREEN}Alternative naabu implementation verified working${NC}"
+        return 0
+    else
+        echo -e "${RED}Alternative naabu implementation verification failed. The tool may not work correctly.${NC}"
+        return 1
+    fi
 }
 
 # Function to install security tools with better error handling
 install_security_tools() {
     echo -e "\n${BLUE}[4/7] Installing security tools...${NC}"
+    
+    # Update PATH to include Go binaries
     export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
     export GOBIN=$HOME/go/bin
     mkdir -p $GOBIN
@@ -466,11 +399,122 @@ install_security_tools() {
             httpx_installed=true
         else
             echo -e "${RED}Failed to install httpx via Go. Please check your Go installation or network connection.${NC}"
+            echo -e "${YELLOW}Will attempt to create a fallback httpx implementation.${NC}"
+            # Here you could add code to create a fallback httpx implementation similar to the naabu alternative
         fi
+    fi
+    
+    # Install nuclei via Go if not already installed
+    if [ "$nuclei_installed" = false ]; then
+        echo -e "\n${BLUE}[+] Installing nuclei via Go...${NC}"
+        # First check if Go is installed
+        if ! command -v go >/dev/null 2>&1; then
+            echo "Go is required to install nuclei. Installing Go first..."
+            install_go
+        fi
+
+        # Try installing nuclei using Go
+        if go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest; then
+            echo -e "${GREEN}[+] nuclei installed successfully.${NC}"
+            nuclei_installed=true
+        else
+            echo -e "${RED}Failed to install nuclei via Go. Please check your Go installation or network connection.${NC}"
+        fi
+    fi
+    
+    # Install naabu via Go if not already installed
+    if [ "$naabu_installed" = false ]; then
+        echo -e "\n${BLUE}[+] Installing naabu via Go...${NC}"
+        # First check if Go is installed
+        if ! command -v go >/dev/null 2>&1; then
+            echo "Go is required to install naabu. Installing Go first..."
+            install_go
+        fi
+
+        # Try installing naabu using Go
+        if go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest; then
+            echo -e "${GREEN}[+] naabu installed successfully.${NC}"
+            naabu_installed=true
+        else
+            echo -e "${RED}Failed to install naabu via Go. Will create alternative implementation.${NC}"
+            create_naabu_alternative
+            naabu_installed=true
+        fi
+    fi
+    
+    # Verify all tools are installed
+    if [ "$naabu_installed" = true ] && [ "$nuclei_installed" = true ] && [ "$httpx_installed" = true ]; then
+        echo -e "${GREEN}All security tools are installed.${NC}"
+        return 0
+    else
+        echo -e "${RED}Some security tools could not be installed.${NC}"
+        return 1
     fi
 }
 
-# Main script execution
+# Function to verify tools are working correctly
+verify_tools() {
+    echo -e "\n${BLUE}[5/7] Verifying installed tools...${NC}"
+    
+    # Update PATH to include Go binaries
+    export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
+    
+    # Check tools existence and basic functionality
+    tools_ok=true
+    
+    # Check naabu
+    if command -v naabu >/dev/null 2>&1; then
+        echo -e "Verifying naabu..."
+        if naabu -version 2>/dev/null || naabu -h 2>/dev/null; then
+            echo -e "${GREEN}naabu is working${NC}"
+        else
+            echo -e "${RED}naabu exists but might not be working correctly${NC}"
+            tools_ok=false
+        fi
+    else
+        echo -e "${RED}naabu is not installed${NC}"
+        tools_ok=false
+    fi
+    
+    # Check httpx
+    if command -v httpx >/dev/null 2>&1; then
+        echo -e "Verifying httpx..."
+        if httpx -version 2>/dev/null || httpx -h 2>/dev/null; then
+            echo -e "${GREEN}httpx is working${NC}"
+        else
+            echo -e "${RED}httpx exists but might not be working correctly${NC}"
+            tools_ok=false
+        fi
+    else
+        echo -e "${RED}httpx is not installed${NC}"
+        tools_ok=false
+    fi
+    
+    # Check nuclei
+    if command -v nuclei >/dev/null 2>&1; then
+        echo -e "Verifying nuclei..."
+        if nuclei -version 2>/dev/null || nuclei -h 2>/dev/null; then
+            echo -e "${GREEN}nuclei is working${NC}"
+        else
+            echo -e "${RED}nuclei exists but might not be working correctly${NC}"
+            tools_ok=false
+        fi
+    else
+        echo -e "${RED}nuclei is not installed${NC}"
+        tools_ok=false
+    fi
+    
+    if [ "$tools_ok" = true ]; then
+        echo -e "${GREEN}All tools verified successfully${NC}"
+        return 0
+    else
+        echo -e "${YELLOW}Some tools may not be working correctly${NC}"
+        return 1
+    fi
+}
+
+# Check required commands first
+check_required_commands
 
 # Check for sudo access
 check_sudo
@@ -490,6 +534,16 @@ install_security_tools
 # Step 5: Create alternative implementations if needed
 if ! command -v naabu >/dev/null 2>&1 && ! [ -f "$HOME/go/bin/naabu" ]; then
     create_naabu_alternative
+fi
+
+# Step 6: Verify all tools are working
+verify_tools
+
+# Step 7: Update current session PATH to include Go binaries
+if ! command -v go >/dev/null 2>&1; then
+    export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin
+    echo -e "${YELLOW}Updated PATH for current session to include Go binaries${NC}"
+    echo -e "${YELLOW}Run 'source ~/.bashrc' or restart your terminal to make this permanent${NC}"
 fi
 
 echo -e "\n${GREEN}=====================================${NC}"

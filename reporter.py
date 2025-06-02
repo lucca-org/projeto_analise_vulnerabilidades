@@ -10,7 +10,15 @@ import shutil
 from pathlib import Path
 import re
 import traceback
+import logging
 from typing import Dict, List, Any, Optional, Union
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger('reporter')
 
 # Import modules with fallback handling
 try:
@@ -18,24 +26,25 @@ try:
     MARKDOWN_AVAILABLE = True
 except ImportError:
     MARKDOWN_AVAILABLE = False
-    print("Warning: Markdown library is not installed. Install with: pip install markdown")
+    logger.warning("Markdown library is not installed. Install with: pip install markdown")
 
 try:
     from utils import safe_read_json, create_directory_if_not_exists, normalize_path
     UTILS_AVAILABLE = True
 except ImportError:
     UTILS_AVAILABLE = False
-    print("Warning: utils.py module not found. Using internal functions.")
+    logger.warning("utils.py module not found. Using internal functions.")
     
     # Fallback functions if utils.py is not available
     def safe_read_json(json_file, default=None):
         if not os.path.exists(json_file):
+            logger.warning(f"File not found: {json_file}")
             return default
         try:
             with open(json_file, 'r') as f:
                 return json.load(f)
         except Exception as e:
-            print(f"Error reading {json_file}: {e}")
+            logger.error(f"Error reading {json_file}: {e}")
             return default
             
     def create_directory_if_not_exists(directory):
@@ -43,8 +52,11 @@ except ImportError:
             os.makedirs(directory, exist_ok=True)
             return True
         except Exception as e:
-            print(f"Error creating directory {directory}: {e}")
+            logger.error(f"Error creating directory {directory}: {e}")
             return False
+            
+    def normalize_path(path):
+        return os.path.normpath(path)
 
 # Add a warning for missing dependencies
 def check_dependencies():
@@ -53,10 +65,11 @@ def check_dependencies():
         missing_deps.append("markdown")
     
     if missing_deps:
-        print(f"Warning: Missing dependencies: {', '.join(missing_deps)}")
-        print("Some report formats will be unavailable.")
-        print("Install missing dependencies with:")
-        print(f"    pip install {' '.join(missing_deps)}")
+        logger.warning(f"Missing dependencies: {', '.join(missing_deps)}")
+        logger.warning("Some report formats will be unavailable.")
+        logger.warning(f"Install missing dependencies with: pip install {' '.join(missing_deps)}")
+        return False
+    return True
 
 check_dependencies()
 
@@ -70,6 +83,8 @@ def parse_scan_results(output_dir: str) -> Dict[str, Any]:
     Returns:
         Dictionary with parsed results
     """
+    logger.info(f"Parsing scan results from {output_dir}")
+    
     results = {
         "summary": {
             "open_ports": 0,
@@ -89,11 +104,17 @@ def parse_scan_results(output_dir: str) -> Dict[str, Any]:
         "vulnerabilities": []
     }
     
+    # Validate the output directory exists
+    if not os.path.isdir(output_dir):
+        logger.error(f"Output directory does not exist: {output_dir}")
+        return results
+    
     # Parse target from directory name
     target_match = re.search(r'results_([^_]+)_', output_dir)
     if target_match:
         results["target_info"]["name"] = target_match.group(1)
     else:
+        logger.warning(f"Could not parse target from directory name: {output_dir}")
         results["target_info"]["name"] = "unknown"
     
     results["target_info"]["scan_date"] = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -119,12 +140,14 @@ def parse_scan_results(output_dir: str) -> Dict[str, Any]:
                             try:
                                 port_entry = json.loads(line)
                                 ports_data.append(port_entry)
-                            except json.JSONDecodeError:
-                                pass
+                            except json.JSONDecodeError as e:
+                                logger.warning(f"Invalid JSON in ports.json: {line.strip()} - {str(e)}")
                     results["ports"] = ports_data
                     results["summary"]["open_ports"] = len(ports_data)
+            logger.info(f"Parsed {len(results['ports'])} ports from {ports_json}")
         except Exception as e:
-            print(f"Error parsing ports.json: {e}")
+            logger.error(f"Error parsing ports.json: {e}")
+            logger.debug(traceback.format_exc())
 
     # Parse http_services.json if it exists
     http_json = os.path.join(output_dir, "http_services.json")
@@ -145,12 +168,14 @@ def parse_scan_results(output_dir: str) -> Dict[str, Any]:
                             try:
                                 service_entry = json.loads(line)
                                 http_data.append(service_entry)
-                            except json.JSONDecodeError:
-                                pass
+                            except json.JSONDecodeError as e:
+                                logger.warning(f"Invalid JSON in http_services.json: {line.strip()} - {str(e)}")
                     results["http_services"] = http_data
                     results["summary"]["http_services"] = len(http_data)
+            logger.info(f"Parsed {len(results['http_services'])} HTTP services from {http_json}")
         except Exception as e:
-            print(f"Error parsing http_services.json: {e}")
+            logger.error(f"Error parsing http_services.json: {e}")
+            logger.debug(traceback.format_exc())
     
     # Parse vulnerabilities.jsonl if it exists
     vulns_jsonl = os.path.join(output_dir, "vulnerabilities.jsonl")
@@ -169,11 +194,13 @@ def parse_scan_results(output_dir: str) -> Dict[str, Any]:
                             if severity in results["summary"]["vulnerabilities"]:
                                 results["summary"]["vulnerabilities"][severity] += 1
                                 results["summary"]["vulnerabilities"]["total"] += 1
-                        except json.JSONDecodeError:
-                            pass
+                        except json.JSONDecodeError as e:
+                            logger.warning(f"Invalid JSON in vulnerabilities.jsonl: {line.strip()} - {str(e)}")
                 results["vulnerabilities"] = vulns_data
+            logger.info(f"Parsed {len(results['vulnerabilities'])} vulnerabilities from {vulns_jsonl}")
         except Exception as e:
-            print(f"Error parsing vulnerabilities.jsonl: {e}")
+            logger.error(f"Error parsing vulnerabilities.jsonl: {e}")
+            logger.debug(traceback.format_exc())
 
     return results
 
@@ -190,10 +217,11 @@ def generate_markdown_report(output_dir: str, results: Dict[str, Any]) -> bool:
         True if successful, False otherwise
     """
     if not MARKDOWN_AVAILABLE:
-        print("Markdown library is not available. Cannot generate Markdown report.")
+        logger.error("Markdown library is not available. Cannot generate Markdown report.")
         return False
     
     try:
+        logger.info("Generating Markdown report")
         markdown_content = f"""# Security Scan Report for {results['target_info']['name']}
 
 ## Summary
@@ -269,11 +297,12 @@ def generate_markdown_report(output_dir: str, results: Dict[str, Any]) -> bool:
         with open(md_report_path, 'w', encoding='utf-8') as f:
             f.write(markdown_content)
         
-        print(f"Markdown report generated: {md_report_path}")
+        logger.info(f"Markdown report generated: {md_report_path}")
         return True
         
     except Exception as e:
-        print(f"Error generating Markdown report: {e}")
+        logger.error(f"Error generating Markdown report: {e}")
+        logger.debug(traceback.format_exc())
         return False
 
 
@@ -289,7 +318,12 @@ def generate_report(output_dir: str, target: str) -> bool:
         True if successful, False otherwise
     """
     try:
-        print("\nGenerating comprehensive security report...")
+        logger.info(f"Generating comprehensive security report for {target}")
+        
+        # Validate output directory
+        if not os.path.isdir(output_dir):
+            logger.error(f"Output directory does not exist: {output_dir}")
+            return False
         
         # Parse scan results
         results = parse_scan_results(output_dir)
@@ -302,15 +336,20 @@ def generate_report(output_dir: str, target: str) -> bool:
         md_success = generate_markdown_report(output_dir, results)
         
         # Save results JSON for later use
-        with open(os.path.join(output_dir, 'results.json'), 'w') as f:
-            json.dump(results, f, indent=2)
+        results_json_path = os.path.join(output_dir, 'results.json')
+        try:
+            with open(results_json_path, 'w') as f:
+                json.dump(results, f, indent=2)
+            logger.info(f"Results JSON saved to {results_json_path}")
+        except Exception as e:
+            logger.error(f"Error saving results JSON: {e}")
         
-        print(f"\nReporting complete. Reports saved in {output_dir}")
+        logger.info(f"Reporting complete. Reports saved in {output_dir}")
         return md_success
     
     except Exception as e:
-        print(f"Error generating report: {e}")
-        traceback.print_exc()
+        logger.error(f"Error generating report: {e}")
+        logger.debug(traceback.format_exc())
         return False
 
 
@@ -325,10 +364,12 @@ if __name__ == "__main__":
     target_name = sys.argv[2] if len(sys.argv) > 2 else "unknown"
     
     if not os.path.isdir(results_dir):
-        print(f"Error: {results_dir} is not a valid directory")
+        logger.error(f"Error: {results_dir} is not a valid directory")
         sys.exit(1)
     
     success = generate_report(results_dir, target_name)
     if not success:
-        print("Report generation had issues.")
+        logger.error("Report generation had issues.")
         sys.exit(1)
+    else:
+        logger.info("Report generation completed successfully")
