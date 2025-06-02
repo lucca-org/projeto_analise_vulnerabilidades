@@ -26,6 +26,58 @@ if platform.system().lower() == "windows":
     print("Windows is not supported.")
     sys.exit(1)
 
+# Check for sudo privileges first
+if platform.system().lower() == "linux" and os.geteuid() != 0:
+    print("This script requires sudo privileges.")
+    try:
+        os.execvp("sudo", ["sudo", "python3"] + sys.argv)
+    except Exception as e:
+        print(f"Error: Failed to restart with sudo: {e}")
+        sys.exit(1)
+
+# Fix line endings in setup_tools.sh
+try:
+    subprocess.run(["sed", "-i", "s/\\r$//", "setup_tools.sh"], check=True)
+    print("✓ Fixed line endings in setup_tools.sh")
+except Exception as e:
+    print(f"Warning: Could not fix line endings in setup_tools.sh: {e}")
+
+# Execute setup_tools.sh
+try:
+    print("\n== Executing setup_tools.sh ==")
+    # Make the script executable
+    subprocess.run(["chmod", "+x", "./setup_tools.sh"], check=True)
+    # Run the script
+    result = subprocess.run(["./setup_tools.sh"], check=True)
+    if result.returncode == 0:
+        print("✓ Successfully executed setup_tools.sh")
+    else:
+        print(f"! setup_tools.sh exited with code {result.returncode}")
+except Exception as e:
+    print(f"Error executing setup_tools.sh: {e}")
+
+# Install and set up httpx properly
+print("\n== Installing latest httpx from ProjectDiscovery ==")
+try:
+    # Install the latest httpx using Go
+    print("Installing httpx...")
+    subprocess.run(["go", "install", "-v", "github.com/projectdiscovery/httpx/cmd/httpx@latest"], check=True)
+    
+    # Get the home directory and construct the go/bin path
+    home_dir = os.path.expanduser("~")
+    go_bin_path = os.path.join(home_dir, "go", "bin")
+    httpx_path = os.path.join(go_bin_path, "httpx")
+    
+    # Copy httpx to /usr/bin
+    print("Copying httpx to /usr/bin...")
+    if os.path.exists(httpx_path):
+        subprocess.run(["sudo", "cp", httpx_path, "/usr/bin/"], check=True)
+        print("✓ Successfully installed httpx to /usr/bin/")
+    else:
+        print(f"! httpx binary not found at {httpx_path}")
+except Exception as e:
+    print(f"Error installing httpx: {e}")
+
 # Configuration constants
 GO_VERSION = "1.21.0"
 SETUP_TIMEOUT = 60  # Maximum time for each installation step
@@ -36,9 +88,6 @@ TOOLS_INFO = {
         "description": "Fast HTTP server probe and technology fingerprinter",
         "repository": "github.com/projectdiscovery/httpx/cmd/httpx",
         "module_file": "commands/httpx.py",
-        "apt_package": "httpx-toolkit",  # Alternative apt package name
-        "python_package": "httpx",       # Python package with similar name (but different functionality)
-        "snap_package": "httpx",         # Snap package if available
         "go_repository": "github.com/projectdiscovery/httpx/cmd/httpx@latest"  # Explicit go repository with version
     },
     "nuclei": {
