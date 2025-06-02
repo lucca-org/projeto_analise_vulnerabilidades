@@ -13,7 +13,7 @@ NC="\033[0m" # No Color
 
 echo -e "${BLUE}===== Vulnerability Analysis Toolkit Setup =====${NC}"
 echo "This script will install and configure all necessary tools for security scanning."
-echo -e "${YELLOW}Note: This script is for Linux systems. Windows users should use index.py${NC}"
+echo -e "${YELLOW}Note: This script is for Linux systems. Windows is not supported.${NC}"
 
 # Function to check for root/sudo access
 check_sudo() {
@@ -30,6 +30,7 @@ check_sudo() {
     fi
 }
 
+
 # Function to fix repository key issues
 fix_repo_keys() {
     echo -e "\n${BLUE}Fixing repository key issues...${NC}"
@@ -37,30 +38,46 @@ fix_repo_keys() {
     # Create keyring directory if it doesn't exist
     sudo mkdir -p /etc/apt/keyrings
 
-    # Download and add the Kali Linux archive key using the modern approach
-    echo "Importing Kali Linux archive key..."
-    if command -v wget >/dev/null 2>&1; then
-        wget -qO - https://archive.kali.org/archive-key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/kali-archive-keyring.gpg
-    elif command -v curl >/dev/null 2>&1; then
-        curl -fsSL https://archive.kali.org/archive-key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/kali-archive-keyring.gpg
+    # Check if key already exists before trying to import
+    if [ -f "/etc/apt/keyrings/kali-archive-keyring.gpg" ]; then
+        echo -e "${GREEN}Kali Linux archive key already exists.${NC}"
     else
-        echo -e "${YELLOW}Neither wget nor curl is available. Manual key import required.${NC}"
-        return
+        echo "Importing Kali Linux archive key..."
+        if command -v wget >/dev/null 2>&1; then
+            wget -qO - https://archive.kali.org/archive-key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/kali-archive-keyring.gpg 2>/dev/null || 
+            echo -e "${YELLOW}Failed to import key with wget. Key might be corrupted or already exists.${NC}"
+        elif command -v curl >/dev/null 2>&1; then
+            curl -fsSL https://archive.kali.org/archive-key.asc | sudo gpg --dearmor -o /etc/apt/keyrings/kali-archive-keyring.gpg 2>/dev/null || 
+            echo -e "${YELLOW}Failed to import key with curl. Key might be corrupted or already exists.${NC}"
+        else
+            echo -e "${YELLOW}Neither wget nor curl is available. Manual key import required.${NC}"
+            return
+        fi
+        
+        # Set proper permissions only if we created the key
+        if [ -f "/etc/apt/keyrings/kali-archive-keyring.gpg" ]; then
+            sudo chmod 644 /etc/apt/keyrings/kali-archive-keyring.gpg
+            echo -e "${GREEN}✓ Kali Linux archive key imported${NC}"
+        fi
     fi
     
-    # Set proper permissions
-    sudo chmod 644 /etc/apt/keyrings/kali-archive-keyring.gpg
-    
-    # Create a source file that uses the new key
+    # Check if source file exists before creating it
     KALI_SOURCE="/etc/apt/sources.list.d/kali.list"
     if [ ! -f "$KALI_SOURCE" ]; then
         echo "Creating Kali repository file..."
         echo "deb [signed-by=/etc/apt/keyrings/kali-archive-keyring.gpg] http://http.kali.org/kali kali-rolling main non-free contrib" | sudo tee "$KALI_SOURCE"
+        echo -e "${GREEN}✓ Kali repository file created${NC}"
+    else
+        echo -e "${GREEN}Kali repository file already exists.${NC}"
     fi
     
-    # Update package lists
+    # Update package lists with better error handling
     echo "Updating package lists with new keys..."
-    sudo apt-get update || echo "Update still failed, continuing with installation..."
+    if sudo apt-get update -o Acquire::AllowInsecureRepositories=true; then
+        echo -e "${GREEN}✓ Package lists updated successfully${NC}"
+    else
+        echo -e "${YELLOW}Update failed, continuing with installation anyway...${NC}"
+    fi
 }
 
 # Function to fix any dpkg issues with better error handling
@@ -755,25 +772,6 @@ EOF
     echo -e "${GREEN}Alternative httpx implementation created at $HTTPX_ALT_PATH${NC}"
     return 0
 }
-
-# Install Python dependencies
-install_python_dependencies() {
-    echo -e "\n${BLUE}[5/7] Installing Python dependencies...${NC}"
-    
-    if [ ! -f "requirements.txt" ]; then
-        echo "Creating requirements.txt..."
-        cat > requirements.txt << EOF
-requests>=2.28.0
-colorama>=0.4.6
-markdown>=3.4.3
-jinja2>=3.1.2
-rich>=13.3.2
-tqdm>=4.65.0
-pathlib>=1.0.1
-jsonschema>=4.19.0
-pyyaml>=6.0.1
-EOF
-    fi
     
     # Try with pip3 first
     if command -v pip3 >/dev/null 2>&1; then

@@ -17,6 +17,7 @@ import shutil
 import time
 import signal
 import importlib.util
+import datetime
 import socket
 from pathlib import Path
 
@@ -42,19 +43,112 @@ try:
 except Exception as e:
     print(f"Warning: Could not fix line endings in setup_tools.sh: {e}")
 
-# Execute setup_tools.sh
-try:
-    print("\n== Executing setup_tools.sh ==")
-    # Make the script executable
-    subprocess.run(["chmod", "+x", "./setup_tools.sh"], check=True)
-    # Run the script
-    result = subprocess.run(["./setup_tools.sh"], check=True)
-    if result.returncode == 0:
-        print("✓ Successfully executed setup_tools.sh")
-    else:
-        print(f"! setup_tools.sh exited with code {result.returncode}")
-except Exception as e:
-    print(f"Error executing setup_tools.sh: {e}")
+def check_network():
+    """Check for network connectivity."""
+    dns_servers = ["8.8.8.8", "1.1.1.1", "9.9.9.9"]
+    
+    for dns in dns_servers:
+        try:
+            # Try connecting to DNS server
+            socket.create_connection((dns, 53), 3)
+            return True
+        except Exception:
+            continue
+    
+    print("No network connection detected. Please check your internet connection.")
+    return False
+
+# Add this new function to manage installation state
+def manage_installation_state():
+    """Manage installation state to prevent duplicate installations."""
+    installation_file = ".installation_completed"
+    
+    # Check if we've already completed installation
+    if os.path.exists(installation_file):
+        print("✓ Previous installation detected. Checking components...")
+        
+        # Add verification for critical components
+        tools_status = {}
+        for tool in ["httpx", "nuclei", "naabu"]:
+            tool_path = shutil.which(tool)
+            if not tool_path:
+                # Check in ~/go/bin directory
+                go_bin_path = os.path.expanduser(f"~/go/bin/{tool}")
+                if os.path.exists(go_bin_path) and os.access(go_bin_path, os.X_OK):
+                    tool_path = go_bin_path
+            
+            tools_status[tool] = bool(tool_path)
+            print(f"  {'✓' if tool_path else '✗'} {tool}: {'Found at '+tool_path if tool_path else 'Not found'}")
+        
+        # Check Python dependencies
+        required_modules = ["requests", "colorama", "markdown", "jinja2"]
+        missing_modules = []
+        for module in required_modules:
+            try:
+                importlib.import_module(module)
+            except ImportError:
+                missing_modules.append(module)
+        
+        print(f"  {'✓' if not missing_modules else '✗'} Python dependencies: " + 
+              (f"All installed" if not missing_modules else f"Missing: {', '.join(missing_modules)}"))
+        
+        # Return True if all critical components are present
+        if all(tools_status.values()) and not missing_modules:
+            print("All components verified successfully.")
+            return True
+        else:
+            print("Some components are missing. Will run setup again.")
+            # Remove the installation file to trigger a fresh install
+            os.remove(installation_file)
+            return False
+    
+    # After successful execution of setup_tools.sh, create the file
+    def mark_installation_complete():
+        try:
+            with open(installation_file, "w") as f:
+                f.write(f"Installation completed on {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"✓ Installation state saved to {installation_file}")
+            return True
+        except Exception as e:
+            print(f"! Could not save installation state: {e}")
+            return False
+            
+    return mark_installation_complete
+
+def setup_go_env():
+    go_bin = os.path.expanduser("~/go/bin")
+    go_root_bin = "/usr/local/go/bin"
+    
+    # Add to PATH environment variable
+    os.environ["PATH"] = os.environ.get("PATH", "") + os.pathsep + go_bin + os.pathsep + go_root_bin
+
+# Check installation state
+installation_manager = manage_installation_state()
+if installation_manager is True:
+    print("Previous installation detected. Skipping setup_tools.sh")
+else:
+    try:
+        print("\n== Executing setup_tools.sh ==")
+        # First fix line endings to ensure the script works on Linux
+        try:
+            subprocess.run(["sed", "-i", "s/\\r$//", "./setup_tools.sh"], check=True)
+            print("✓ Fixed line endings in setup_tools.sh")
+        except Exception as e:
+            print(f"Warning: Could not fix line endings: {e}")
+        
+        # Make the script executable
+        subprocess.run(["chmod", "+x", "./setup_tools.sh"], check=True)
+        
+        # Run with bash explicitly to avoid shell compatibility issues
+        result = subprocess.run(["bash", "./setup_tools.sh"], check=True)
+        if result.returncode == 0:
+            print("✓ Successfully executed setup_tools.sh")
+            # Mark installation as complete
+            installation_manager()
+        else:
+            print(f"! setup_tools.sh exited with code {result.returncode}")
+    except Exception as e:
+        print(f"Error executing setup_tools.sh: {e}")
 
 # Install and set up httpx properly
 print("\n== Installing latest httpx from ProjectDiscovery ==")
@@ -77,6 +171,8 @@ try:
         print(f"! httpx binary not found at {httpx_path}")
 except Exception as e:
     print(f"Error installing httpx: {e}")
+
+
 
 # Configuration constants
 GO_VERSION = "1.21.0"
@@ -1468,6 +1564,7 @@ def generate_summary(output_dir, target):
         pass
         
     # Generate basic summary
+    import datetime
     summary_file = os.path.join(output_dir, "summary.txt")
     
     try:
