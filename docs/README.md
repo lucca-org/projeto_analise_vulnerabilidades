@@ -1,101 +1,61 @@
-# Vulnerability Analysis Toolkit
+# Linux Vulnerability Analysis Toolkit Documentation
 
-A comprehensive toolkit for automated vulnerability scanning and security analysis designed for Kali Linux and Debian-based systems. This toolkit integrates powerful open-source security tools from ProjectDiscovery.
+> **⚠️ NOTICE: This documentation has been superseded**
+> 
+> This file contains legacy installation instructions that have been **completely automated** by the new master installer architecture. Please use the current installation method documented in the main [README.md](../README.md).
 
-## Features
+## Quick Installation (Current Method)
 
-- **Port Scanning**: Fast port discovery using naabu
-- **HTTP Service Discovery**: Detect and fingerprint web services with httpx
-- **Vulnerability Scanning**: Find security vulnerabilities using nuclei templates
-- **Comprehensive Reporting**: Generate detailed reports in multiple formats
-- **Cross-platform Compatible**: Designed for Kali Linux and Debian-based systems
-
-## Prerequisites
-
-- Debian-based Linux (Kali Linux recommended)
-- Python 3.8+
-- Bash shell
-- Internet connection for tool installation
-- Root/sudo access for dependencies
-
-## Setting Up the Environment
-
-### Python Virtual Environment
-1. Install the virtual environment package:
-   ```bash
-   sudo apt install -y python3-venv
-   ```
-2. Create and activate the virtual environment:
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate
-   ```
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-### Go Installation
-1. Install Go:
-   ```bash
-   sudo apt update
-   sudo apt install -y golang-go
-   ```
-2. Set up environment variables:
-   ```bash
-   echo 'export PATH=$PATH:/usr/local/go/bin:$HOME/go/bin' >> ~/.bashrc
-   echo 'export GOPATH=$HOME/go' >> ~/.bashrc
-   source ~/.bashrc
-   ```
-3. Verify installation:
-   ```bash
-   go version
-   ```
-
-## Installation
-
-### Option 1: Recommended Single-Script Setup (Kali/Debian)
-
-This is the recommended installation method that installs and configures all necessary tools:
+The toolkit now features a **single-point master installer** that handles everything automatically:
 
 ```bash
-git clone https://github.com/your-username/vulnerability-analysis-toolkit.git
-cd vulnerability-analysis-toolkit
-chmod +x setup_tools.sh
-./setup_tools.sh
+# Clone the repository
+git clone https://github.com/yourusername/linux-vulnerability-toolkit.git
+cd linux-vulnerability-toolkit
+
+# Run the master installation orchestrator (requires root privileges)
+sudo python3 install/setup.py
 ```
 
-The script will:
-- Install required system dependencies
-- Install Go programming language (if not already installed)
-- Install ProjectDiscovery tools (naabu, httpx, nuclei)
-- Update nuclei templates for vulnerability scanning
-- Configure your PATH environment variable
-- Install Python dependencies
-- Verify all tools are working properly
+The master installer automatically handles:
+- ✅ Linux platform verification and distribution detection
+- ✅ Root/sudo permission enforcement 
+- ✅ System package installation (curl, wget, git, build-essential, etc.)
+- ✅ Go programming environment setup with PATH management
+- ✅ Security tools installation (naabu, httpx, nuclei)
+- ✅ Python dependencies and virtual environment setup
+- ✅ Configuration optimization and bash aliases creation
+- ✅ Complete system verification with functionality testing
 
-### Option 2: Quick Setup (Network Restrictions/Limited Permissions)
+## Validation
 
-If you have network restrictions or limited permissions on your system:
+After installation, verify everything is working:
 
 ```bash
-chmod +x quick_setup.sh
-./quick_setup.sh
+# Run installation validator
+python3 validate_installation.py
+
+# Run functionality verification
+python3 verify_installation.py
+
+# Check tool availability
+naabu -version
+httpx -version  
+nuclei -version
 ```
 
-### Option 3: Fix Installation Issues
+## Documentation Structure
 
-If you encounter problems with the installation:
+For current documentation, please refer to:
+- **[Main README.md](../README.md)** - Current installation and usage instructions
+- **[TRANSFORMATION_SUMMARY.md](../TRANSFORMATION_SUMMARY.md)** - Architecture overview
+- **[DEPLOYMENT_VALIDATION_REPORT.md](../DEPLOYMENT_VALIDATION_REPORT.md)** - Pre-deployment validation results
 
-```bash
-# Fix dependency issues
-chmod +x fix_installation.sh
-./fix_installation.sh
+---
 
-# Or for specific package manager issues
-chmod +x fix_dpkg.sh
-./fix_dpkg.sh
-```
+## Legacy Content (Archived)
+
+*The content below represents the previous manual installation process and is preserved for historical reference only. **DO NOT** use these instructions as they have been superseded by the automated master installer.*
 
 ## Usage
 
