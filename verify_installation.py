@@ -9,6 +9,7 @@ import sys
 import subprocess
 import platform
 from pathlib import Path
+from src.utils import verify_linux_platform
 
 # Add the project directory to the Python path
 project_dir = Path(__file__).parent
@@ -52,31 +53,13 @@ def print_info(message):
 def check_platform():
     """Verify we're running on Linux."""
     print_header("PLATFORM VERIFICATION")
-    
-    if platform.system() != "Linux":
-        print_error(f"This toolkit is designed for Linux only. Current platform: {platform.system()}")
+
+    if not verify_linux_platform():
+        print_error("This toolkit is designed for Linux only.")
         print_info("Please run this on a Linux system (Kali, Ubuntu, Debian, Arch, etc.)")
         return False
-    
+
     print_success(f"Running on Linux: {platform.platform()}")
-    
-    # Check for common Linux distributions
-    try:
-        with open("/etc/os-release", "r") as f:
-            os_info = f.read()
-            if "kali" in os_info.lower():
-                print_success("Detected Kali Linux - perfect for security testing!")
-            elif "ubuntu" in os_info.lower():
-                print_success("Detected Ubuntu Linux")
-            elif "debian" in os_info.lower():
-                print_success("Detected Debian Linux")
-            elif "arch" in os_info.lower():
-                print_success("Detected Arch Linux")
-            else:
-                print_info("Linux distribution detected")
-    except:
-        print_info("Linux system confirmed")
-    
     return True
 
 def check_python_dependencies():
@@ -111,13 +94,13 @@ def check_python_dependencies():
                 import workflow
                 print_success(f"Module '{module_name}' imported successfully")
             elif module_name == "naabu":
-                import naabu
+                from commands import naabu
                 print_success(f"Module '{module_name}' imported successfully")
             elif module_name == "httpx":
-                import httpx as httpx_module
+                from commands import httpx as httpx_module
                 print_success(f"Module '{module_name}' imported successfully")
             elif module_name == "nuclei":
-                import nuclei
+                from commands import nuclei
                 print_success(f"Module '{module_name}' imported successfully")
         except ImportError as e:
             print_error(f"Failed to import '{module_name}': {e}")
@@ -162,7 +145,7 @@ def check_go_installation():
     except FileNotFoundError:
         print_error("Go is not installed")
         print_info("Install Go using: sudo apt install golang-go (Debian/Ubuntu)")
-        print_info("Or use the autoinstall.py script for automatic installation")
+        print_info("Or use the scripts/autoinstall.py script for automatic installation")
         return False
     except Exception as e:
         print_error(f"Error checking Go: {e}")
@@ -176,7 +159,7 @@ def test_tool_modules():
     
     # Test naabu module
     try:
-        import naabu
+        from commands import naabu
         print_info("Testing Naabu module...")
         
         # Test check function
@@ -202,7 +185,7 @@ def test_tool_modules():
     
     # Test httpx module
     try:
-        import httpx as httpx_module
+        from commands import httpx as httpx_module
         print_info("Testing HTTPX module...")
         
         # Test check function
@@ -226,7 +209,7 @@ def test_tool_modules():
     
     # Test nuclei module
     try:
-        import nuclei
+        from commands import nuclei
         print_info("Testing Nuclei module...")
         
         # Test check function
@@ -266,14 +249,14 @@ def test_auto_installation():
     
     if not go_available:
         print_warning("Go is not available - auto-installation will not work")
-        print_info("Install Go first using the autoinstall.py script")
+        print_info("Install Go first using the scripts/autoinstall.py script")
         return False
     
     print_success("Go is available - auto-installation should work")
     
     # Test if the auto-install functions exist and are callable
     try:
-        import naabu
+        from commands import naabu
         if hasattr(naabu, 'auto_install_naabu'):
             print_success("Naabu auto-installation function available")
         else:
@@ -282,7 +265,7 @@ def test_auto_installation():
         print_error("Could not test naabu auto-installation")
     
     try:
-        import httpx as httpx_module
+        from commands import httpx as httpx_module
         if hasattr(httpx_module, 'auto_install_httpx'):
             print_success("HTTPX auto-installation function available")
         else:
@@ -291,7 +274,7 @@ def test_auto_installation():
         print_error("Could not test httpx auto-installation")
     
     try:
-        import nuclei
+        from commands import nuclei
         if hasattr(nuclei, 'auto_install_nuclei'):
             print_success("Nuclei auto-installation function available")
         else:
@@ -362,7 +345,7 @@ def generate_report(platform_ok, deps_ok, go_ok, tools_status, auto_install_ok):
     
     print(f"\n{Colors.PURPLE}Next steps:{Colors.END}")
     if not go_ok:
-        print_info("1. Run 'python3 autoinstall.py' to install Go and all tools")
+        print_info("1. Run 'python3 scripts/autoinstall.py' to install Go and all tools")
     else:
         print_info("1. Tools will be automatically installed when first used")
     print_info("2. Run 'python3 src/workflow.py --help' to see available options")

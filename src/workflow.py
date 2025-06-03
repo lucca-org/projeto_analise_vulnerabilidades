@@ -20,7 +20,7 @@ from typing import Optional, Dict, List, Any, Union, Tuple
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from commands import naabu, httpx, nuclei
-from utils import run_cmd, check_network, create_directory_if_not_exists, get_executable_path
+from utils import run_cmd, check_network, create_directory_if_not_exists, get_executable_path, verify_linux_platform
 
 # Try to import config_manager if available
 try:
@@ -491,7 +491,8 @@ def main():
     parser.add_argument('--auto-config', action='store_true', help='Use automatic configuration based on system capabilities')
     parser.add_argument('--scan-code', action='store_true', help='Scan web application code for vulnerabilities')
     parser.add_argument('--config-file', help='Use custom configuration file')
-      # Enforce Linux-only operation
+    
+    # Enforce Linux-only operation
     if platform.system().lower() != "linux":
         print("╔═══════════════════════════════════════════════════════════════╗")
         print("║                          ❌ ERROR ❌                           ║")
@@ -504,6 +505,11 @@ def main():
         print("║     Please use a native Linux environment for optimal        ║")
         print("║     security tool performance and compatibility.             ║")
         print("╚═══════════════════════════════════════════════════════════════╝")
+        sys.exit(1)
+    
+    # Ensure platform verification is consistent
+    if not verify_linux_platform():
+        print("❌ This toolkit is designed for Linux only. Exiting.")
         sys.exit(1)
     
     # Set up signal handler for graceful exit on CTRL+C

@@ -83,15 +83,6 @@ SUPPORTED_DISTROS = {
     }
 }
 
-def print_header():
-    """Print installation header."""
-    print(f"{Colors.CYAN}{'='*80}{Colors.END}")
-    print(f"{Colors.BOLD}{Colors.WHITE}🔥 Linux Vulnerability Analysis Toolkit - Master Installer 🔥{Colors.END}")
-    print(f"{Colors.CYAN}{'='*80}{Colors.END}")
-    print(f"{Colors.YELLOW}Single-point installer for complete toolkit setup{Colors.END}")
-    print(f"{Colors.YELLOW}Platform: Linux-Only | Requires: Root/Sudo access{Colors.END}")
-    print(f"{Colors.CYAN}{'='*80}{Colors.END}\n")
-
 def detect_linux_distro() -> Optional[str]:
     """Detect the Linux distribution with enhanced detection."""
     try:
@@ -143,6 +134,82 @@ def ensure_linux_only() -> bool:
         print(f"{Colors.RED}╚═══════════════════════════════════════════════════════════════╝{Colors.END}")
         return False
     return True
+
+def run_setup_tools():
+    """Run the setup_tools.sh script."""
+    setup_tools_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'scripts', 'setup_tools.sh')
+    if not os.path.exists(setup_tools_path):
+        print("❌ setup_tools.sh not found in the scripts folder.")
+        return False
+
+    try:
+        subprocess.run(['bash', setup_tools_path], check=True)
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"❌ setup_tools.sh execution failed: {e}")
+        return False
+
+def verify_package_manager():
+    """Verify that apt commands are functional."""
+    try:
+        subprocess.run(['sudo', 'apt', 'update'], check=True)
+        print("✅ apt update executed successfully.")
+    except subprocess.CalledProcessError as e:
+        print(f"❌ apt update failed: {e}")
+        sys.exit(1)
+
+def verify_tool_installation():
+    """Confirm that naabu, httpx, and nuclei are installed correctly."""
+    tools = ['naabu', 'httpx', 'nuclei']
+    for tool in tools:
+        if shutil.which(tool):
+            print(f"✅ {tool} is installed.")
+        else:
+            print(f"❌ {tool} is not installed. Attempting to install it now...")
+            try:
+                subprocess.run(['go', 'install', f'github.com/projectdiscovery/{tool}/cmd/{tool}@latest'], check=True)
+                print(f"✅ {tool} installed successfully.")
+            except subprocess.CalledProcessError as e:
+                print(f"❌ Failed to install {tool}: {e}")
+                sys.exit(1)
+
+def verify_permissions():
+    """Ensure the script is running with root permissions."""
+    try:
+        import ctypes
+        if ctypes.CDLL(None).geteuid() != 0:
+            print("❌ This script must be run as root. Please use sudo.")
+            sys.exit(1)
+        print("✅ Script is running with root permissions.")
+    except AttributeError:
+        print("❌ Unable to check root privileges. Ensure you are running as root.")
+        sys.exit(1)
+
+def verify_dependencies():
+    """Check and install required dependencies."""
+    dependencies = ['requests', 'pip', 'golang-go']
+    for dep in dependencies:
+        try:
+            if dep == 'pip':
+                subprocess.run(['python3', '-m', 'ensurepip', '--upgrade'], check=True)
+                subprocess.run(['python3', '-m', 'pip', 'install', '--upgrade', 'pip'], check=True)
+            elif dep == 'requests':
+                subprocess.run(['python3', '-m', 'pip', 'install', 'requests'], check=True)
+            else:
+                subprocess.run(['sudo', 'apt', 'install', '-y', dep], check=True)
+            print(f"✅ {dep} is installed.")
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Failed to install {dep}: {e}")
+            sys.exit(1)
+
+def print_header():
+    """Print installation header."""
+    print(f"{Colors.CYAN}{'='*80}{Colors.END}")
+    print(f"{Colors.BOLD}{Colors.WHITE}🔥 Linux Vulnerability Analysis Toolkit - Master Installer 🔥{Colors.END}")
+    print(f"{Colors.CYAN}{'='*80}{Colors.END}")
+    print(f"{Colors.YELLOW}Single-point installer for complete toolkit setup{Colors.END}")
+    print(f"{Colors.YELLOW}Platform: Linux-Only | Requires: Root/Sudo access{Colors.END}")
+    print(f"{Colors.CYAN}{'='*80}{Colors.END}\n")
 
 def check_root_permissions() -> bool:
     """Check for root/sudo permissions."""
@@ -260,44 +327,8 @@ def setup_go_environment_complete() -> bool:
         except (subprocess.CalledProcessError, FileNotFoundError):
             print(f"{Colors.YELLOW}⚠️  Go not found or improperly configured{Colors.END}")
         
-        # Install/configure Go manually if needed
-        print(f"{Colors.WHITE}Installing Go manually...{Colors.END}")
-        go_version = "1.21.5"
-        go_archive = f"go{go_version}.linux-amd64.tar.gz"
-        
-        # Download Go
-        subprocess.run([
-            'wget', '-q', 
-            f'https://golang.org/dl/{go_archive}',
-            '-O', f'/tmp/{go_archive}'
-        ], check=True)
-        
-        # Extract Go
-        subprocess.run(['sudo', 'tar', '-C', '/usr/local', '-xzf', f'/tmp/{go_archive}'], check=True)
-        
-        # Set up environment
-        go_bin = '/usr/local/go/bin'
-        current_path = os.environ.get('PATH', '')
-        if go_bin not in current_path:
-            os.environ['PATH'] = f"{go_bin}:{current_path}"
-            
-        # Add to shell profile
-        profile_lines = [
-            'export PATH=$PATH:/usr/local/go/bin',
-            'export GOPATH=$HOME/go',
-            'export PATH=$PATH:$GOPATH/bin'
-        ]
-        
-        for profile in ['.bashrc', '.zshrc']:
-            profile_path = os.path.expanduser(f'~/{profile}')
-            if os.path.exists(profile_path):
-                with open(profile_path, 'a') as f:
-                    f.write('\n# Go environment\n')
-                    for line in profile_lines:
-                        f.write(f'{line}\n')
-        
-        print(f"{Colors.GREEN}✅ Go environment configured{Colors.END}")
-        return True
+        # Install/configure Go
+        return setup_go_environment()
         
     except Exception as e:
         print(f"{Colors.RED}❌ Go environment setup failed: {e}{Colors.END}")
@@ -353,38 +384,6 @@ def install_security_tools_complete() -> bool:
         print(f"{Colors.RED}❌ Security tools installation failed: {e}{Colors.END}")
         return False
 
-def install_python_dependencies() -> bool:
-    """Install Python dependencies for enhanced functionality."""
-    try:
-        script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        requirements_file = os.path.join(script_dir, 'config', 'requirements.txt')
-        
-        if os.path.exists(requirements_file):
-            print(f"{Colors.WHITE}Installing Python dependencies from requirements.txt...{Colors.END}")
-            subprocess.run(['pip3', 'install', '-r', requirements_file], check=True, 
-                          stdout=subprocess.DEVNULL)
-            print(f"{Colors.GREEN}✅ Python dependencies installed{Colors.END}")
-        else:
-            # Fallback essential packages
-            print(f"{Colors.WHITE}Installing essential Python packages...{Colors.END}")
-            essential_packages = [
-                'requests>=2.32.0',
-                'colorama>=0.4.6', 
-                'markdown>=3.4.0',
-                'jinja2>=3.1.0',
-                'rich>=13.0.0'
-            ]
-            
-            for package in essential_packages:
-                subprocess.run(['pip3', 'install', package], check=True, 
-                              stdout=subprocess.DEVNULL)
-                print(f"{Colors.GREEN}  ✅ {package}{Colors.END}")
-            
-        return True
-    except Exception as e:
-        print(f"{Colors.RED}❌ Python dependencies installation failed: {e}{Colors.END}")
-        return False
-
 def setup_python_environment() -> bool:
     """Setup Python environment and dependencies."""
     try:
@@ -419,8 +418,7 @@ def run_setup_scripts() -> bool:
             os.chmod(setup_script, 0o755)
             
             # Run the script
-            subprocess.run(['bash', setup_script], check=True, cwd=script_dir,
-                          stdout=subprocess.DEVNULL)
+            subprocess.run(['bash', setup_script], check=True, cwd=script_dir)
             print(f"{Colors.GREEN}✅ Additional setup completed{Colors.END}")
         else:
             print(f"{Colors.YELLOW}⚠️  setup_tools.sh not found, skipping{Colors.END}")
@@ -486,7 +484,7 @@ def create_configuration_files() -> bool:
         print(f"{Colors.GREEN}✅ Configuration file created: {config_file}{Colors.END}")
         
         # Create bash aliases for easy access
-        aliases_content = '''#!/bin/bash
+        aliases_content = '''
 # Vulnerability Analysis Toolkit Aliases
 alias vat-scan="python3 $(find . -name 'workflow.py' 2>/dev/null | head -1)"
 alias vat-naabu="naabu"
@@ -498,7 +496,6 @@ alias vat-update="nuclei -update-templates"
         aliases_file = os.path.join(config_dir, 'vat_aliases.sh')
         with open(aliases_file, 'w') as f:
             f.write(aliases_content)
-        os.chmod(aliases_file, 0o755)
         
         print(f"{Colors.GREEN}✅ Aliases created: {aliases_file}{Colors.END}")
         print(f"{Colors.YELLOW}💡 To use aliases: source {aliases_file}{Colors.END}")
@@ -627,13 +624,223 @@ def main():
         print(f"\n{Colors.RED}❌ Unexpected error during installation: {e}{Colors.END}")
         return False
 
+def prepare_system(distro_config: Dict) -> bool:
+    """Prepare the system with required packages."""
+    try:
+        print(f"📦 Updating {distro_config['name']} package repository...")
+        subprocess.run(distro_config['update_cmd'], check=True)
+        
+        print("📦 Installing base packages...")
+        cmd = distro_config['install_cmd'] + distro_config['packages']
+        subprocess.run(cmd, check=True)
+        
+        # Fix line endings for all shell scripts
+        fix_line_endings()
+        
+        return True
+    except subprocess.CalledProcessError as e:
+        print(f"❌ Package installation failed: {e}")
+        return False
+
+def fix_line_endings():
+    """Ensure all files have Linux-only line endings."""
+    script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    
+    # Fix shell scripts
+    for script in ['scripts/setup_tools.sh', 'scripts/fix_dpkg.sh', 
+                   'scripts/fix_go_path.sh', 'scripts/fix_repo_keys.sh', 
+                   'scripts/update_repos.sh']:
+        script_path = os.path.join(script_dir, script)
+        if os.path.exists(script_path):
+            try:
+                subprocess.run(['sed', '-i', 's/\r$//', script_path], check=True)
+                os.chmod(script_path, 0o755)
+                print(f"✅ Fixed line endings: {script}")
+            except Exception as e:
+                print(f"⚠️  Warning: Could not fix {script}: {e}")
+
+def setup_go_environment() -> bool:
+    """Set up Go programming language environment."""
+    try:
+        # Check if Go is already installed
+        if shutil.which('go'):
+            print("✅ Go is already installed")
+            return True
+            
+        print("📥 Installing Go...")
+        # Download and install Go
+        go_version = "1.21.5"
+        go_archive = f"go{go_version}.linux-amd64.tar.gz"
+        
+        # Download Go
+        subprocess.run([
+            'wget', '-q', 
+            f'https://golang.org/dl/{go_archive}',
+            '-O', f'/tmp/{go_archive}'
+        ], check=True)
+        
+        # Extract Go
+        subprocess.run(['sudo', 'tar', '-C', '/usr/local', '-xzf', f'/tmp/{go_archive}'], check=True)
+        
+        # Set up environment
+        go_bin = '/usr/local/go/bin'
+        current_path = os.environ.get('PATH', '')
+        if go_bin not in current_path:
+            os.environ['PATH'] = f"{go_bin}:{current_path}"
+            
+        # Add to shell profile
+        profile_lines = [
+            'export PATH=$PATH:/usr/local/go/bin',
+            'export GOPATH=$HOME/go',
+            'export PATH=$PATH:$GOPATH/bin'
+        ]
+        
+        for profile in ['.bashrc', '.zshrc']:
+            profile_path = os.path.expanduser(f'~/{profile}')
+            if os.path.exists(profile_path):
+                with open(profile_path, 'a') as f:
+                    f.write('\n# Go environment\n')
+                    for line in profile_lines:
+                        f.write(f'{line}\n')
+        
+        print("✅ Go environment configured")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Go setup failed: {e}")
+        return False
+
+def install_security_tools() -> bool:
+    """Install security tools with maximum utilization."""
+    tools = {
+        'naabu': 'github.com/projectdiscovery/naabu/v2/cmd/naabu@latest',
+        'httpx': 'github.com/projectdiscovery/httpx/cmd/httpx@latest', 
+        'nuclei': 'github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest'
+    }
+    
+    for tool, repo in tools.items():
+        try:
+            print(f"🔧 Installing {tool}...")
+            subprocess.run(['go', 'install', repo], check=True)
+            print(f"✅ {tool} installed successfully")
+        except subprocess.CalledProcessError as e:
+            print(f"❌ Failed to install {tool}: {e}")
+            return False
+    
+    # Update nuclei templates for maximum coverage
+    try:
+        print("📋 Updating nuclei templates...")
+        subprocess.run(['nuclei', '-update-templates'], check=True)
+        print("✅ Nuclei templates updated")
+    except Exception as e:
+        print(f"⚠️  Warning: Template update failed: {e}")
+    
+    return True
+
+def install_python_dependencies() -> bool:
+    """Install Python dependencies for enhanced functionality."""
+    try:
+        script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        requirements_file = os.path.join(script_dir, 'config', 'requirements.txt')
+        
+        if os.path.exists(requirements_file):
+            print("📦 Installing Python dependencies...")
+            subprocess.run(['pip3', 'install', '-r', requirements_file], check=True)
+            print("✅ Python dependencies installed")
+        else:
+            # Fallback essential packages
+            essential_packages = [
+                'requests>=2.32.0',
+                'colorama>=0.4.6', 
+                'markdown>=3.4.0',
+                'jinja2>=3.1.0',
+                'rich>=13.0.0'
+            ]
+            
+            for package in essential_packages:
+                subprocess.run(['pip3', 'install', package], check=True)
+            print("✅ Essential Python packages installed")
+            
+        return True
+    except Exception as e:
+        print(f"❌ Python dependencies installation failed: {e}")
+        return False
+
+def optimize_configuration() -> bool:
+    """Optimize configuration for maximum tool utilization."""
+    try:
+        script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
+        # Create optimized configuration
+        config = {
+            "general": {
+                "max_threads": 50,
+                "timeout": 3600,
+                "optimize_for_linux": True
+            },
+            "naabu": {
+                "threads": 100,
+                "rate": 1000,
+                "timeout": 3
+            },
+            "httpx": {
+                "threads": 100,
+                "timeout": 5,
+                "max_redirects": 3
+            },
+            "nuclei": {
+                "rate_limit": 200,
+                "bulk_size": 50,
+                "timeout": 5
+            }
+        }
+        
+        config_file = os.path.join(script_dir, 'config', 'optimized_config.json')
+        with open(config_file, 'w') as f:
+            json.dump(config, f, indent=2)
+            
+        print("✅ Optimized configuration created")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Configuration optimization failed: {e}")
+        return False
+
+def verify_installation() -> bool:
+    """Verify all components are working correctly."""
+    tools_to_check = ['naabu', 'httpx', 'nuclei', 'go']
+    
+    print("🔍 Verifying installation...")
+    all_good = True
+    
+    for tool in tools_to_check:
+        if shutil.which(tool):
+            print(f"✅ {tool}: Found")
+        else:
+            print(f"❌ {tool}: Not found")
+            all_good = False
+    
+    # Test tools functionality
+    try:
+        # Test nuclei templates
+        result = subprocess.run(['nuclei', '-templates'], 
+                              capture_output=True, text=True, timeout=10)
+        if result.returncode == 0:
+            print("✅ Nuclei templates: Available")
+        else:
+            print("⚠️  Nuclei templates: May need update")
+            
+    except Exception as e:
+        print(f"⚠️  Warning during verification: {e}")    
+    return all_good
+
 if __name__ == "__main__":
     try:
         success = main()
         sys.exit(0 if success else 1)
     except KeyboardInterrupt:
-        print(f"\n{Colors.RED}❌ Installation cancelled by user{Colors.END}")
+        print("\n❌ Installation cancelled by user")
         sys.exit(1)
     except Exception as e:
-        print(f"\n{Colors.RED}❌ Unexpected error: {e}{Colors.END}")
+        print(f"\n❌ Unexpected error: {e}")
         sys.exit(1)

@@ -231,7 +231,7 @@ def auto_install_naabu():
     # Check if Go is installed
     if not shutil.which("go"):
         print("❌ Go is not installed. Please install Go first.")
-        print("   You can use the autoinstall.py script to install Go automatically.")
+        print("   You can use the scripts/autoinstall.py script to install Go automatically.")
         return False
     
     try:
