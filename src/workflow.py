@@ -15,6 +15,10 @@ import platform
 from pathlib import Path
 import traceback
 from typing import Optional, Dict, List, Any, Union, Tuple
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 from commands import naabu, httpx, nuclei
 from utils import run_cmd, check_network, create_directory_if_not_exists, get_executable_path
 
@@ -487,12 +491,20 @@ def main():
     parser.add_argument('--auto-config', action='store_true', help='Use automatic configuration based on system capabilities')
     parser.add_argument('--scan-code', action='store_true', help='Scan web application code for vulnerabilities')
     parser.add_argument('--config-file', help='Use custom configuration file')
-    
-    # Check platform
-    if platform.system().lower() == "windows":
-        print("[-] Warning: This toolkit is designed for Linux systems.")
-        print("[-] Some features may not work correctly on Windows.")
-        print("[-] For best results, use Linux (VM, WSL, or native Linux).")
+      # Enforce Linux-only operation
+    if platform.system().lower() != "linux":
+        print("╔═══════════════════════════════════════════════════════════════╗")
+        print("║                          ❌ ERROR ❌                           ║")
+        print("║                                                               ║")
+        print("║     This toolkit is designed EXCLUSIVELY for Linux systems   ║")
+        print("║                                                               ║")
+        print("║     ✅ Supported: Debian, Kali, Ubuntu, Arch Linux          ║")
+        print("║     ❌ NOT Supported: Windows, macOS, WSL                    ║")
+        print("║                                                               ║")
+        print("║     Please use a native Linux environment for optimal        ║")
+        print("║     security tool performance and compatibility.             ║")
+        print("╚═══════════════════════════════════════════════════════════════╝")
+        sys.exit(1)
     
     # Set up signal handler for graceful exit on CTRL+C
     signal.signal(signal.SIGINT, signal_handler)

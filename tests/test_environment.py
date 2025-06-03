@@ -99,9 +99,9 @@ def check_python_modules():
         "commands.naabu": "commands/naabu.py",
         "commands.httpx": "commands/httpx.py",
         "commands.nuclei": "commands/nuclei.py",
-        "utils": "utils.py",
-        "workflow": "workflow.py",
-        "reporter": "reporter.py"
+        "utils": "src/utils.py",
+        "workflow": "src/workflow.py",
+        "reporter": "src/reporter.py"
     }
     
     missing_modules = []

@@ -2,12 +2,13 @@ import os
 import json
 import subprocess
 import platform
+import shutil
 from utils import run_cmd, get_executable_path
 
 def run_httpx(target=None, target_list=None, output_file=None, json_output=False,
              title=False, status_code=False, tech_detect=False, web_server=False,
              follow_redirects=False, silent=False, timeout=None, threads=None,
-             additional_args=None):
+             additional_args=None, auto_install=True):
     """
     Run HTTPX tool with the specified parameters.
     
@@ -25,17 +26,26 @@ def run_httpx(target=None, target_list=None, output_file=None, json_output=False
         timeout (int): Timeout in seconds.
         threads (int): Number of threads to use.
         additional_args (list): Additional httpx arguments.
+        auto_install (bool): Automatically install HTTPX if not found.
         
     Returns:
         bool: True if execution was successful, False otherwise.
     """
     
-    # Check if httpx is available
+    # Check if httpx is available, install if needed
+    if not check_httpx():
+        if auto_install:
+            print("🔧 HTTPX not found. Attempting automatic installation...")
+            if not auto_install_httpx():
+                print("❌ Failed to install HTTPX automatically.")
+                return False
+        else:
+            print("❌ HTTPX is not installed. Please install it first or set auto_install=True.")
+            return False    
+    # Get httpx path after ensuring it's installed
     httpx_path = get_executable_path("httpx")
     if not httpx_path:
-        print("Error: httpx is not installed or not found in PATH.")
-        print("Please run the installation script first or install httpx manually:")
-        print("  go install github.com/projectdiscovery/httpx/cmd/httpx@latest")
+        print("❌ HTTPX installation verification failed - executable not found in PATH")
         return False
     
     # Validate parameters
@@ -217,3 +227,59 @@ def get_httpx_capabilities():
         print(f"Error checking HTTPX capabilities: {e}")
     
     return capabilities
+
+def auto_install_httpx():
+    """
+    Automatically install HTTPX on Linux systems.
+    
+    Returns:
+        bool: True if installation was successful, False otherwise.
+    """
+    print("🔧 Starting automatic installation of HTTPX...")
+    
+    # Check if already installed and working
+    if check_httpx():
+        print("✅ HTTPX is already installed and working!")
+        return True
+    
+    # Check if Go is installed
+    if not shutil.which("go"):
+        print("❌ Go is not installed. Please install Go first.")
+        print("   You can use the autoinstall.py script to install Go automatically.")
+        return False
+    
+    try:
+        print("📦 Installing HTTPX using Go...")
+        
+        # Install httpx using go install
+        cmd = ["go", "install", "-v", "github.com/projectdiscovery/httpx/cmd/httpx@latest"]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        
+        if result.returncode != 0:
+            print(f"❌ Failed to install HTTPX: {result.stderr}")
+            return False
+        
+        print("✅ HTTPX installed successfully!")
+        
+        # Verify installation
+        if check_httpx():
+            print("✅ HTTPX installation verified and working!")
+            
+            # Add ~/go/bin to PATH if not already there
+            go_bin_path = os.path.expanduser("~/go/bin")
+            current_path = os.environ.get("PATH", "")
+            if go_bin_path not in current_path:
+                os.environ["PATH"] = f"{go_bin_path}:{current_path}"
+                print(f"📝 Added {go_bin_path} to PATH for this session")
+            
+            return True
+        else:
+            print("❌ HTTPX installation completed but verification failed")
+            return False
+            
+    except subprocess.TimeoutExpired:
+        print("❌ Installation timed out. Please check your internet connection.")
+        return False
+    except Exception as e:
+        print(f"❌ Error during installation: {e}")
+        return False

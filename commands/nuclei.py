@@ -1,11 +1,13 @@
 import os
 import json
 import subprocess
+import shutil
 from utils import run_cmd, get_executable_path
 
 def run_nuclei(target=None, target_list=None, templates=None, tags=None, severity=None,
               output_file=None, jsonl=False, silent=False, store_resp=False, 
-              headers=None, variables=None, rate_limit=None, timeout=None, additional_args=None):
+              headers=None, variables=None, rate_limit=None, timeout=None, 
+              additional_args=None, auto_install=True):
     """
     Run Nuclei vulnerability scanner with the specified parameters.
     
@@ -24,10 +26,22 @@ def run_nuclei(target=None, target_list=None, templates=None, tags=None, severit
         rate_limit (int): Maximum number of requests per second.
         timeout (int): Timeout in seconds for HTTP requests.
         additional_args (list): Additional nuclei arguments.
+        auto_install (bool): Automatically install Nuclei if not found.
         
     Returns:
         bool: True if execution was successful, False otherwise.
     """
+    # Check if nuclei is available, install if needed
+    if not check_nuclei():
+        if auto_install:
+            print("🔧 Nuclei not found. Attempting automatic installation...")
+            if not auto_install_nuclei():
+                print("❌ Failed to install Nuclei automatically.")
+                return False
+        else:
+            print("❌ Nuclei is not installed. Please install it first or set auto_install=True.")
+            return False
+    
     if not target and not target_list:
         print("Error: Either target or target_list must be specified.")
         return False
@@ -219,3 +233,70 @@ def get_nuclei_capabilities():
     except Exception as e:
         print(f"Error getting nuclei capabilities: {e}")
         return capabilities
+
+def auto_install_nuclei():
+    """
+    Automatically install Nuclei vulnerability scanner on Linux systems.
+    
+    Returns:
+        bool: True if installation was successful, False otherwise.
+    """
+    print("🔧 Starting automatic installation of Nuclei...")
+    
+    # Check if already installed and working
+    if check_nuclei():
+        print("✅ Nuclei is already installed and working!")
+        return True
+    
+    # Check if Go is installed
+    if not shutil.which("go"):
+        print("❌ Go is not installed. Please install Go first.")
+        print("   You can use the autoinstall.py script to install Go automatically.")
+        return False
+    
+    try:
+        print("📦 Installing Nuclei using Go...")
+        
+        # Install nuclei using go install
+        cmd = ["go", "install", "-v", "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        
+        if result.returncode != 0:
+            print(f"❌ Failed to install Nuclei: {result.stderr}")
+            # Try alternative installation command for older versions
+            print("🔄 Trying alternative installation method...")
+            cmd = ["go", "install", "-v", "github.com/projectdiscovery/nuclei/v2/cmd/nuclei@latest"]
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            
+            if result.returncode != 0:
+                print(f"❌ Alternative installation also failed: {result.stderr}")
+                return False
+        
+        print("✅ Nuclei installed successfully!")
+        
+        # Verify installation
+        if check_nuclei():
+            print("✅ Nuclei installation verified and working!")
+            
+            # Add ~/go/bin to PATH if not already there
+            go_bin_path = os.path.expanduser("~/go/bin")
+            current_path = os.environ.get("PATH", "")
+            if go_bin_path not in current_path:
+                os.environ["PATH"] = f"{go_bin_path}:{current_path}"
+                print(f"📝 Added {go_bin_path} to PATH for this session")
+            
+            # Update nuclei templates
+            print("📋 Updating Nuclei templates...")
+            update_nuclei_templates()
+            
+            return True
+        else:
+            print("❌ Nuclei installation completed but verification failed")
+            return False
+            
+    except subprocess.TimeoutExpired:
+        print("❌ Installation timed out. Please check your internet connection.")
+        return False
+    except Exception as e:
+        print(f"❌ Error during installation: {e}")
+        return False
