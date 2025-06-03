@@ -122,62 +122,96 @@ def setup_go_env():
     # Add to PATH environment variable
     os.environ["PATH"] = os.environ.get("PATH", "") + os.pathsep + go_bin + os.pathsep + go_root_bin
 
-# Check installation state
-installation_manager = manage_installation_state()
-if installation_manager is True:
-    print("Previous installation detected. Skipping setup_tools.sh")
-else:
+def orchestrate_installation():
+    """Master orchestration function that runs all installation scripts in proper order."""
+    print("\n===== Master Installation Orchestrator =====")
+    print("This orchestrator will run all setup scripts in the proper sequence:")
+    print("1. Check previous installation state")
+    print("2. Fix line endings and permissions for shell scripts")
+    print("3. Run setup_tools.sh (comprehensive system setup)")
+    print("4. Verify httpx installation with fallback methods")
+    print("5. Run dependency installation and verification")
+    print("6. Mark installation as complete")
+    
+    # Step 1: Check installation state
+    installation_manager = manage_installation_state()
+    if installation_manager is True:
+        print("✓ Previous complete installation detected. Skipping full setup.")
+        print("  To force reinstallation, delete the .installation_completed file")
+        return True
+    
+    # Step 2: Prepare shell scripts
+    print("\n== Step 2: Preparing shell scripts ==")
+    shell_scripts = ["setup_tools.sh", "fix_repo_keys.sh", "fix_dpkg.sh", "fix_go_path.sh", "update_repos.sh"]
+    
+    for script in shell_scripts:
+        if os.path.exists(script):
+            try:
+                # Fix line endings for Linux compatibility
+                subprocess.run(["sed", "-i", "s/\\r$//", f"./{script}"], check=True, 
+                             capture_output=True, text=True)
+                # Make script executable
+                subprocess.run(["chmod", "+x", f"./{script}"], check=True, 
+                             capture_output=True, text=True)
+                print(f"  ✓ Prepared {script}")
+            except Exception as e:
+                print(f"  ! Warning: Could not prepare {script}: {e}")
+        else:
+            print(f"  ! Warning: {script} not found")
+    
+    # Step 3: Run main setup script
+    print("\n== Step 3: Running setup_tools.sh (comprehensive system setup) ==")
     try:
-        print("\n== Executing setup_tools.sh ==")
-        # First fix line endings to ensure the script works on Linux
-        try:
-            subprocess.run(["sed", "-i", "s/\\r$//", "./setup_tools.sh"], check=True)
-            print("✓ Fixed line endings in setup_tools.sh")
-        except Exception as e:
-            print(f"Warning: Could not fix line endings: {e}")
-
-        # Also fix line endings for fix_repo_keys.sh
-        try:
-            subprocess.run(["sed", "-i", "s/\\r$//", "./fix_repo_keys.sh"], check=True)
-            print("✓ Fixed line endings in fix_repo_keys.sh")
-        except Exception as e:
-            print(f"Warning: Could not fix line endings in fix_repo_keys.sh: {e}")
+        # Run with bash explicitly for compatibility
+        result = subprocess.run(["bash", "./setup_tools.sh"], 
+                              check=False, capture_output=False, text=True)
         
-        # Make the script executable
-        subprocess.run(["chmod", "+x", "./setup_tools.sh"], check=True)
-        
-        # Run with bash explicitly to avoid shell compatibility issues
-        result = subprocess.run(["bash", "./setup_tools.sh"], check=True)
         if result.returncode == 0:
-            print("✓ Successfully executed setup_tools.sh")
-            # Mark installation as complete
-            installation_manager()
+            print("✓ setup_tools.sh completed successfully")
         else:
             print(f"! setup_tools.sh exited with code {result.returncode}")
+            print("  Continuing with fallback installation methods...")
     except Exception as e:
-        print(f"Error executing setup_tools.sh: {e}")
-
-# Install and set up httpx properly
-print("\n== Installing latest httpx from ProjectDiscovery ==")
-try:
-    # Install the latest httpx using Go
-    print("Installing httpx...")
-    subprocess.run(["go", "install", "-v", "github.com/projectdiscovery/httpx/cmd/httpx@latest"], check=True)
+        print(f"! Error executing setup_tools.sh: {e}")
+        print("  Continuing with fallback installation methods...")
     
-    # Get the home directory and construct the go/bin path
-    home_dir = os.path.expanduser("~")
-    go_bin_path = os.path.join(home_dir, "go", "bin")
-    httpx_path = os.path.join(go_bin_path, "httpx")
-    
-    # Copy httpx to /usr/bin
-    print("Copying httpx to /usr/bin...")
-    if os.path.exists(httpx_path):
-        subprocess.run(["sudo", "cp", httpx_path, "/usr/bin/"], check=True)
-        print("✓ Successfully installed httpx to /usr/bin/")
+    # Step 4: Verify and install httpx with comprehensive fallback
+    print("\n== Step 4: Comprehensive httpx installation and verification ==")
+    httpx_success = install_httpx()
+    if httpx_success:
+        print("✓ httpx installation verified successfully")
     else:
-        print(f"! httpx binary not found at {httpx_path}")
-except Exception as e:
-    print(f"Error installing httpx: {e}")
+        print("! httpx installation needs attention - trying additional methods")
+        # Try the Go path fix script
+        if os.path.exists("fix_go_path.sh"):
+            try:
+                subprocess.run(["bash", "./fix_go_path.sh"], check=True)
+                print("✓ Executed fix_go_path.sh successfully")
+            except Exception as e:
+                print(f"! fix_go_path.sh failed: {e}")
+    
+    # Step 5: Run comprehensive dependency check and installation
+    print("\n== Step 5: Final dependency verification and installation ==")
+    deps_success = check_and_install_dependencies()
+    if deps_success:
+        print("✓ All dependencies verified and installed")
+    else:
+        print("! Some dependencies may need manual attention")
+    
+    # Step 6: Mark installation as complete
+    print("\n== Step 6: Marking installation as complete ==")
+    try:
+        installation_manager()  # Call the completion function
+        print("✓ Installation state saved successfully")
+        return True
+    except Exception as e:
+        print(f"! Could not save installation state: {e}")
+        return False
+
+# Run the master orchestration
+orchestration_success = orchestrate_installation()
+if not orchestration_success:
+    print("\n⚠️  Orchestration completed with some issues. Manual verification recommended.")
 
 
 
@@ -468,17 +502,44 @@ def check_network():
 
 def setup_go_env():
     """Set up Go environment paths."""
-    go_bin = os.path.expanduser("~/go/bin")
-    go_root_bin = "/usr/local/go/bin"
-    paths_to_add = [go_bin, go_root_bin]
+    # Find existing Go installations
+    go_installations = []
+    possible_go_locations = [
+        "/usr/local/go/bin",
+        os.path.expanduser("~/go/bin"),
+        "/usr/bin",  # In case of system package installation
+        "/snap/bin"  # In case of snap installation
+    ]
+    
+    for location in possible_go_locations:
+        if os.path.exists(location):
+            go_installations.append(location)
+    
+    # Always include user's go bin directory
+    user_go_bin = os.path.expanduser("~/go/bin")
+    if user_go_bin not in go_installations:
+        go_installations.append(user_go_bin)
+        # Create the directory if it doesn't exist
+        os.makedirs(user_go_bin, exist_ok=True)
     
     # Add to current environment
-    for path in paths_to_add:
-        if os.path.exists(path) and path not in os.environ.get("PATH", ""):
-            os.environ["PATH"] = os.environ.get("PATH", "") + os.pathsep + path
-
+    current_path = os.environ.get("PATH", "")
+    for path in go_installations:
+        if path not in current_path:
+            os.environ["PATH"] = current_path + os.pathsep + path
+            current_path = os.environ["PATH"]
+    
+    # Set Go environment variables
+    if not os.environ.get("GOPATH"):
+        os.environ["GOPATH"] = os.path.expanduser("~/go")
+    
+    if not os.environ.get("GOROOT") and os.path.exists("/usr/local/go"):
+        os.environ["GOROOT"] = "/usr/local/go"
+    
+    print(f"✓ Updated PATH with Go directories: {', '.join(go_installations)}")
+    
     # Return paths for updating shell configs
-    return paths_to_add
+    return go_installations
 
 def update_shell_rc_files(paths_to_add):
     """Update shell configuration files to include Go paths."""
@@ -604,22 +665,33 @@ def manual_go_install():
 
 def check_and_install_go():
     """Check if Go is installed, and install it if not."""
-    # First try existing Go installation
-    if run_cmd(["go", "version"], retry=0, silent=True):
-        print("Go is already installed.")
-        # Still set up paths to ensure proper environment
-        paths = setup_go_env()
-        update_shell_rc_files(paths)
-        return True
+    # First try existing Go installation with proper path finding
+    go_binary = None
+    possible_go_paths = [
+        "/usr/local/go/bin/go",
+        shutil.which("go"),
+        os.path.expanduser("~/go/bin/go")
+    ]
     
-    # If not found in PATH, check if /usr/local/go/bin/go exists
-    if os.path.exists("/usr/local/go/bin/go") and run_cmd(["/usr/local/go/bin/go", "version"], retry=0, silent=True):
-        print("Go is installed but not in PATH. Setting up environment...")
-        paths = setup_go_env()
-        update_shell_rc_files(paths)
-        return True
+    for go_path in possible_go_paths:
+        if go_path and os.path.exists(go_path) and os.access(go_path, os.X_OK):
+            go_binary = go_path
+            break
     
-    # If not found, try manual installation
+    if go_binary:
+        print(f"Go is installed at: {go_binary}")
+        # Test if it works
+        if run_cmd([go_binary, "version"], retry=0, silent=True):
+            print("Go is working properly.")
+            # Still set up paths to ensure proper environment
+            paths = setup_go_env()
+            update_shell_rc_files(paths)
+            return True
+        else:
+            print("Go binary found but not working properly.")
+    
+    # If not found or not working, try manual installation
+    print("Go not found or not working. Attempting installation...")
     return manual_go_install()
 
 def get_executable_path(cmd):
@@ -716,8 +788,7 @@ def install_httpx():
     if httpx_path:
         print(f"✓ httpx is already installed at {httpx_path}")
         return True
-    
-    # Method 1: Try installing with Go (preferred method)
+      # Method 1: Try installing with Go (preferred method)
     print("Attempting to install httpx using Go...")
     go_installed = check_and_install_go()
     
@@ -726,20 +797,38 @@ def install_httpx():
         # Set up Go environment
         os.environ["GO111MODULE"] = "on"  # Ensure Go modules are enabled
         
-        # Try regular go install command
-        if run_cmd(["go", "install", "-v", TOOLS_INFO["httpx"]["go_repository"]], retry=2):
-            print("✓ httpx installed successfully via Go")
-            # Update PATH to include Go binaries
-            setup_go_env()
-            return True
+        # Find the correct go binary path
+        go_binary = None
+        possible_go_paths = [
+            "/usr/local/go/bin/go",
+            shutil.which("go"),
+            os.path.expanduser("~/go/bin/go")
+        ]
         
-        # If failed, try alternative go get command
-        print("First go install attempt failed, trying alternative method...")
-        if run_cmd(["go", "get", "-v", TOOLS_INFO["httpx"]["repository"]], retry=2):
-            print("✓ httpx installed successfully via Go (alternative method)")
-            # Update PATH to include Go binaries
-            setup_go_env()
-            return True
+        for go_path in possible_go_paths:
+            if go_path and os.path.exists(go_path) and os.access(go_path, os.X_OK):
+                go_binary = go_path
+                break
+        
+        if not go_binary:
+            print("Go binary not found in expected locations")
+        else:
+            print(f"Using Go binary at: {go_binary}")
+            
+            # Try regular go install command with full path
+            if run_cmd([go_binary, "install", "-v", TOOLS_INFO["httpx"]["go_repository"]], retry=2):
+                print("✓ httpx installed successfully via Go")
+                # Update PATH to include Go binaries
+                setup_go_env()
+                return True
+            
+            # If failed, try alternative go get command
+            print("First go install attempt failed, trying alternative method...")
+            if run_cmd([go_binary, "get", "-v", TOOLS_INFO["httpx"]["repository"]], retry=2):
+                print("✓ httpx installed successfully via Go (alternative method)")
+                # Update PATH to include Go binaries
+                setup_go_env()
+                return True
     
     # Method 2: Try installing with apt
     if platform.system().lower() == "linux":
@@ -1869,7 +1958,7 @@ def check_and_install_dependencies():
     return True
 
 def main():
-    """Main installation function."""
+    """Main installation function with improved orchestration."""
     print("\n===== Vulnerability Analysis Toolkit Setup =====\n")
     
     # Verify running on Linux
@@ -1886,49 +1975,105 @@ def main():
         print("Warning: This toolkit is optimized for Kali Linux and Debian-based systems.")
         print("Some features may not work correctly on your distribution.")
     
-    # First run setup.py
-    setup_success = run_setup_py()
-    if not setup_success:
-        print("Warning: setup.py didn't complete successfully. Continuing with installation...")
+    # Check for sudo access early
+    if platform.system().lower() == "linux":
+        if os.geteuid() != 0:
+            print("This script requires sudo privileges for some operations.")
+            try:
+                subprocess.run(["sudo", "true"], check=True)
+                print("✓ Sudo access confirmed")
+            except:
+                print("Failed to obtain sudo privileges. Some operations may fail.")
     
-    # Main installation
+    # Display toolkit information
     print("This script will install and configure the following tools:")
     print("  - Naabu: Fast port scanner")
     print("  - HTTPX: HTTP server probe")
     print("  - Nuclei: Vulnerability scanner")
     print("\nNo additional tools like nmap or netcat will be used.\n")
     
-    # Check for sudo
-    if platform.system().lower() == "linux":
-        if os.geteuid() != 0:
-            print("This script requires sudo privileges for some operations.")
-            try:
-                subprocess.run(["sudo", "true"], check=True)
-            except:
-                print("Failed to obtain sudo privileges. Some operations may fail.")
-    
     try:
-        input("Press Enter to continue...")
+        input("Press Enter to continue with installation...")
     except KeyboardInterrupt:
         print("\nSetup cancelled.")
         sys.exit(1)
     
-    # Try running the bash script directly if on Linux
-    if platform.system().lower() == "linux":
-        print("\nRunning setup_tools.sh to complete the installation...")
-        success = run_bash_script()
-        
-        if success:
-            print("\n✅ Installation completed successfully!")
-        else:
-            print("\n⚠️ Installation completed with some issues.")
-            print("Please check the output for error messages.")
-    else:
-        print("Error: This toolkit is designed for Debian/Kali Linux only.")
-        print("Windows is not supported.")
-        sys.exit(1)
+    # Run the master orchestration (this replaces all the previous scattered setup)
+    print("\n🚀 Starting master installation orchestration...")
+    orchestration_success = orchestrate_installation()
     
-    return True
+    if orchestration_success:
+        print("\n✅ Master installation orchestration completed successfully!")
+        
+        # Final verification
+        print("\n== Final System Verification ==")
+        tools_status = verify_final_installation()
+        
+        if tools_status:
+            print("\n🎉 INSTALLATION COMPLETE!")
+            print("All components have been installed and verified successfully.")
+            print("\nYou can now use the toolkit:")
+            print("  python3 workflow.py example.com")
+            print("  python3 code_scanner.py /path/to/project")
+        else:
+            print("\n⚠️  Installation completed but some components need attention.")
+            print("Check the output above for specific issues.")
+    else:
+        print("\n⚠️  Installation completed with some issues.")
+        print("Please check the output for error messages.")
+        print("You may need to run specific components manually.")
+    
+    return orchestration_success
+
+def verify_final_installation():
+    """Perform final verification of all installed components."""
+    print("Verifying all components...")
+    
+    # Check security tools
+    tools = ["httpx", "nuclei", "naabu"]
+    tools_ok = True
+    
+    for tool in tools:
+        tool_path = shutil.which(tool)
+        if not tool_path:
+            # Check in ~/go/bin
+            go_bin_path = os.path.expanduser(f"~/go/bin/{tool}")
+            if os.path.exists(go_bin_path) and os.access(go_bin_path, os.X_OK):
+                tool_path = go_bin_path
+        
+        if tool_path:
+            print(f"  ✓ {tool}: Found at {tool_path}")
+        else:
+            print(f"  ✗ {tool}: Not found")
+            tools_ok = False
+    
+    # Check Python dependencies
+    required_modules = ["requests", "colorama", "markdown", "jinja2"]
+    missing_modules = []
+    for module in required_modules:
+        try:
+            importlib.import_module(module)
+        except ImportError:
+            missing_modules.append(module)
+    
+    if not missing_modules:
+        print("  ✓ Python dependencies: All installed")
+    else:
+        print(f"  ✗ Python dependencies: Missing {', '.join(missing_modules)}")
+        tools_ok = False
+    
+    # Check Go installation
+    go_path = shutil.which("go")
+    if not go_path and os.path.exists("/usr/local/go/bin/go"):
+        go_path = "/usr/local/go/bin/go"
+    
+    if go_path:
+        print(f"  ✓ Go: Found at {go_path}")
+    else:
+        print("  ✗ Go: Not found or not in PATH")
+        tools_ok = False
+    
+    return tools_ok
 
 # Add this function call right before running main setup
 if __name__ == "__main__":

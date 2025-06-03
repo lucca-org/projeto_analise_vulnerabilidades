@@ -16,8 +16,9 @@ def main():
     
     # Check platform - only allow Linux
     if platform.system().lower() != "linux":
-        print("Error: This toolkit is designed for Debian/Kali Linux only.")
-        print("Windows is not supported.")
+        print("ERROR: This toolkit is designed for Debian/Kali Linux only.")
+        print("Windows is NOT supported for this security toolkit.")
+        print("Please use a Linux environment (VM, WSL, or native Linux).")
         return False
     
     script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -59,8 +60,9 @@ def main():
 if __name__ == "__main__":
     # Verify running on Linux
     if platform.system().lower() != "linux":
-        print("Error: This toolkit is designed for Debian/Kali Linux only.")
-        print("Windows is not supported.")
+        print("ERROR: This toolkit is designed for Debian/Kali Linux only.")
+        print("Windows is NOT supported for this security toolkit.")
+        print("Please use a Linux environment (VM, WSL, or native Linux).")
         sys.exit(1)
         
     sys.exit(0 if main() else 1)

@@ -11,6 +11,7 @@ import datetime
 import json
 import time
 import signal
+import platform
 from pathlib import Path
 import traceback
 from typing import Optional, Dict, List, Any, Union, Tuple
@@ -487,10 +488,16 @@ def main():
     parser.add_argument('--scan-code', action='store_true', help='Scan web application code for vulnerabilities')
     parser.add_argument('--config-file', help='Use custom configuration file')
     
-    args = parser.parse_args()
+    # Check platform
+    if platform.system().lower() == "windows":
+        print("[-] Warning: This toolkit is designed for Linux systems.")
+        print("[-] Some features may not work correctly on Windows.")
+        print("[-] For best results, use Linux (VM, WSL, or native Linux).")
     
     # Set up signal handler for graceful exit on CTRL+C
     signal.signal(signal.SIGINT, signal_handler)
+    
+    args = parser.parse_args()
     
     # If only generating a report for existing results
     if args.report_only:

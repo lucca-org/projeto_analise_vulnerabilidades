@@ -101,6 +101,10 @@ install_apt_packages() {
     # First try to fix repository issues
     fix_repo_keys
     
+    # System-wide apt update
+    echo -e "\n${BLUE}Running system-wide apt update...${NC}"
+    sudo apt-get update -o Acquire::AllowInsecureRepositories=true || echo "Apt update failed, continuing anyway"
+    
     # Try multiple Kali mirrors if the default fails
     MIRRORS=("http://http.kali.org/kali" "http://kali.download/kali" "http://mirror.ufro.cl/kali")
     
@@ -150,7 +154,7 @@ install_apt_packages() {
     done
     
     # Try to install security tools via apt with fallback to Go
-    for tool in nuclei naabu httpx; do
+    for tool in nuclei naabu; do  # httpx deliberately excluded
         echo -e "\nChecking for $tool..."
         if command -v $tool >/dev/null 2>&1; then
             echo -e "${GREEN}$tool is already installed.${NC}"
@@ -160,6 +164,9 @@ install_apt_packages() {
                 echo -e "${YELLOW}$tool not available via apt. Will install via Go.${NC}"
         fi
     done
+    
+    # Explicitly note that httpx will be installed via Go only
+    echo -e "\n${YELLOW}Note: httpx will ONLY be installed via Go for maximum compatibility${NC}"
 }
 
 # Function to check if offline installation is possible
@@ -436,10 +443,20 @@ install_security_tools() {
         nuclei_installed=true
     fi
     
-    if command -v httpx >/dev/null 2>&1; then
-        echo -e "${GREEN}httpx is already installed via system package${NC}"
-        httpx_installed=true
-    fi
+    # Check if httpx is already installed in any location
+    HTTPX_LOCATIONS=(
+        "$HOME/go/bin/httpx"
+        "/usr/local/bin/httpx"
+        "/usr/bin/httpx"
+    )
+    
+    for location in "${HTTPX_LOCATIONS[@]}"; do
+        if [ -x "$location" ]; then
+            echo -e "${GREEN}httpx found at $location${NC}"
+            httpx_installed=true
+            break
+        fi
+    done
     
     # Install httpx via Go if not already installed
     if [ "$httpx_installed" = false ]; then
@@ -450,52 +467,55 @@ install_security_tools() {
             install_go
         fi
 
+        # Run apt update before installing Go packages
+        echo -e "${BLUE}Running apt update before Go installation...${NC}"
+        sudo apt-get update -o Acquire::AllowInsecureRepositories=true || echo "Apt update failed, continuing anyway"
+
         # Try installing httpx using Go
+        echo "Installing httpx with: go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest"
         if go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest; then
-            echo -e "${GREEN}[+] httpx installed successfully.${NC}"
+            echo -e "${GREEN}[+] httpx installed successfully via Go${NC}"
             httpx_installed=true
+            
+            # Create symbolic link if not in PATH
+            if ! command -v httpx >/dev/null 2>&1; then
+                echo "Creating symbolic link for httpx..."
+                sudo ln -sf $HOME/go/bin/httpx /usr/local/bin/httpx 2>/dev/null || \
+                echo -e "${YELLOW}Could not create symbolic link. Adding Go bin to your PATH.${NC}"
+                
+                # Add to PATH for current session
+                export PATH="$PATH:$HOME/go/bin"
+                
+                # Make sure shell config has Go bin in PATH
+                for config_file in ~/.bashrc ~/.zshrc ~/.profile; do
+                    if [ -f "$config_file" ]; then
+                        if ! grep -q "export PATH=.*go/bin" "$config_file"; then
+                            echo 'export PATH=$PATH:$HOME/go/bin' >> "$config_file"
+                            echo "Updated $config_file with Go bin path."
+                        fi
+                    fi
+                done
+            fi
+            
+            # Run apt update after installation for system consistency
+            echo -e "${BLUE}Running apt update after Go installation...${NC}"
+            sudo apt-get update -o Acquire::AllowInsecureRepositories=true || echo "Apt update failed, continuing anyway"
         else
             echo -e "${RED}Failed to install httpx via Go. Please check your Go installation or network connection.${NC}"
-            echo -e "${YELLOW}Will attempt to create a fallback httpx implementation.${NC}"
-            # Here you could add code to create a fallback httpx implementation similar to the naabu alternative
-        fi
-    fi
-    
-    # Install nuclei via Go if not already installed
-    if [ "$nuclei_installed" = false ]; then
-        echo -e "\n${BLUE}[+] Installing nuclei via Go...${NC}"
-        # First check if Go is installed
-        if ! command -v go >/dev/null 2>&1; then
-            echo "Go is required to install nuclei. Installing Go first..."
-            install_go
-        fi
-
-        # Try installing nuclei using Go
-        if go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest; then
-            echo -e "${GREEN}[+] nuclei installed successfully.${NC}"
-            nuclei_installed=true
-        else
-            echo -e "${RED}Failed to install nuclei via Go. Please check your Go installation or network connection.${NC}"
-        fi
-    fi
-    
-    # Install naabu via Go if not already installed
-    if [ "$naabu_installed" = false ]; then
-        echo -e "\n${BLUE}[+] Installing naabu via Go...${NC}"
-        # First check if Go is installed
-        if ! command -v go >/dev/null 2>&1; then
-            echo "Go is required to install naabu. Installing Go first..."
-            install_go
-        fi
-
-        # Try installing naabu using Go
-        if go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest; then
-            echo -e "${GREEN}[+] naabu installed successfully.${NC}"
-            naabu_installed=true
-        else
-            echo -e "${RED}Failed to install naabu via Go. Will create alternative implementation.${NC}"
-            create_naabu_alternative
-            naabu_installed=true
+            echo -e "${YELLOW}Trying one more time with verbose output and network test...${NC}"
+            
+            # Test network connectivity
+            ping -c 1 github.com || echo "Network connectivity issues detected."
+            
+            # Try again with more verbose output
+            go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
+            
+            if [ -f "$HOME/go/bin/httpx" ]; then
+                echo -e "${GREEN}httpx installed successfully on second attempt${NC}"
+                httpx_installed=true
+            else
+                echo -e "${RED}httpx installation failed after multiple attempts${NC}"
+            fi
         fi
     fi
     
@@ -533,10 +553,26 @@ verify_tools() {
         tools_ok=false
     fi
     
-    # Check httpx
+    # Enhanced httpx verification
     if command -v httpx >/dev/null 2>&1; then
         echo -e "Verifying httpx..."
         if httpx -version 2>/dev/null || httpx -h 2>/dev/null; then
+            echo -e "${GREEN}httpx is working${NC}"
+            # Double-check by running a simple test
+            echo "Running simple httpx test..."
+            if echo "example.com" | httpx -silent > /dev/null 2>&1; then
+                echo -e "${GREEN}httpx test successful${NC}"
+            else
+                echo -e "${YELLOW}httpx test failed, but command exists. May be a network issue.${NC}"
+            fi
+        else
+            echo -e "${RED}httpx exists but might not be working correctly${NC}"
+            tools_ok=false
+        fi
+    elif [ -x "$HOME/go/bin/httpx" ]; then
+        echo -e "httpx found in Go bin directory but not in PATH. Adding to PATH and testing..."
+        export PATH="$PATH:$HOME/go/bin"
+        if $HOME/go/bin/httpx -version 2>/dev/null || $HOME/go/bin/httpx -h 2>/dev/null; then
             echo -e "${GREEN}httpx is working${NC}"
         else
             echo -e "${RED}httpx exists but might not be working correctly${NC}"

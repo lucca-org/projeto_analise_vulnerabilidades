@@ -1,6 +1,7 @@
 import os
 import json
 import subprocess
+import platform
 from utils import run_cmd, get_executable_path
 
 def run_httpx(target=None, target_list=None, output_file=None, json_output=False,
@@ -28,6 +29,16 @@ def run_httpx(target=None, target_list=None, output_file=None, json_output=False
     Returns:
         bool: True if execution was successful, False otherwise.
     """
+    
+    # Check if httpx is available
+    httpx_path = get_executable_path("httpx")
+    if not httpx_path:
+        print("Error: httpx is not installed or not found in PATH.")
+        print("Please run the installation script first or install httpx manually:")
+        print("  go install github.com/projectdiscovery/httpx/cmd/httpx@latest")
+        return False
+    
+    # Validate parameters
     if not target and not target_list:
         print("Error: Either target or target_list must be specified.")
         return False
@@ -49,7 +60,8 @@ def run_httpx(target=None, target_list=None, output_file=None, json_output=False
                 print(f"Error: Target list file '{target_list}' not found.")
                 return False
     
-    cmd = ["httpx"]
+    # Build the command using the found httpx path
+    cmd = [httpx_path]
     
     if target:
         cmd.extend(["-u", target])
@@ -79,6 +91,10 @@ def run_httpx(target=None, target_list=None, output_file=None, json_output=False
     # Add any additional arguments
     if additional_args:
         cmd.extend(additional_args)
+    
+    # Print command for debugging
+    if not silent:
+        print(f"Running: {' '.join(cmd)}")
     
     # Run with retry for better resilience
     success = run_cmd(cmd, retry=1)
@@ -129,24 +145,46 @@ def check_httpx():
     """
     httpx_path = get_executable_path("httpx")
     if not httpx_path:
-        print("httpx not found in PATH or in ~/go/bin.")
-        return False
+        # Special handling for common Go installation path that might not be in PATH
+        go_bin_httpx = os.path.expanduser("~/go/bin/httpx")
+        if os.path.exists(go_bin_httpx) and os.access(go_bin_httpx, os.X_OK):
+            print(f"httpx found at {go_bin_httpx} but not in PATH.")
+            print("Adding ~/go/bin to PATH for this session.")
+            os.environ["PATH"] += os.pathsep + os.path.dirname(go_bin_httpx)
+            httpx_path = go_bin_httpx
+        else:
+            print("httpx not found in PATH or in common locations.")
+            print("Checked locations:")
+            print("  - System PATH")
+            print("  - ~/go/bin/httpx")
+            print("  - ~/.local/bin/httpx")
+            print("  - /usr/local/bin/httpx")
+            print("  - /usr/bin/httpx")
+            return False
         
     try:
         # Try running a simple command to check if httpx is working
         result = subprocess.run([httpx_path, "-version"], 
                               capture_output=True, 
                               text=True, 
-                              timeout=5)
+                              timeout=10)
         
         if result.returncode == 0:
-            print(f"httpx is available: {result.stdout.strip()}")
+            version = result.stdout.strip()
+            print(f"httpx is available at {httpx_path}: {version}")
             return True
         else:
-            print("httpx is installed but not working correctly.")
+            print(f"httpx is installed at {httpx_path} but not working correctly.")
+            print(f"Error output: {result.stderr}")
             return False
+    except FileNotFoundError:
+        print(f"httpx executable found at {httpx_path} but cannot be executed.")
+        return False
+    except subprocess.TimeoutExpired:
+        print(f"httpx at {httpx_path} timed out during version check.")
+        return False
     except Exception as e:
-        print(f"Error checking httpx: {e}")
+        print(f"Error checking httpx at {httpx_path}: {e}")
         return False
 
 def get_httpx_capabilities():
@@ -156,14 +194,18 @@ def get_httpx_capabilities():
         "available_flags": []
     }
     
+    httpx_path = get_executable_path("httpx")
+    if not httpx_path:
+        return capabilities
+    
     try:
         # Get version
-        process = subprocess.run(["httpx", "-version"], capture_output=True, text=True)
+        process = subprocess.run([httpx_path, "-version"], capture_output=True, text=True, timeout=10)
         if process.returncode == 0 and process.stdout:
             capabilities["version"] = process.stdout.strip()
         
         # Get help to determine available flags
-        process = subprocess.run(["httpx", "-h"], capture_output=True, text=True)
+        process = subprocess.run([httpx_path, "-h"], capture_output=True, text=True, timeout=10)
         if process.returncode == 0 and process.stdout:
             help_text = process.stdout
             # Parse flags from help text

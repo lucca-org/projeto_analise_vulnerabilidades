@@ -54,6 +54,8 @@ def check_tool_in_path(tool):
     # Check in ~/go/bin
     go_bin_path = os.path.expanduser(f"~/go/bin/{tool}")
     if os.path.exists(go_bin_path) and os.access(go_bin_path, os.X_OK):
+        print(f"Note: {tool} found in ~/go/bin but not in PATH")
+        print("You may need to add ~/go/bin to your PATH")
         return go_bin_path
     
     return None
@@ -71,12 +73,20 @@ def check_security_tools():
                                                        stderr=subprocess.STDOUT,
                                                        universal_newlines=True,
                                                        timeout=5)
-                print(f"✓ {tool}: {version_output.strip()}")
+                if tool == "httpx":
+                    print(f"✓ httpx: {version_output.strip()} (Go installation)")
+                    if "go/bin" in tool_path:
+                        print(f"  Note: httpx is installed via Go at {tool_path}")
+                        print("  Make sure ~/go/bin is in your PATH")
+                else:
+                    print(f"✓ {tool}: {version_output.strip()}")
             except (subprocess.SubprocessError, FileNotFoundError):
                 print(f"✓ {tool} (found but couldn't get version)")
         else:
             missing_tools.append(tool)
             print(f"✗ {tool} (not found)")
+            if tool == "httpx":
+                print("  httpx must be installed via Go. Run setup_tools.sh")
     
     if missing_tools:
         print("\nMissing tools. Please run setup_tools.sh to install them.")
