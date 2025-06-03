@@ -135,6 +135,13 @@ else:
             print("✓ Fixed line endings in setup_tools.sh")
         except Exception as e:
             print(f"Warning: Could not fix line endings: {e}")
+
+        # Also fix line endings for fix_repo_keys.sh
+        try:
+            subprocess.run(["sed", "-i", "s/\\r$//", "./fix_repo_keys.sh"], check=True)
+            print("✓ Fixed line endings in fix_repo_keys.sh")
+        except Exception as e:
+            print(f"Warning: Could not fix line endings in fix_repo_keys.sh: {e}")
         
         # Make the script executable
         subprocess.run(["chmod", "+x", "./setup_tools.sh"], check=True)
