@@ -455,13 +455,12 @@ def check_system_dependencies(distro: str) -> bool:
             
         distro_config = SUPPORTED_DISTROS[distro]
         missing_deps = []
-        
-        # Define dependencies required for Go tools
+          # Define dependencies required for Go tools (libpcap-dev now handled in Stage 1)
         dependency_map = {
-            'ubuntu': ['libpcap-dev', 'pkg-config', 'gcc'],
-            'debian': ['libpcap-dev', 'pkg-config', 'gcc'],
-            'kali': ['libpcap-dev', 'pkg-config', 'gcc'],
-            'arch': ['libpcap', 'pkgconfig', 'gcc']
+            'ubuntu': ['pkg-config', 'gcc'],
+            'debian': ['pkg-config', 'gcc'],
+            'kali': ['pkg-config', 'gcc'],
+            'arch': ['pkgconfig', 'gcc']
         }
         
         required_deps = dependency_map.get(distro, [])
@@ -491,8 +490,7 @@ def check_system_dependencies(distro: str) -> bool:
                 except subprocess.CalledProcessError:
                     print(f"{Colors.RED}  ❌ {dep} is missing{Colors.END}")
                     missing_deps.append(dep)
-        
-        # Install missing dependencies automatically
+          # Install missing dependencies automatically
         if missing_deps:
             print(f"\n{Colors.YELLOW}Installing missing dependencies: {', '.join(missing_deps)}{Colors.END}")
             
@@ -500,7 +498,8 @@ def check_system_dependencies(distro: str) -> bool:
                 if distro == 'arch':
                     cmd = ['pacman', '-S', '--noconfirm'] + missing_deps
                 else:
-                    cmd = distro_config['install_cmd'] + missing_deps
+                    # Use non-interactive environment to prevent hanging
+                    cmd = ['env', 'DEBIAN_FRONTEND=noninteractive', 'NEEDRESTART_MODE=a'] + distro_config['install_cmd'] + missing_deps
                 
                 subprocess.run(cmd, check=True, 
                              stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
@@ -512,31 +511,8 @@ def check_system_dependencies(distro: str) -> bool:
                 print(f"{Colors.RED}❌ Failed to install dependencies: {e}{Colors.END}")
                 print(f"{Colors.YELLOW}Please install manually: {' '.join(missing_deps)}{Colors.END}")
                 return False
-        
-        # Check for broken packages
+          # Check for broken packages
         run_with_timeout(['apt', '--fix-broken', 'install', '-y'], 180, "Fixing broken packages")
-
-        # Verify if libpcap-dev is already installed
-        result = subprocess.run(['dpkg', '-l', 'libpcap-dev'], capture_output=True, text=True)
-        if 'ii' in result.stdout:
-            print(f"{Colors.GREEN}✅ libpcap-dev is already installed{Colors.END}")
-        else:
-            # Update repository before installing libpcap-dev
-            run_with_timeout(['apt', 'update'], 300, "Pre-installation repository update")            # Install libpcap-dev with enhanced non-interactive mode and extended timeout
-            cmd = ['env', 'DEBIAN_FRONTEND=noninteractive', 'NEEDRESTART_MODE=a', 'apt', 'install', 'libpcap-dev', '-y', '--fix-missing', '--no-install-recommends']
-            if run_with_timeout(cmd, 360, "Installing libpcap-dev (extended timeout)"):
-                print(f"{Colors.GREEN}✅ libpcap-dev installed successfully{Colors.END}")
-            else:
-                print(f"{Colors.YELLOW}⚠️ First attempt failed, trying alternative installation method...{Colors.END}")
-                # Try alternative package installation
-                alt_cmd = ['env', 'DEBIAN_FRONTEND=noninteractive', 'apt', 'install', 'libpcap0.8-dev', '-y', '--no-install-recommends']
-                if run_with_timeout(alt_cmd, 240, "Installing alternative libpcap package"):
-                    print(f"{Colors.GREEN}✅ Alternative libpcap package installed successfully{Colors.END}")
-                else:
-                    print(f"{Colors.RED}❌ Failed to install libpcap-dev (will attempt fallback during tool installation){Colors.END}")
-
-            # Update repository after installing libpcap-dev
-            run_with_timeout(['apt', 'update'], 300, "Post-installation repository update")
         
         return True
         
@@ -595,18 +571,18 @@ def attempt_dependency_recovery(distro: str) -> bool:
             subprocess.run(['pacman', '-Scc', '--noconfirm'], 
                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             subprocess.run(['pacman', '-Sy'], check=True,
-                          stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+                          stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)        
         else:
             print(f"{Colors.WHITE}Cleaning apt cache and updating...{Colors.END}")
-            subprocess.run(['apt-get', 'clean'], 
+            subprocess.run(['env', 'DEBIAN_FRONTEND=noninteractive', 'apt-get', 'clean'], 
                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            subprocess.run(['apt-get', 'update'], check=True,
+            subprocess.run(['env', 'DEBIAN_FRONTEND=noninteractive', 'apt-get', 'update'], check=True,
                           stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         
         # Try to fix broken packages
         if distro != 'arch':
             print(f"{Colors.WHITE}Fixing broken packages...{Colors.END}")
-            subprocess.run(['apt-get', 'install', '-f', '-y'], 
+            subprocess.run(['env', 'DEBIAN_FRONTEND=noninteractive', 'NEEDRESTART_MODE=a', 'apt-get', 'install', '-f', '-y'], 
                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         
         # Retry dependency installation
@@ -629,27 +605,7 @@ def install_security_tools_complete(distro: str) -> bool:
                 print(f"{Colors.RED}❌ System dependencies check failed after recovery attempt{Colors.END}")
                 print(f"{Colors.WHITE}Manual intervention may be required{Colors.END}")
                 return False
-        
-        # Enhanced libpcap verification before Go tools installation
-        print(f"{Colors.WHITE}Performing enhanced libpcap verification...{Colors.END}")
-        libpcap_working = False
-        
-        # Check multiple libpcap packages
-        for pkg in ['libpcap-dev', 'libpcap0.8-dev']:
-            result = subprocess.run(['dpkg', '-l', pkg], capture_output=True, text=True)
-            if 'ii' in result.stdout:
-                print(f"{Colors.GREEN}✅ {pkg} is installed{Colors.END}")
-                libpcap_working = True
-                break
-        
-        if not libpcap_working:
-            print(f"{Colors.YELLOW}⚠️ No libpcap package found, installing now...{Colors.END}")
-            # Install with aggressive timeout and fallback
-            cmd = ['env', 'DEBIAN_FRONTEND=noninteractive', 'NEEDRESTART_MODE=a', 'apt', 'install', 'libpcap-dev', 'libpcap0.8-dev', '-y', '--no-install-recommends']
-            if not run_with_timeout(cmd, 480, "Installing comprehensive libpcap packages"):
-                print(f"{Colors.RED}❌ Failed to install libpcap packages - naabu installation may fail{Colors.END}")
-        
-        # Verify Go tools prerequisites
+          # Verify Go tools prerequisites (libpcap-dev now guaranteed from Stage 1)
         if not verify_go_tools_prerequisites():
             print(f"{Colors.RED}❌ Go tools prerequisites not met{Colors.END}")
             return False
@@ -685,19 +641,6 @@ def install_security_tools_complete(distro: str) -> bool:
                     success_count += 1
                 else:
                     print(f"{Colors.YELLOW}  ⚠️ {tool} installation timed out or failed{Colors.END}")
-                    
-                    # Special handling for naabu libpcap issues
-                    if tool == 'naabu':
-                        print(f"{Colors.CYAN}  🔧 Attempting naabu installation with libpcap fallback...{Colors.END}")
-                        # Try installing alternative libpcap package first
-                        run_with_timeout(['apt', 'install', 'libpcap0.8-dev', '-y'], 180, "Installing alternative libpcap")
-                        # Retry naabu installation with shorter timeout
-                        if run_with_timeout(['go', 'install', '-v', repo], 300, f"Retrying {tool} installation"):
-                            print(f"{Colors.GREEN}  ✅ {tool} installed successfully after libpcap fix{Colors.END}")
-                            success_count += 1
-                            continue
-                    
-                    print(f"{Colors.YELLOW}  💡 Try installing manually later: go install {repo}{Colors.END}")
                     
                     # For nuclei specifically, offer alternative installation method
                     if tool == 'nuclei':
