@@ -36,13 +36,6 @@ import json
 import time
 import ctypes
 import urllib.request
-import platform
-import subprocess
-import shutil
-import json
-import time
-import ctypes
-import urllib.request
 import signal
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -330,9 +323,11 @@ def install_system_packages(distro_config: Dict) -> bool:
             # Try alternative update methods for Kali/Debian
             if not run_with_timeout(['apt', 'clean'], 60, "Cleaning apt cache"):
                 print(f"{Colors.YELLOW}Cache cleaning failed, continuing anyway...{Colors.END}")
-
-            if not run_with_timeout(['apt', 'update', '--allow-unauthenticated'], 180, "Alternative repository update"):
-                print(f"{Colors.YELLOW}⚠️ Repository update issues detected, continuing with package installation...{Colors.END}")        # Phase 1c: Check disk space before installation
+            else:
+                if not run_with_timeout(['apt', 'update', '--allow-unauthenticated'], 180, "Alternative repository update"):
+                    print(f"{Colors.YELLOW}⚠️ Repository update issues detected, continuing with package installation...{Colors.END}")
+        
+        # Phase 1c: Check disk space before installation
         disk_usage = subprocess.run(['df', '/'], capture_output=True, text=True)
         if disk_usage.returncode == 0:
             lines = disk_usage.stdout.strip().split('\n')
