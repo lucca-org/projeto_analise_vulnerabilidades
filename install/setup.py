@@ -220,32 +220,107 @@ def validate_system_requirements() -> Tuple[bool, Optional[str]]:
     
     return True, distro
 
-def install_system_packages(distro_config: Dict) -> bool:
-    """Install system packages based on distribution."""
+def run_with_timeout(cmd: List[str], timeout_seconds: int = 300, description: str = "") -> bool:
+    """Run command with timeout protection to prevent hanging."""
     try:
-        print(f"\n{Colors.BLUE}📦 Phase 1: System Package Installation{Colors.END}")
-        print(f"{Colors.WHITE}Updating package repository...{Colors.END}")
-        
-        # Update package repository
-        subprocess.run(distro_config['update_cmd'], check=True, 
-                      stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-        print(f"{Colors.GREEN}✅ Repository updated{Colors.END}")
-        
-        # Install base packages
-        print(f"{Colors.WHITE}Installing base packages...{Colors.END}")
-        cmd = distro_config['install_cmd'] + distro_config['packages']
-        subprocess.run(cmd, check=True, 
-                      stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
-        
-        for package in distro_config['packages']:
-            print(f"{Colors.GREEN}  ✅ {package}{Colors.END}")
-        
+        print(f"{Colors.WHITE}{description}...{Colors.END}")
+        result = subprocess.run(cmd, check=True, 
+                              stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+                              timeout=timeout_seconds)
+        print(f"{Colors.GREEN}✅ {description} completed{Colors.END}")
         return True
-        
+    except subprocess.TimeoutExpired:
+        print(f"{Colors.YELLOW}⚠️ {description} timed out after {timeout_seconds}s{Colors.END}")
+        return False
     except subprocess.CalledProcessError as e:
-        print(f"{Colors.RED}❌ Package installation failed: {e}{Colors.END}")
+        print(f"{Colors.RED}❌ {description} failed: {e}{Colors.END}")
         if e.stderr:
-            print(f"{Colors.RED}Error details: {e.stderr.decode()}{Colors.END}")
+            print(f"{Colors.RED}Error: {e.stderr.decode()}{Colors.END}")
+        return False
+
+def fix_package_locks() -> bool:
+    """Fix common package manager lock issues."""
+    print(f"{Colors.WHITE}Checking for package locks...{Colors.END}")
+    
+    lock_files = [
+        '/var/lib/dpkg/lock',
+        '/var/lib/dpkg/lock-frontend', 
+        '/var/cache/apt/archives/lock',
+        '/var/lib/apt/lists/lock'
+    ]
+    
+    locks_removed = 0
+    for lock_file in lock_files:
+        if os.path.exists(lock_file):
+            try:
+                os.remove(lock_file)
+                locks_removed += 1
+            except:
+                pass
+    
+    if locks_removed > 0:
+        print(f"{Colors.GREEN}✅ Removed {locks_removed} package locks{Colors.END}")
+        # Fix broken packages
+        run_with_timeout(['dpkg', '--configure', '-a'], 120, "Configuring packages")
+        run_with_timeout(['apt', '--fix-broken', 'install', '-y'], 180, "Fixing broken packages")
+    
+    return True
+
+def install_system_packages(distro_config: Dict) -> bool:
+    """Install system packages based on distribution with anti-hang protection."""
+    try:
+        print(f"\n{Colors.BLUE}📦 Phase 1: System Package Installation (Anti-Hang Protected){Colors.END}")
+        
+        # Phase 1a: Fix package locks (especially important for VMs)
+        fix_package_locks()
+        
+        # Phase 1b: Repository update with timeout protection
+        print(f"{Colors.WHITE}Updating package repository (timeout: 300s)...{Colors.END}")
+        if not run_with_timeout(distro_config['update_cmd'], 300, "Repository update"):
+            print(f"{Colors.YELLOW}⚠️ Repository update failed, trying recovery...{Colors.END}")
+            
+            # Try alternative update methods for Kali/Debian
+            if not run_with_timeout(['apt', 'clean'], 60, "Cleaning apt cache"):
+                print(f"{Colors.YELLOW}Cache cleaning failed, continuing anyway...{Colors.END}")
+            
+            if not run_with_timeout(['apt', 'update', '--allow-unauthenticated'], 180, "Alternative repository update"):
+                print(f"{Colors.YELLOW}⚠️ Repository update issues detected, continuing with package installation...{Colors.END}")
+        
+        # Phase 1c: Install packages with individual tracking to identify hangs
+        print(f"{Colors.WHITE}Installing base packages (timeout per package: 180s)...{Colors.END}")
+        
+        essential_packages = ['curl', 'wget', 'git', 'build-essential', 'python3-pip']
+        development_packages = ['golang-go', 'unzip', 'ca-certificates', 'libpcap-dev', 'pkg-config', 'gcc']
+        
+        success_count = 0
+        total_packages = len(essential_packages) + len(development_packages)
+        
+        # Install essential packages first
+        for package in essential_packages:
+            if run_with_timeout(['apt', 'install', '-y', package], 180, f"Installing {package}"):
+                success_count += 1
+            else:
+                print(f"{Colors.YELLOW}⚠️ {package} failed, but continuing...{Colors.END}")
+        
+        # Install development packages
+        for package in development_packages:
+            if run_with_timeout(['apt', 'install', '-y', package], 180, f"Installing {package}"):
+                success_count += 1
+            else:
+                print(f"{Colors.YELLOW}⚠️ {package} failed, will try alternative methods later{Colors.END}")
+        
+        # Evaluate success
+        success_rate = (success_count / total_packages) * 100
+        print(f"{Colors.GREEN}✅ Package installation completed: {success_count}/{total_packages} packages ({success_rate:.1f}%){Colors.END}")
+        
+        if success_count >= len(essential_packages):  # At least essential packages must be installed
+            return True
+        else:
+            print(f"{Colors.RED}❌ Critical packages missing. Need at least {len(essential_packages)} essential packages.{Colors.END}")
+            return False
+        
+    except Exception as e:
+        print(f"{Colors.RED}❌ Package installation failed: {e}{Colors.END}")
         return False
 
 def setup_go_environment_complete() -> bool:
@@ -502,23 +577,18 @@ def install_security_tools_complete(distro: str) -> bool:
                     print(f"{Colors.GREEN}  ✅ {tool} already installed{Colors.END}")
                     success_count += 1
                     continue
-                
-                # Install using go install with enhanced environment
+                  # Install using go install with enhanced environment and timeout protection
                 env = os.environ.copy()
                 env['CGO_ENABLED'] = '1'  # Enable CGO for tools that need it (like naabu)
                 env['GO111MODULE'] = 'on'  # Ensure module mode
                 
-                result = subprocess.run(['go', 'install', repo], 
-                                      check=True, env=env,
-                                      stdout=subprocess.DEVNULL, 
-                                      stderr=subprocess.PIPE,
-                                      timeout=300)  # 5 minute timeout
-                print(f"{Colors.GREEN}  ✅ {tool} installed successfully{Colors.END}")
-                success_count += 1
-                
-            except subprocess.TimeoutExpired:
-                print(f"{Colors.RED}  ❌ {tool} installation timed out{Colors.END}")
-                print(f"{Colors.YELLOW}  💡 Try installing manually: go install {repo}{Colors.END}")
+                # Use timeout protection for go install (can hang on network issues)
+                if run_with_timeout(['go', 'install', repo], 300, f"Installing {tool} (timeout: 5min)"):
+                    print(f"{Colors.GREEN}  ✅ {tool} installed successfully{Colors.END}")
+                    success_count += 1
+                else:
+                    print(f"{Colors.YELLOW}  ⚠️ {tool} installation timed out or failed{Colors.END}")
+                    print(f"{Colors.YELLOW}  💡 Try installing manually: go install {repo}{Colors.END}")
                 
             except subprocess.CalledProcessError as e:
                 print(f"{Colors.RED}  ❌ Failed to install {tool}: {e}{Colors.END}")

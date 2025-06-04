@@ -477,6 +477,7 @@ def generate_basic_summary_report(output_dir: str, target: str) -> bool:
         return False
 
 def main():
+    """Main entry point for the vulnerability scanning workflow."""
     parser = argparse.ArgumentParser(description='Automated vulnerability scanning workflow')
     parser.add_argument('target', help='Target to scan (IP or domain)')
     parser.add_argument('-p', '--ports', help='Ports to scan (e.g., 80,443,8000-9000)')

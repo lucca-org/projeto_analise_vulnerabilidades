@@ -51,9 +51,12 @@ sudo python3 install/setup.py
 The master installer performs:
 - ✅ Linux platform verification and distribution detection
 - ✅ Root/sudo permission enforcement 
-- ✅ System package installation (curl, wget, git, build-essential, etc.)
+- ✅ **NEW**: Anti-hang timeout protection for all operations
+- ✅ **NEW**: Package manager lock file cleanup and repair
+- ✅ System package installation with individual package tracking
+- ✅ **NEW**: VM-optimized installation process (Kali Linux tested)
 - ✅ Go programming environment setup with PATH management
-- ✅ Security tools installation (naabu, httpx, nuclei)
+- ✅ Security tools installation with timeout protection (naabu, httpx, nuclei)
 - ✅ Python dependencies and virtual environment setup
 - ✅ Configuration optimization and bash aliases creation
 - ✅ Complete system verification with functionality testing

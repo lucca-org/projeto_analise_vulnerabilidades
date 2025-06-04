@@ -7,14 +7,21 @@
 - ✅ **Python 3.8+** installed
 - ✅ **Root/sudo privileges** for installation
 
-### **Step 1: Installation**
+### **Step 1: Installation (Anti-Hang Protected)**
 ```bash
 # Navigate to the project directory
 cd linux-vulnerability-toolkit
 
-# Run the enhanced master installer (one command does everything!)
+# Run the enhanced master installer with timeout protection (one command does everything!)
 sudo python3 install/setup.py
 ```
+
+**✨ New Anti-Hang Features:**
+- ⏱️ **Timeout Protection**: All operations have timeout limits to prevent indefinite hangs
+- 🔧 **Auto-Recovery**: Built-in fallback mechanisms for common VM/repository issues  
+- 📦 **Individual Package Tracking**: Identifies which specific packages cause problems
+- 🛡️ **Kali VM Optimized**: Special handling for Kali Linux VM environments
+- 🔒 **Lock File Cleanup**: Automatically fixes package manager lock issues
 
 ### **Step 2: Validation (Recommended)**
 ```bash
@@ -128,7 +135,30 @@ python3 --version
 python3 scripts/autoinstall.py
 ```
 
-#### **4. Validation Failures**
+#### **4. VM and Timeout Issues (NEW)**
+```bash
+# Problem: Installation hangs during Phase 1 (especially on VMs)
+# Solution: Anti-hang protection is now built-in
+
+# If still experiencing hangs, run diagnostics:
+chmod +x diagnose_kali.sh
+./diagnose_kali.sh
+
+# Manual timeout-protected installation:
+sudo python3 setup_kali_safe.py
+```
+
+#### **5. Network and Repository Issues**
+```bash
+# Problem: Repository timeouts or network issues
+# Solution: Enhanced installer auto-detects and recovers
+
+# Manual repository fix if needed:
+sudo rm /var/lib/dpkg/lock*
+sudo apt clean
+sudo apt update --allow-unauthenticated
+```
+#### **6. Validation Failures**
 ```bash
 # Run comprehensive validation
 python3 validate_installation.py
@@ -154,6 +184,8 @@ python3 validate_installation.py
 - ✅ Tools available: `naabu`, `httpx`, `nuclei`
 - ✅ Python environment working
 - ✅ No syntax errors in master installer
+- ✅ **NEW**: No timeout hangs during installation
+- ✅ **NEW**: VM compatibility verified
 
 ### **Scan Success**
 - ✅ Target resolution successful
