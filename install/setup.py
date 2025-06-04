@@ -340,13 +340,12 @@ def install_system_packages(distro_config: Dict) -> bool:
                     
                     if available_gb < 2.0:
                         print(f"{Colors.RED}❌ CRITICAL: Less than 2GB disk space available! Installation may fail.{Colors.END}")
-                        print(f"{Colors.YELLOW}⚠️ Consider freeing up disk space before continuing.{Colors.END}")
-
-        # Phase 1c: Install only ESSENTIAL packages (minimal footprint to prevent disk space issues)
+                        print(f"{Colors.YELLOW}⚠️ Consider freeing up disk space before continuing.{Colors.END}")        # Phase 1c: Install only ESSENTIAL packages (minimal footprint to prevent disk space issues)
         print(f"{Colors.WHITE}Installing minimal essential packages (timeout per package: 180s)...{Colors.END}")
         
         # DRASTICALLY REDUCED package list to prevent disk space exhaustion
-        essential_packages = ['curl', 'git', 'golang-go']  # Only absolute essentials for nuclei
+        # Added libpcap-dev to Stage 1 to prevent naabu compilation hanging issues
+        essential_packages = ['curl', 'git', 'golang-go', 'libpcap-dev']  # Essential packages including libpcap for naabu
         development_packages = []  # Skip development packages for now
         final_packages = []  # Skip final packages for now
 
@@ -360,16 +359,14 @@ def install_system_packages(distro_config: Dict) -> bool:
                 print(f"{Colors.YELLOW}⚠️ {package} failed, but continuing...{Colors.END}")
 
         # Skip development and final packages to save disk space
-        print(f"{Colors.WHITE}Skipping development and final packages to conserve disk space...{Colors.END}")
-
-        # Evaluate success
+        print(f"{Colors.WHITE}Skipping development and final packages to conserve disk space...{Colors.END}")        # Evaluate success
         success_rate = (success_count / total_packages) * 100 if total_packages > 0 else 0
         print(f"{Colors.GREEN}✅ Minimal package installation completed: {success_count}/{total_packages} packages ({success_rate:.1f}%){Colors.END}")
 
-        if success_count >= 2:  # At least curl and golang-go must be installed
+        if success_count >= 3:  # At least curl, golang-go, and libpcap-dev must be installed
             return True
         else:
-            print(f"{Colors.RED}❌ Critical packages missing. Need at least curl and golang-go.{Colors.END}")
+            print(f"{Colors.RED}❌ Critical packages missing. Need at least curl, golang-go, and libpcap-dev.{Colors.END}")
             return False
 
     except Exception as e:
