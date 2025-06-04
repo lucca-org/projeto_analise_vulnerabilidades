@@ -36,6 +36,14 @@ import json
 import time
 import ctypes
 import urllib.request
+import platform
+import subprocess
+import shutil
+import json
+import time
+import ctypes
+import urllib.request
+import signal
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
@@ -228,22 +236,24 @@ def run_with_timeout(cmd: List[str], timeout_seconds: int = 300, description: st
         # Create environment with non-interactive defaults
         env = os.environ.copy()
         env['DEBIAN_FRONTEND'] = 'noninteractive'
+        env['NEEDRESTART_MODE'] = 'a'  # Prevent needrestart from hanging
+        env['UCF_FORCE_CONFOLD'] = '1'  # Use old config files to prevent prompts
         
-        # Start the process
+        # Start the process with more aggressive settings to prevent hangs
         process = subprocess.Popen(cmd, 
-                                 stdout=subprocess.DEVNULL, 
+                                 stdout=subprocess.PIPE if 'Installing' in description else subprocess.DEVNULL, 
                                  stderr=subprocess.PIPE,
                                  env=env)
         
         # Monitor progress with timeout
         try:
-            _, stderr = process.communicate(timeout=timeout_seconds)
+            stdout, stderr = process.communicate(timeout=timeout_seconds)
             
             if process.returncode == 0:
                 print(f"{Colors.GREEN}✅ {description} completed successfully{Colors.END}")
                 return True
             else:
-                print(f"{Colors.YELLOW}⚠️ {description} completed with warnings{Colors.END}")
+                print(f"{Colors.YELLOW}⚠️ {description} completed with warnings (exit code: {process.returncode}){Colors.END}")
                 if stderr:
                     error_msg = stderr.decode().strip()
                     if error_msg and "error" in error_msg.lower():
@@ -252,8 +262,9 @@ def run_with_timeout(cmd: List[str], timeout_seconds: int = 300, description: st
                 
         except subprocess.TimeoutExpired:
             print(f"{Colors.YELLOW}⚠️ {description} timed out after {timeout_seconds}s{Colors.END}")
-            process.terminate()
+            # More aggressive process termination for Linux
             try:
+                process.terminate()
                 process.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 process.kill()
@@ -265,8 +276,19 @@ def run_with_timeout(cmd: List[str], timeout_seconds: int = 300, description: st
         return False
 
 def fix_package_locks() -> bool:
-    """Fix common package manager lock issues."""
-    print(f"{Colors.WHITE}Checking for package locks...{Colors.END}")
+    """Fix common package manager lock issues with enhanced safety and longer timeouts."""
+    print(f"{Colors.WHITE}Checking and fixing package locks...{Colors.END}")
+    
+    # Kill any hanging processes with more aggressive approach
+    try:
+        # Kill specific hanging processes
+        subprocess.run(['pkill', '-9', '-f', 'apt'], capture_output=True, timeout=10)
+        subprocess.run(['pkill', '-9', '-f', 'dpkg'], capture_output=True, timeout=10)
+        subprocess.run(['pkill', '-9', '-f', 'unattended-upgrade'], capture_output=True, timeout=10)
+        subprocess.run(['pkill', '-9', '-f', 'needrestart'], capture_output=True, timeout=10)
+        time.sleep(3)  # Wait longer for processes to terminate
+    except:
+        pass
     
     lock_files = [
         '/var/lib/dpkg/lock',
@@ -286,26 +308,9 @@ def fix_package_locks() -> bool:
     
     if locks_removed > 0:
         print(f"{Colors.GREEN}✅ Removed {locks_removed} package locks{Colors.END}")
-        # Fix broken packages
-        run_with_timeout(['dpkg', '--configure', '-a'], 120, "Configuring packages")
-        run_with_timeout(['apt', '--fix-broken', 'install', '-y'], 180, "Fixing broken packages")
-
-        # Verify if libpcap-dev is already installed
-        result = subprocess.run(['dpkg', '-l', 'libpcap-dev'], capture_output=True, text=True)
-        if 'ii' in result.stdout:
-            print(f"{Colors.GREEN}✅ libpcap-dev is already installed{Colors.END}")
-        else:
-            # Update repository before installing libpcap-dev
-            run_with_timeout(['apt', 'update'], 300, "Pre-installation repository update")
-
-            # Install libpcap-dev with non-interactive mode
-            if run_with_timeout(['env', 'DEBIAN_FRONTEND=noninteractive', 'apt', 'install', 'libpcap-dev', '-y'], 180, "Installing libpcap-dev"):
-                print(f"{Colors.GREEN}✅ libpcap-dev installed successfully{Colors.END}")
-            else:
-                print(f"{Colors.RED}❌ Failed to install libpcap-dev{Colors.END}")
-
-            # Update repository after installing libpcap-dev
-            run_with_timeout(['apt', 'update'], 300, "Post-installation repository update")
+        # Fix broken packages with extended timeouts
+        run_with_timeout(['dpkg', '--configure', '-a'], 240, "Configuring packages (extended timeout)")
+        run_with_timeout(['apt', '--fix-broken', 'install', '-y'], 360, "Fixing broken packages (extended timeout)")
     
     return True
 
@@ -525,13 +530,18 @@ def check_system_dependencies(distro: str) -> bool:
             print(f"{Colors.GREEN}✅ libpcap-dev is already installed{Colors.END}")
         else:
             # Update repository before installing libpcap-dev
-            run_with_timeout(['apt', 'update'], 300, "Pre-installation repository update")
-
-            # Install libpcap-dev with non-interactive mode
-            if run_with_timeout(['env', 'DEBIAN_FRONTEND=noninteractive', 'apt', 'install', 'libpcap-dev', '-y'], 180, "Installing libpcap-dev"):
+            run_with_timeout(['apt', 'update'], 300, "Pre-installation repository update")            # Install libpcap-dev with enhanced non-interactive mode and extended timeout
+            cmd = ['env', 'DEBIAN_FRONTEND=noninteractive', 'NEEDRESTART_MODE=a', 'apt', 'install', 'libpcap-dev', '-y', '--fix-missing', '--no-install-recommends']
+            if run_with_timeout(cmd, 360, "Installing libpcap-dev (extended timeout)"):
                 print(f"{Colors.GREEN}✅ libpcap-dev installed successfully{Colors.END}")
             else:
-                print(f"{Colors.RED}❌ Failed to install libpcap-dev{Colors.END}")
+                print(f"{Colors.YELLOW}⚠️ First attempt failed, trying alternative installation method...{Colors.END}")
+                # Try alternative package installation
+                alt_cmd = ['env', 'DEBIAN_FRONTEND=noninteractive', 'apt', 'install', 'libpcap0.8-dev', '-y', '--no-install-recommends']
+                if run_with_timeout(alt_cmd, 240, "Installing alternative libpcap package"):
+                    print(f"{Colors.GREEN}✅ Alternative libpcap package installed successfully{Colors.END}")
+                else:
+                    print(f"{Colors.RED}❌ Failed to install libpcap-dev (will attempt fallback during tool installation){Colors.END}")
 
             # Update repository after installing libpcap-dev
             run_with_timeout(['apt', 'update'], 300, "Post-installation repository update")
@@ -628,6 +638,25 @@ def install_security_tools_complete(distro: str) -> bool:
                 print(f"{Colors.WHITE}Manual intervention may be required{Colors.END}")
                 return False
         
+        # Enhanced libpcap verification before Go tools installation
+        print(f"{Colors.WHITE}Performing enhanced libpcap verification...{Colors.END}")
+        libpcap_working = False
+        
+        # Check multiple libpcap packages
+        for pkg in ['libpcap-dev', 'libpcap0.8-dev']:
+            result = subprocess.run(['dpkg', '-l', pkg], capture_output=True, text=True)
+            if 'ii' in result.stdout:
+                print(f"{Colors.GREEN}✅ {pkg} is installed{Colors.END}")
+                libpcap_working = True
+                break
+        
+        if not libpcap_working:
+            print(f"{Colors.YELLOW}⚠️ No libpcap package found, installing now...{Colors.END}")
+            # Install with aggressive timeout and fallback
+            cmd = ['env', 'DEBIAN_FRONTEND=noninteractive', 'NEEDRESTART_MODE=a', 'apt', 'install', 'libpcap-dev', 'libpcap0.8-dev', '-y', '--no-install-recommends']
+            if not run_with_timeout(cmd, 480, "Installing comprehensive libpcap packages"):
+                print(f"{Colors.RED}❌ Failed to install libpcap packages - naabu installation may fail{Colors.END}")
+        
         # Verify Go tools prerequisites
         if not verify_go_tools_prerequisites():
             print(f"{Colors.RED}❌ Go tools prerequisites not met{Colors.END}")
@@ -649,17 +678,33 @@ def install_security_tools_complete(distro: str) -> bool:
                 if shutil.which(tool):
                     print(f"{Colors.GREEN}  ✅ {tool} already installed{Colors.END}")
                     success_count += 1
-                    continue
-                  # Install using go install with enhanced environment and timeout protection
+                    continue                # Install using go install with enhanced environment and timeout protection
                 env = os.environ.copy()
                 env['CGO_ENABLED'] = '1'  # Enable CGO for tools that need it (like naabu)
                 env['GO111MODULE'] = 'on'  # Ensure module mode
-                  # Use timeout protection for go install (can hang on network issues)
-                if run_with_timeout(['go', 'install', repo], 450, f"Installing {tool} (timeout: 7.5min)"):
+                env['GOPROXY'] = 'https://proxy.golang.org,direct'  # Use reliable proxy
+                
+                # Extend timeout for naabu due to libpcap compilation
+                timeout_seconds = 600 if tool == 'naabu' else 450  # 10 min for naabu, 7.5 min for others
+                
+                # Use timeout protection for go install (can hang on network issues)
+                if run_with_timeout(['go', 'install', '-v', repo], timeout_seconds, f"Installing {tool} (timeout: {timeout_seconds//60}min)"):
                     print(f"{Colors.GREEN}  ✅ {tool} installed successfully{Colors.END}")
                     success_count += 1
                 else:
                     print(f"{Colors.YELLOW}  ⚠️ {tool} installation timed out or failed{Colors.END}")
+                    
+                    # Special handling for naabu libpcap issues
+                    if tool == 'naabu':
+                        print(f"{Colors.CYAN}  🔧 Attempting naabu installation with libpcap fallback...{Colors.END}")
+                        # Try installing alternative libpcap package first
+                        run_with_timeout(['apt', 'install', 'libpcap0.8-dev', '-y'], 180, "Installing alternative libpcap")
+                        # Retry naabu installation with shorter timeout
+                        if run_with_timeout(['go', 'install', '-v', repo], 300, f"Retrying {tool} installation"):
+                            print(f"{Colors.GREEN}  ✅ {tool} installed successfully after libpcap fix{Colors.END}")
+                            success_count += 1
+                            continue
+                    
                     print(f"{Colors.YELLOW}  💡 Try installing manually later: go install {repo}{Colors.END}")
                     
                     # For nuclei specifically, offer alternative installation method
