@@ -176,7 +176,7 @@ def install_nuclei():
 
 def nuclei_update_templates():
     """
-    Update nuclei templates to latest version.
+    Update nuclei templates to latest version with optimizations.
     
     Returns:
         bool: True if update was successful, False otherwise.
@@ -188,18 +188,28 @@ def nuclei_update_templates():
         return False
     
     try:
-        print("Updating nuclei templates...")
-        cmd = [nuclei_path, "-update-templates"]
-        result = run_cmd(cmd, timeout=300)
+        print("Updating nuclei templates (optimized)...")
+        
+        # Prepare environment for non-interactive and faster operation
+        env = os.environ.copy()
+        env['DEBIAN_FRONTEND'] = 'noninteractive'
+        env['NUCLEI_DISABLE_COLORS'] = 'true'
+        
+        # Use optimized command with silent mode for better performance
+        cmd = [nuclei_path, '-update-templates', '-silent']
+        
+        result = run_cmd(cmd, timeout=300, silent=True)  # Extended timeout for template downloads
         
         if result:
             print("Nuclei templates updated successfully!")
             return True
         else:
             print("Failed to update nuclei templates")
+            print("💡 You can update templates manually later with: nuclei -update-templates")
             return False
     except Exception as e:
         print(f"Error updating nuclei templates: {e}")
+        print("💡 You can update templates manually later with: nuclei -update-templates")
         return False
 
 def get_nuclei_version():

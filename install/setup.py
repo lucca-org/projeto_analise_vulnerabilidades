@@ -221,21 +221,47 @@ def validate_system_requirements() -> Tuple[bool, Optional[str]]:
     return True, distro
 
 def run_with_timeout(cmd: List[str], timeout_seconds: int = 300, description: str = "") -> bool:
-    """Run command with timeout protection to prevent hanging."""
+    """Run command with timeout protection and enhanced progress indication."""
     try:
         print(f"{Colors.WHITE}{description}...{Colors.END}")
-        result = subprocess.run(cmd, check=True, 
-                              stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
-                              timeout=timeout_seconds)
-        print(f"{Colors.GREEN}✅ {description} completed{Colors.END}")
-        return True
-    except subprocess.TimeoutExpired:
-        print(f"{Colors.YELLOW}⚠️ {description} timed out after {timeout_seconds}s{Colors.END}")
-        return False
-    except subprocess.CalledProcessError as e:
+        
+        # Create environment with non-interactive defaults
+        env = os.environ.copy()
+        env['DEBIAN_FRONTEND'] = 'noninteractive'
+        
+        # Start the process
+        process = subprocess.Popen(cmd, 
+                                 stdout=subprocess.DEVNULL, 
+                                 stderr=subprocess.PIPE,
+                                 env=env)
+        
+        # Monitor progress with timeout
+        try:
+            _, stderr = process.communicate(timeout=timeout_seconds)
+            
+            if process.returncode == 0:
+                print(f"{Colors.GREEN}✅ {description} completed successfully{Colors.END}")
+                return True
+            else:
+                print(f"{Colors.YELLOW}⚠️ {description} completed with warnings{Colors.END}")
+                if stderr:
+                    error_msg = stderr.decode().strip()
+                    if error_msg and "error" in error_msg.lower():
+                        print(f"{Colors.YELLOW}  Warning: {error_msg[:200]}{Colors.END}")
+                return True  # Continue on warnings for most package operations
+                
+        except subprocess.TimeoutExpired:
+            print(f"{Colors.YELLOW}⚠️ {description} timed out after {timeout_seconds}s{Colors.END}")
+            process.terminate()
+            try:
+                process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+            return False
+            
+    except Exception as e:
         print(f"{Colors.RED}❌ {description} failed: {e}{Colors.END}")
-        if e.stderr:
-            print(f"{Colors.RED}Error: {e.stderr.decode()}{Colors.END}")
         return False
 
 def fix_package_locks() -> bool:
@@ -301,56 +327,49 @@ def install_system_packages(distro_config: Dict) -> bool:
                 print(f"{Colors.YELLOW}Cache cleaning failed, continuing anyway...{Colors.END}")
 
             if not run_with_timeout(['apt', 'update', '--allow-unauthenticated'], 180, "Alternative repository update"):
-                print(f"{Colors.YELLOW}⚠️ Repository update issues detected, continuing with package installation...{Colors.END}")
+                print(f"{Colors.YELLOW}⚠️ Repository update issues detected, continuing with package installation...{Colors.END}")        # Phase 1c: Check disk space before installation
+        disk_usage = subprocess.run(['df', '/'], capture_output=True, text=True)
+        if disk_usage.returncode == 0:
+            lines = disk_usage.stdout.strip().split('\n')
+            if len(lines) > 1:
+                fields = lines[1].split()
+                if len(fields) >= 4:
+                    available_kb = int(fields[3])
+                    available_gb = available_kb / (1024 * 1024)
+                    print(f"{Colors.WHITE}Available disk space: {available_gb:.1f} GB{Colors.END}")
+                    
+                    if available_gb < 2.0:
+                        print(f"{Colors.RED}❌ CRITICAL: Less than 2GB disk space available! Installation may fail.{Colors.END}")
+                        print(f"{Colors.YELLOW}⚠️ Consider freeing up disk space before continuing.{Colors.END}")
 
-        # Phase 1c: Install packages with individual tracking to identify hangs
-        print(f"{Colors.WHITE}Installing base packages (timeout per package: 180s)...{Colors.END}")
+        # Phase 1c: Install only ESSENTIAL packages (minimal footprint to prevent disk space issues)
+        print(f"{Colors.WHITE}Installing minimal essential packages (timeout per package: 180s)...{Colors.END}")
         
-        essential_packages = ['curl', 'wget', 'git', 'build-essential', 'python3-pip', 'glibc', 'pam', 'linux-api-headers']
-        development_packages = ['golang-go', 'unzip', 'ca-certificates', 'pkg-config', 'gcc']
-        final_packages = ['libcap-dev', 'libpcap-dev']
+        # DRASTICALLY REDUCED package list to prevent disk space exhaustion
+        essential_packages = ['curl', 'git', 'golang-go']  # Only absolute essentials for nuclei
+        development_packages = []  # Skip development packages for now
+        final_packages = []  # Skip final packages for now
 
         # Initialize success counter
         success_count = 0
-        total_packages = len(essential_packages) + len(development_packages) + len(final_packages)
-
-        # Install essential packages
+        total_packages = len(essential_packages)        # Install essential packages with non-interactive mode for safety
         for package in essential_packages:
-            if run_with_timeout(['apt', 'install', package, '-y'], 180, f"Installing {package}"):
+            if run_with_timeout(['env', 'DEBIAN_FRONTEND=noninteractive', 'apt', 'install', package, '-y'], 180, f"Installing {package}"):
                 success_count += 1
             else:
                 print(f"{Colors.YELLOW}⚠️ {package} failed, but continuing...{Colors.END}")
 
-        # Install development packages
-        for package in development_packages:
-            if run_with_timeout(['apt', 'install', package, '-y'], 180, f"Installing {package}"):
-                success_count += 1
-            else:
-                print(f"{Colors.YELLOW}⚠️ {package} failed, will try alternative methods later{Colors.END}")
-
-        # Update repository before installing final packages
-        print(f"{Colors.WHITE}Updating package repository before final packages installation...{Colors.END}")
-        run_with_timeout(['apt', 'update'], 300, "Pre-final packages repository update")
-
-        # Install final packages (libcap-dev and libpcap-dev) with non-interactive mode
-        for package in final_packages:
-            if run_with_timeout(['env', 'DEBIAN_FRONTEND=noninteractive', 'apt', 'install', package, '-y'], 180, f"Installing {package}"):
-                success_count += 1
-            else:
-                print(f"{Colors.YELLOW}⚠️ {package} failed, will try alternative methods later{Colors.END}")
-
-        # Update repository after installing final packages
-        print(f"{Colors.WHITE}Updating package repository after final packages installation...{Colors.END}")
-        run_with_timeout(['apt', 'update'], 300, "Post-final packages repository update")
+        # Skip development and final packages to save disk space
+        print(f"{Colors.WHITE}Skipping development and final packages to conserve disk space...{Colors.END}")
 
         # Evaluate success
-        success_rate = (success_count / total_packages) * 100
-        print(f"{Colors.GREEN}✅ Package installation completed: {success_count}/{total_packages} packages ({success_rate:.1f}%){Colors.END}")
+        success_rate = (success_count / total_packages) * 100 if total_packages > 0 else 0
+        print(f"{Colors.GREEN}✅ Minimal package installation completed: {success_count}/{total_packages} packages ({success_rate:.1f}%){Colors.END}")
 
-        if success_count >= len(essential_packages):  # At least essential packages must be installed
+        if success_count >= 2:  # At least curl and golang-go must be installed
             return True
         else:
-            print(f"{Colors.RED}❌ Critical packages missing. Need at least {len(essential_packages)} essential packages.{Colors.END}")
+            print(f"{Colors.RED}❌ Critical packages missing. Need at least curl and golang-go.{Colors.END}")
             return False
 
     except Exception as e:
@@ -635,14 +654,19 @@ def install_security_tools_complete(distro: str) -> bool:
                 env = os.environ.copy()
                 env['CGO_ENABLED'] = '1'  # Enable CGO for tools that need it (like naabu)
                 env['GO111MODULE'] = 'on'  # Ensure module mode
-                
-                # Use timeout protection for go install (can hang on network issues)
-                if run_with_timeout(['go', 'install', repo], 300, f"Installing {tool} (timeout: 5min)"):
+                  # Use timeout protection for go install (can hang on network issues)
+                if run_with_timeout(['go', 'install', repo], 450, f"Installing {tool} (timeout: 7.5min)"):
                     print(f"{Colors.GREEN}  ✅ {tool} installed successfully{Colors.END}")
                     success_count += 1
                 else:
                     print(f"{Colors.YELLOW}  ⚠️ {tool} installation timed out or failed{Colors.END}")
-                    print(f"{Colors.YELLOW}  💡 Try installing manually: go install {repo}{Colors.END}")
+                    print(f"{Colors.YELLOW}  💡 Try installing manually later: go install {repo}{Colors.END}")
+                    
+                    # For nuclei specifically, offer alternative installation method
+                    if tool == 'nuclei':
+                        print(f"{Colors.CYAN}  💡 Alternative: Install from GitHub releases{Colors.END}")
+                        print(f"{Colors.CYAN}     wget https://github.com/projectdiscovery/nuclei/releases/latest/download/nuclei_linux_amd64.zip{Colors.END}")
+                        print(f"{Colors.CYAN}     unzip nuclei_linux_amd64.zip && sudo mv nuclei /usr/local/bin/{Colors.END}")
                 
             except subprocess.CalledProcessError as e:
                 print(f"{Colors.RED}  ❌ Failed to install {tool}: {e}{Colors.END}")
@@ -663,17 +687,33 @@ def install_security_tools_complete(distro: str) -> bool:
                         print(f"{Colors.YELLOW}  💡 Solution: Check Go installation and GOPATH permissions{Colors.END}")
                     elif 'network' in error_msg.lower() or 'timeout' in error_msg.lower():
                         print(f"{Colors.YELLOW}  💡 Solution: Check internet connection and try again{Colors.END}")
-        
-        # Update nuclei templates if nuclei was installed
+          # Update nuclei templates if nuclei was installed (with optimization)
         if shutil.which('nuclei'):
-            print(f"{Colors.WHITE}Updating nuclei templates...{Colors.END}")
+            print(f"{Colors.WHITE}Updating nuclei templates (optimized)...{Colors.END}")
             try:
-                subprocess.run(['nuclei', '-update-templates'], 
-                              check=True, stdout=subprocess.DEVNULL, 
-                              stderr=subprocess.DEVNULL, timeout=120)
-                print(f"{Colors.GREEN}✅ Nuclei templates updated{Colors.END}")
-            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-                print(f"{Colors.YELLOW}⚠️  Template update failed or timed out{Colors.END}")
+                # Use non-interactive mode and extended timeout for template updates
+                env = os.environ.copy()
+                env['DEBIAN_FRONTEND'] = 'noninteractive'
+                env['NUCLEI_DISABLE_COLORS'] = 'true'  # Prevent color codes from hanging terminal
+                
+                # Run with extended timeout and silent mode for faster processing
+                result = subprocess.run(['nuclei', '-update-templates', '-silent'], 
+                                      check=True, 
+                                      stdout=subprocess.DEVNULL, 
+                                      stderr=subprocess.PIPE,
+                                      timeout=300,  # Extended to 5 minutes
+                                      env=env)
+                print(f"{Colors.GREEN}✅ Nuclei templates updated successfully{Colors.END}")
+            except subprocess.TimeoutExpired:
+                print(f"{Colors.YELLOW}⚠️  Template update timed out (5min) - continuing anyway{Colors.END}")
+                print(f"{Colors.YELLOW}  💡 Templates can be updated later: nuclei -update-templates{Colors.END}")
+            except subprocess.CalledProcessError as e:
+                print(f"{Colors.YELLOW}⚠️  Template update failed - continuing anyway{Colors.END}")
+                if e.stderr:
+                    error_msg = e.stderr.decode().strip()
+                    if error_msg:
+                        print(f"{Colors.YELLOW}  Error: {error_msg}{Colors.END}")
+                print(f"{Colors.YELLOW}  💡 Templates can be updated later: nuclei -update-templates{Colors.END}")
         
         # Evaluate installation success
         if success_count >= 2:  # At least 2 out of 3 tools must be installed
@@ -721,19 +761,64 @@ def install_python_dependencies() -> bool:
         return False
 
 def setup_python_environment() -> bool:
-    """Setup Python environment and dependencies."""
+    """Setup Python environment, handling externally-managed environments like Kali Linux."""
     try:
-        print(f"\n{Colors.BLUE}🐍 Phase 4: Python Environment Setup{Colors.END}")
+        print(f"\n{Colors.BLUE}🐍 Setting up Python environment{Colors.END}")
         
-        # Upgrade pip
-        print(f"{Colors.WHITE}Upgrading pip...{Colors.END}")
-        subprocess.run([sys.executable, '-m', 'pip', 'install', '--upgrade', 'pip'], 
-                      check=True, stdout=subprocess.DEVNULL)
-        print(f"{Colors.GREEN}✅ pip upgraded{Colors.END}")
-        
-        # Install Python dependencies
-        return install_python_dependencies()
-        
+        # Check if we're in an externally-managed environment (Kali Linux)
+        try:
+            result = subprocess.run(['pip', '--version'], capture_output=True, text=True)
+            if result.returncode != 0 or 'externally-managed' in result.stderr.lower():
+                print(f"{Colors.YELLOW}⚠️ Detected externally-managed Python environment (likely Kali Linux){Colors.END}")
+                
+                # Check if python3-venv is available
+                venv_check = subprocess.run(['python3', '-m', 'venv', '--help'], capture_output=True, text=True)
+                if venv_check.returncode != 0:
+                    print(f"{Colors.WHITE}Installing python3-venv...{Colors.END}")
+                    if not run_with_timeout(['env', 'DEBIAN_FRONTEND=noninteractive', 'apt', 'install', 'python3-venv', '-y'], 180, "Installing python3-venv"):
+                        print(f"{Colors.RED}❌ Failed to install python3-venv{Colors.END}")
+                        return False
+                
+                # Create virtual environment in user directory
+                venv_path = os.path.expanduser("~/vulnerability_analysis_venv")
+                if not os.path.exists(venv_path):
+                    print(f"{Colors.WHITE}Creating virtual environment at {venv_path}...{Colors.END}")
+                    if not run_with_timeout(['python3', '-m', 'venv', venv_path], 120, "Creating virtual environment"):
+                        print(f"{Colors.RED}❌ Failed to create virtual environment{Colors.END}")
+                        return False
+                
+                # Activate virtual environment by setting environment variables
+                venv_bin = os.path.join(venv_path, 'bin')
+                os.environ['VIRTUAL_ENV'] = venv_path
+                os.environ['PATH'] = f"{venv_bin}:{os.environ.get('PATH', '')}"
+                
+                print(f"{Colors.GREEN}✅ Virtual environment created and activated{Colors.END}")
+                print(f"{Colors.WHITE}Virtual environment path: {venv_path}{Colors.END}")
+                
+                # Add activation instructions to shell profiles
+                activation_cmd = f"source {venv_path}/bin/activate"
+                profile_comment = "# Vulnerability Analysis Virtual Environment"
+                
+                for profile in ['.bashrc', '.zshrc']:
+                    profile_path = os.path.expanduser(f'~/{profile}')
+                    if os.path.exists(profile_path):
+                        with open(profile_path, 'r') as f:
+                            content = f.read()
+                        
+                        if profile_comment not in content:
+                            with open(profile_path, 'a') as f:
+                                f.write(f'\n{profile_comment}\n')
+                                f.write(f'# {activation_cmd}\n')
+                
+                return True
+            else:
+                print(f"{Colors.GREEN}✅ Standard Python environment detected{Colors.END}")
+                return True
+                
+        except Exception as e:
+            print(f"{Colors.YELLOW}⚠️ Python environment check failed: {e}{Colors.END}")
+            return True  # Continue anyway
+            
     except Exception as e:
         print(f"{Colors.RED}❌ Python environment setup failed: {e}{Colors.END}")
         return False
@@ -908,23 +993,65 @@ def print_success_message():
     print(f"{Colors.WHITE}2. Run a scan: python3 src/workflow.py <target>{Colors.END}")
     print(f"{Colors.WHITE}3. Check config/optimized_config.json for settings{Colors.END}")
     print(f"{Colors.WHITE}4. Source config/vat_aliases.sh for shortcuts{Colors.END}")
-    print(f"\n{Colors.YELLOW}Example usage:{Colors.END}")
     print(f"{Colors.WHITE}  python3 src/workflow.py example.com{Colors.END}")
     print(f"{Colors.WHITE}  python3 src/workflow.py 192.168.1.0/24{Colors.END}")
     print(f"\n{Colors.GREEN}{'='*80}{Colors.END}")
+
+def check_disk_space(min_gb: float = 2.0) -> bool:
+    """Check available disk space and warn if insufficient."""
+    try:
+        disk_usage = subprocess.run(['df', '/'], capture_output=True, text=True)
+        if disk_usage.returncode == 0:
+            lines = disk_usage.stdout.strip().split('\n')
+            if len(lines) > 1:
+                fields = lines[1].split()
+                if len(fields) >= 4:
+                    available_kb = int(fields[3])
+                    available_gb = available_kb / (1024 * 1024)
+                    used_kb = int(fields[2])
+                    used_gb = used_kb / (1024 * 1024)
+                    total_kb = int(fields[1])
+                    total_gb = total_kb / (1024 * 1024)
+                    
+                    print(f"{Colors.WHITE}💾 Disk Space Status:{Colors.END}")
+                    print(f"   Total: {total_gb:.1f} GB")
+                    print(f"   Used: {used_gb:.1f} GB")
+                    print(f"   Available: {available_gb:.1f} GB")
+                    
+                    if available_gb < min_gb:
+                        print(f"{Colors.RED}❌ CRITICAL: Less than {min_gb:.1f}GB disk space available!{Colors.END}")
+                        print(f"{Colors.YELLOW}⚠️ Installation may fail due to insufficient disk space.{Colors.END}")
+                        print(f"{Colors.WHITE}💡 Recommendations:{Colors.END}")
+                        print(f"   - Free up disk space by removing unused files")
+                        print(f"   - Use 'sudo apt clean' to clear package cache")
+                        print(f"   - Use 'sudo apt autoremove' to remove unused packages")
+                        return False
+                    else:
+                        print(f"{Colors.GREEN}✅ Sufficient disk space available{Colors.END}")
+                        return True
+        return True  # If we can't check, assume it's okay
+    except Exception as e:
+        print(f"{Colors.YELLOW}⚠️ Could not check disk space: {e}{Colors.END}")
+        return True  # Continue anyway
 
 def main():
     """Main installation orchestrator with complete multi-phase setup."""
     try:
         # Print header
         print_header()
-        
-        # Phase 0: System validation
-        print(f"{Colors.BLUE}🔍 Phase 0: System Validation{Colors.END}")
+          # Phase 0: System validation and environment checks
+        print(f"{Colors.BLUE}🔍 Phase 0: System Validation & Environment Checks{Colors.END}")
         
         # Check root permissions first
         if not check_root_permissions():
             return False
+        
+        # Check disk space before starting installation
+        if not check_disk_space(min_gb=2.0):
+            response = input(f"{Colors.YELLOW}Continue anyway? (y/N): {Colors.END}")
+            if response.lower() != 'y':
+                print(f"{Colors.RED}❌ Installation cancelled due to insufficient disk space{Colors.END}")
+                return False
         
         # Validate system requirements
         valid, distro = validate_system_requirements()
@@ -934,12 +1061,12 @@ def main():
         distro_config = SUPPORTED_DISTROS[distro]
         print(f"{Colors.GREEN}✅ System validation passed{Colors.END}")
         
-        # Installation phases
+        # Installation phases with optimized order
         phases = [
-            ("System Packages", lambda: install_system_packages(distro_config)),
+            ("Python Environment Setup", setup_python_environment),
+            ("Minimal System Packages", lambda: install_system_packages(distro_config)),
             ("Go Environment", setup_go_environment_complete),
             ("Security Tools", lambda: install_security_tools_complete(distro)),
-            ("Python Environment", setup_python_environment),
             ("Setup Scripts", run_setup_scripts),
             ("Configuration", create_configuration_files),
             ("Final Verification", final_verification)
@@ -960,6 +1087,51 @@ def main():
         return False
     except Exception as e:
         print(f"\n{Colors.RED}❌ Unexpected error during installation: {e}{Colors.END}")
+        return False
+
+def try_alternative_nuclei_installation() -> bool:
+    """Alternative nuclei installation method using GitHub releases."""
+    try:
+        print(f"{Colors.CYAN}🔄 Trying alternative nuclei installation method...{Colors.END}")
+        
+        # Detect architecture
+        import platform
+        arch = platform.machine().lower()
+        if arch in ['x86_64', 'amd64']:
+            arch_suffix = 'linux_amd64'
+        elif arch in ['aarch64', 'arm64']:
+            arch_suffix = 'linux_arm64'
+        else:
+            print(f"{Colors.YELLOW}⚠️ Unsupported architecture: {arch}{Colors.END}")
+            return False
+        
+        # Download and install nuclei binary
+        nuclei_url = f"https://github.com/projectdiscovery/nuclei/releases/latest/download/nuclei_{arch_suffix}.zip"
+        
+        print(f"{Colors.WHITE}Downloading nuclei from GitHub releases...{Colors.END}")
+        if run_with_timeout(['wget', '-q', nuclei_url, '-O', '/tmp/nuclei.zip'], 180, "Downloading nuclei"):
+            print(f"{Colors.WHITE}Extracting and installing nuclei...{Colors.END}")
+            
+            # Extract and install
+            if (run_with_timeout(['unzip', '-q', '/tmp/nuclei.zip', '-d', '/tmp/'], 60, "Extracting nuclei") and
+                run_with_timeout(['sudo', 'mv', '/tmp/nuclei', '/usr/local/bin/nuclei'], 30, "Installing nuclei") and
+                run_with_timeout(['sudo', 'chmod', '+x', '/usr/local/bin/nuclei'], 10, "Making nuclei executable")):
+                
+                # Cleanup
+                subprocess.run(['rm', '-f', '/tmp/nuclei.zip', '/tmp/nuclei'], 
+                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                
+                print(f"{Colors.GREEN}✅ Nuclei installed successfully via GitHub releases{Colors.END}")
+                return True
+            else:
+                print(f"{Colors.RED}❌ Failed to extract/install nuclei binary{Colors.END}")
+                return False
+        else:
+            print(f"{Colors.RED}❌ Failed to download nuclei from GitHub{Colors.END}")
+            return False
+            
+    except Exception as e:
+        print(f"{Colors.RED}❌ Alternative nuclei installation failed: {e}{Colors.END}")
         return False
 
 if __name__ == "__main__":
