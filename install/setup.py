@@ -272,8 +272,8 @@ def fix_package_locks() -> bool:
             # Update repository before installing libpcap-dev
             run_with_timeout(['apt', 'update'], 300, "Pre-installation repository update")
 
-            # Install libpcap-dev
-            if run_with_timeout(['apt', 'install', '-y', 'libpcap-dev'], 180, "Installing libpcap-dev"):
+            # Install libpcap-dev with non-interactive mode
+            if run_with_timeout(['env', 'DEBIAN_FRONTEND=noninteractive', 'apt', 'install', 'libpcap-dev', '-y'], 180, "Installing libpcap-dev"):
                 print(f"{Colors.GREEN}✅ libpcap-dev installed successfully{Colors.END}")
             else:
                 print(f"{Colors.RED}❌ Failed to install libpcap-dev{Colors.END}")
@@ -508,8 +508,8 @@ def check_system_dependencies(distro: str) -> bool:
             # Update repository before installing libpcap-dev
             run_with_timeout(['apt', 'update'], 300, "Pre-installation repository update")
 
-            # Install libpcap-dev
-            if run_with_timeout(['apt', 'install', '-y', 'libpcap-dev'], 180, "Installing libpcap-dev"):
+            # Install libpcap-dev with non-interactive mode
+            if run_with_timeout(['env', 'DEBIAN_FRONTEND=noninteractive', 'apt', 'install', 'libpcap-dev', '-y'], 180, "Installing libpcap-dev"):
                 print(f"{Colors.GREEN}✅ libpcap-dev installed successfully{Colors.END}")
             else:
                 print(f"{Colors.RED}❌ Failed to install libpcap-dev{Colors.END}")
