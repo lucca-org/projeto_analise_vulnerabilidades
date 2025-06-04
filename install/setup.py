@@ -306,19 +306,20 @@ def install_system_packages(distro_config: Dict) -> bool:
         # Phase 1c: Install packages with individual tracking to identify hangs
         print(f"{Colors.WHITE}Installing base packages (timeout per package: 180s)...{Colors.END}")
         
-        essential_packages = ['curl', 'wget', 'git', 'build-essential', 'python3-pip']
-        development_packages = ['golang-go', 'unzip', 'ca-certificates', 'libpcap-dev', 'pkg-config', 'gcc']
-        
+        essential_packages = ['curl', 'wget', 'git', 'build-essential', 'python3-pip', 'glibc', 'pam', 'linux-api-headers']
+        development_packages = ['golang-go', 'unzip', 'ca-certificates', 'pkg-config', 'gcc', 'libcap-dev']
+
+        # Initialize success counter
         success_count = 0
         total_packages = len(essential_packages) + len(development_packages)
-        
-        # Install essential packages first
+
+        # Install essential packages
         for package in essential_packages:
             if run_with_timeout(['apt', 'install', '-y', package], 180, f"Installing {package}"):
                 success_count += 1
             else:
                 print(f"{Colors.YELLOW}⚠️ {package} failed, but continuing...{Colors.END}")
-        
+
         # Install development packages
         for package in development_packages:
             if run_with_timeout(['apt', 'install', '-y', package], 180, f"Installing {package}"):
