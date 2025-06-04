@@ -263,6 +263,23 @@ def fix_package_locks() -> bool:
         # Fix broken packages
         run_with_timeout(['dpkg', '--configure', '-a'], 120, "Configuring packages")
         run_with_timeout(['apt', '--fix-broken', 'install', '-y'], 180, "Fixing broken packages")
+
+        # Verify if libpcap-dev is already installed
+        result = subprocess.run(['dpkg', '-l', 'libpcap-dev'], capture_output=True, text=True)
+        if 'ii' in result.stdout:
+            print(f"{Colors.GREEN}✅ libpcap-dev is already installed{Colors.END}")
+        else:
+            # Update repository before installing libpcap-dev
+            run_with_timeout(['apt', 'update'], 300, "Pre-installation repository update")
+
+            # Install libpcap-dev
+            if run_with_timeout(['apt', 'install', '-y', 'libpcap-dev'], 180, "Installing libpcap-dev"):
+                print(f"{Colors.GREEN}✅ libpcap-dev installed successfully{Colors.END}")
+            else:
+                print(f"{Colors.RED}❌ Failed to install libpcap-dev{Colors.END}")
+
+            # Update repository after installing libpcap-dev
+            run_with_timeout(['apt', 'update'], 300, "Post-installation repository update")
     
     return True
 
@@ -463,17 +480,25 @@ def check_system_dependencies(distro: str) -> bool:
                 print(f"{Colors.YELLOW}Please install manually: {' '.join(missing_deps)}{Colors.END}")
                 return False
         
-        # Update repository before installing libpcap-dev
-        run_with_timeout(['apt', 'update'], 300, "Pre-installation repository update")
-        
-        # Install libpcap-dev
-        if run_with_timeout(['apt', 'install', '-y', 'libpcap-dev'], 180, "Installing libpcap-dev"):
-            print(f"{Colors.GREEN}✅ libpcap-dev installed successfully{Colors.END}")
+        # Check for broken packages
+        run_with_timeout(['apt', '--fix-broken', 'install', '-y'], 180, "Fixing broken packages")
+
+        # Verify if libpcap-dev is already installed
+        result = subprocess.run(['dpkg', '-l', 'libpcap-dev'], capture_output=True, text=True)
+        if 'ii' in result.stdout:
+            print(f"{Colors.GREEN}✅ libpcap-dev is already installed{Colors.END}")
         else:
-            print(f"{Colors.RED}❌ Failed to install libpcap-dev{Colors.END}")
-        
-        # Update repository after installing libpcap-dev
-        run_with_timeout(['apt', 'update'], 300, "Post-installation repository update")
+            # Update repository before installing libpcap-dev
+            run_with_timeout(['apt', 'update'], 300, "Pre-installation repository update")
+
+            # Install libpcap-dev
+            if run_with_timeout(['apt', 'install', '-y', 'libpcap-dev'], 180, "Installing libpcap-dev"):
+                print(f"{Colors.GREEN}✅ libpcap-dev installed successfully{Colors.END}")
+            else:
+                print(f"{Colors.RED}❌ Failed to install libpcap-dev{Colors.END}")
+
+            # Update repository after installing libpcap-dev
+            run_with_timeout(['apt', 'update'], 300, "Post-installation repository update")
         
         return True
         
