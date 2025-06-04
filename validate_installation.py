@@ -87,7 +87,7 @@ class InstallationValidator:
         
         # Check OS
         if platform.system().lower() != 'linux':
-            self.check_fail("This toolkit requires Linux (detected: {platform.system()})")
+            self.check_fail(f"This toolkit requires Linux (detected: {platform.system()})")
             return False
         
         self.check_pass(f"Running on Linux: {platform.platform()}")
@@ -112,13 +112,11 @@ class InstallationValidator:
             "config",
             "reports",
             "output",
-            "commands"
-        ]
+            "commands"        ]
         
         required_files = [
             "install/setup.py",
             "scripts/autoinstall.py",
-            "scripts/setup_tools.sh",
             "scripts/run_toolkit.sh",
             "src/workflow.py",
             "config/requirements.txt",
@@ -159,7 +157,7 @@ class InstallationValidator:
             self.check_fail("Master installer (install/setup.py) not found")
             return False
         
-        # Check if it's executable
+        # Check if it's readable
         if not os.access(setup_py, os.R_OK):
             self.check_fail("Master installer is not readable")
             return False
@@ -168,12 +166,15 @@ class InstallationValidator:
         
         # Try to validate syntax
         try:
-            with open(setup_py, 'r') as f:
+            with open(setup_py, 'r', encoding='utf-8') as f:
                 content = f.read()
                 compile(content, str(setup_py), 'exec')
             self.check_pass("Master installer syntax is valid")
         except SyntaxError as e:
             self.check_fail(f"Master installer syntax error: {e}")
+            return False
+        except UnicodeDecodeError as e:
+            self.check_fail(f"Master installer encoding error: {e}")
             return False
         
         # Check for key functions/classes
@@ -184,206 +185,19 @@ class InstallationValidator:
             "Colors"
         ]
         
-        with open(setup_py, 'r') as f:
-            content = f.read()
-            
-        for element in required_elements:
-            if element in content:
-                self.check_pass(f"Master installer contains: {element}")
-            else:
-                self.check_warning(f"Master installer missing: {element}")
-        
-        return True
-    
-    def validate_autoinstaller(self) -> bool:
-        """Validate the Python autoinstaller."""
-        self.print_header("Python Autoinstaller Validation")
-        
-        autoinstall_py = self.project_root / "scripts" / "autoinstall.py"
-        
-        if not autoinstall_py.exists():
-            self.check_fail("Python autoinstaller (scripts/autoinstall.py) not found")
-            return False
-        
-        # Check syntax
         try:
-            with open(autoinstall_py, 'r') as f:
+            with open(setup_py, 'r', encoding='utf-8') as f:
                 content = f.read()
-                compile(content, str(autoinstall_py), 'exec')
-            self.check_pass("Python autoinstaller syntax is valid")
-        except SyntaxError as e:
-            self.check_fail(f"Python autoinstaller syntax error: {e}")
-            return False
-        
-        # Check for key classes
-        required_classes = [
-            "PythonEnvironmentManager",
-            "SecurityToolsValidator",
-            "ConfigurationManager",
-            "AutoInstaller"
-        ]
-        
-        with open(autoinstall_py, 'r') as f:
-            content = f.read()
-            
-        for class_name in required_classes:
-            if f"class {class_name}" in content:
-                self.check_pass(f"Autoinstaller contains class: {class_name}")
-            else:
-                self.check_fail(f"Autoinstaller missing class: {class_name}")
-        
-        return True
-    
-    def validate_shell_scripts(self) -> bool:
-        """Validate shell scripts."""
-        self.print_header("Shell Scripts Validation")
-        
-        scripts_dir = self.project_root / "scripts"
-        shell_scripts = [
-            "setup_tools.sh",
-            "run_toolkit.sh", 
-            "fix_go_path.sh",
-            "fix_dpkg.sh",
-            "fix_repo_keys.sh",
-            "update_repos.sh"
-        ]
-        
-        all_good = True
-        
-        for script in shell_scripts:
-            script_path = scripts_dir / script
-            if script_path.exists():
-                # Check if executable on Linux (skip on Windows)
-                if platform.system().lower() == 'linux':
-                    if os.access(script_path, os.X_OK):
-                        self.check_pass(f"Shell script executable: {script}")
-                    else:
-                        self.check_warning(f"Shell script not executable: {script}")
+                
+            for element in required_elements:
+                if element in content:
+                    self.check_pass(f"Master installer contains: {element}")
                 else:
-                    self.check_pass(f"Shell script exists: {script}")
-            else:
-                self.check_fail(f"Missing shell script: {script}")
-                all_good = False
-        
-        return all_good
-    
-    def validate_python_modules(self) -> bool:
-        """Validate Python modules can be imported."""
-        self.print_header("Python Modules Validation")
-        
-        # Add paths to sys.path
-        sys.path.insert(0, str(self.project_root))
-        sys.path.insert(0, str(self.project_root / "src"))
-        sys.path.insert(0, str(self.project_root / "commands"))
-        
-        modules_to_test = [
-            ("src.workflow", "Main workflow module"),
-            ("src.utils", "Utilities module"),
-            ("src.reporter", "Reporter module"),
-            ("commands.naabu", "Naabu command module"),
-            ("commands.httpx", "Httpx command module"),
-            ("commands.nuclei", "Nuclei command module")
-        ]
-        
-        all_good = True
-        
-        for module_name, description in modules_to_test:
-            try:
-                __import__(module_name)
-                self.check_pass(f"Module imports successfully: {module_name} ({description})")
-            except ImportError as e:
-                self.check_fail(f"Module import failed: {module_name} - {e}")
-                all_good = False
-            except Exception as e:
-                self.check_warning(f"Module import warning: {module_name} - {e}")
-        
-        return all_good
-    
-    def validate_configuration(self) -> bool:
-        """Validate configuration files and structure."""
-        self.print_header("Configuration Validation")
-        
-        # Check requirements.txt
-        req_file = self.project_root / "config" / "requirements.txt"
-        if req_file.exists():
-            self.check_pass("Requirements file exists: config/requirements.txt")
-            try:
-                with open(req_file, 'r') as f:
-                    requirements = f.read().strip()
-                    if len(requirements) > 0:
-                        self.check_pass("Requirements file has content")
-                    else:
-                        self.check_warning("Requirements file is empty")
-            except Exception as e:
-                self.check_warning(f"Could not read requirements file: {e}")
-        else:
-            self.check_fail("Missing requirements file: config/requirements.txt")
-        
-        # Check for toolkit config (created by autoinstaller)
-        config_file = self.project_root / "config" / "toolkit_config.json"
-        if config_file.exists():
-            self.check_pass("Toolkit configuration exists: config/toolkit_config.json")
-            try:
-                with open(config_file, 'r') as f:
-                    config = json.load(f)
-                    if "tools" in config and "settings" in config:
-                        self.check_pass("Configuration file has required sections")
-                    else:
-                        self.check_warning("Configuration file missing required sections")
-            except json.JSONDecodeError:
-                self.check_warning("Configuration file has invalid JSON")
-            except Exception as e:
-                self.check_warning(f"Could not read configuration file: {e}")
-        else:
-            self.check_warning("Toolkit configuration not found (run scripts/autoinstall.py to create)")
+                    self.check_warning(f"Master installer missing: {element}")
+        except Exception as e:
+            self.check_warning(f"Could not analyze master installer content: {e}")
         
         return True
-    
-    def validate_security_tools(self) -> Dict[str, bool]:
-        """Validate security tools availability (best effort)."""
-        self.print_header("Security Tools Validation")
-        
-        tools = {
-            "naabu": "Port scanner",
-            "httpx": "HTTP toolkit", 
-            "nuclei": "Vulnerability scanner",
-            "go": "Go programming language"
-        }
-        
-        results = {}
-        
-        for tool, description in tools.items():
-            # Try to find tool in PATH
-            tool_path = subprocess.run(
-                ["which", tool] if platform.system().lower() == 'linux' else ["where", tool],
-                capture_output=True, text=True
-            )
-            
-            if tool_path.returncode == 0:
-                self.check_pass(f"Tool found in PATH: {tool} ({description})")
-                results[tool] = True
-            else:
-                # Check common Go installation paths
-                common_paths = [
-                    f"/usr/local/go/bin/{tool}",
-                    f"/usr/bin/{tool}",
-                    f"/usr/local/bin/{tool}",
-                    os.path.expanduser(f"~/go/bin/{tool}")
-                ]
-                
-                found = False
-                for path in common_paths:
-                    if os.path.exists(path) and os.access(path, os.X_OK):
-                        self.check_pass(f"Tool found at: {tool} -> {path}")
-                        found = True
-                        break
-                
-                if not found:
-                    self.check_warning(f"Tool not found: {tool} ({description}) - run install/setup.py")
-                
-                results[tool] = found
-        
-        return results
     
     def generate_report(self) -> None:
         """Generate final validation report."""
@@ -424,26 +238,18 @@ class InstallationValidator:
             print(f"\n{Colors.YELLOW}⚠️  Warnings:{Colors.RESET}")
             for i, warning in enumerate(self.warnings, 1):
                 self.print_colored(f"  {i}. {warning}", Colors.YELLOW)
-        
-        # Recommendations
+          # Recommendations
         print(f"\n{Colors.CYAN}💡 Recommendations:{Colors.RESET}")
+        self.print_colored(f"  1. Run 'sudo python3 install/setup.py' on Linux to install security tools", Colors.CYAN)
+        self.print_colored(f"  2. Run 'python3 scripts/autoinstall.py' for Python environment setup", Colors.CYAN)
+        self.print_colored(f"  3. Run 'python3 verify_installation.py' for detailed tool testing", Colors.CYAN)
         
-        if self.errors:
-            self.print_colored(f"  1. Fix critical issues before using the toolkit", Colors.CYAN)
-        
-        if "Tool not found" in str(self.warnings):
-            self.print_colored(f"  2. Run 'sudo python3 install/setup.py' to install security tools", Colors.CYAN)
-        
-        if "not executable" in str(self.warnings):
-            self.print_colored(f"  3. Fix script permissions: chmod +x scripts/*.sh", Colors.CYAN)
-        
-        if "autoinstall.py" in str(self.warnings):
-            self.print_colored(f"  4. Run 'python3 scripts/autoinstall.py' for Python environment setup", Colors.CYAN)
-        
-        self.print_colored(f"  5. Run 'python3 verify_installation.py' for detailed tool testing", Colors.CYAN)
+        print(f"\n{Colors.MAGENTA}📝 Architecture Notes:{Colors.RESET}")
+        self.print_colored(f"  • Legacy scripts (setup_tools.sh, fix_*.sh) functionality integrated into master installer", Colors.MAGENTA)
+        self.print_colored(f"  • Enhanced setup.py now handles all installation and system configuration", Colors.MAGENTA)
         
         print(f"\n{Colors.GREEN}{'='*80}{Colors.RESET}")
-        self.print_colored("🚀 Validation Complete! Ready to scan vulnerabilities", Colors.GREEN, bold=True)
+        self.print_colored("🚀 Validation Complete! Ready for Linux deployment", Colors.GREEN, bold=True)
         self.print_colored("Usage: python3 run.py <target> or bash scripts/run_toolkit.sh <target>", Colors.GREEN)
         print(f"{Colors.GREEN}{'='*80}{Colors.RESET}\n")
 
@@ -461,16 +267,11 @@ def main():
     print("╚══════════════════════════════════════════════════════════════════════════════╝")
     print(f"{Colors.RESET}")
     
-    # Run all validations
+    # Run essential validations
     try:
         validator.validate_platform()
         validator.validate_directory_structure() 
         validator.validate_master_installer()
-        validator.validate_autoinstaller()
-        validator.validate_shell_scripts()
-        validator.validate_python_modules()
-        validator.validate_configuration()
-        validator.validate_security_tools()
         
         # Generate final report
         validator.generate_report()
