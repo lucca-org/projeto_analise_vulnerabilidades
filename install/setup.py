@@ -287,56 +287,72 @@ def install_system_packages(distro_config: Dict) -> bool:
     """Install system packages based on distribution with anti-hang protection."""
     try:
         print(f"\n{Colors.BLUE}📦 Phase 1: System Package Installation (Anti-Hang Protected){Colors.END}")
-        
+
         # Phase 1a: Fix package locks (especially important for VMs)
         fix_package_locks()
-        
+
         # Phase 1b: Repository update with timeout protection
         print(f"{Colors.WHITE}Updating package repository (timeout: 300s)...{Colors.END}")
         if not run_with_timeout(distro_config['update_cmd'], 300, "Repository update"):
             print(f"{Colors.YELLOW}⚠️ Repository update failed, trying recovery...{Colors.END}")
-            
+
             # Try alternative update methods for Kali/Debian
             if not run_with_timeout(['apt', 'clean'], 60, "Cleaning apt cache"):
                 print(f"{Colors.YELLOW}Cache cleaning failed, continuing anyway...{Colors.END}")
-            
+
             if not run_with_timeout(['apt', 'update', '--allow-unauthenticated'], 180, "Alternative repository update"):
                 print(f"{Colors.YELLOW}⚠️ Repository update issues detected, continuing with package installation...{Colors.END}")
-        
+
         # Phase 1c: Install packages with individual tracking to identify hangs
         print(f"{Colors.WHITE}Installing base packages (timeout per package: 180s)...{Colors.END}")
         
         essential_packages = ['curl', 'wget', 'git', 'build-essential', 'python3-pip', 'glibc', 'pam', 'linux-api-headers']
-        development_packages = ['golang-go', 'unzip', 'ca-certificates', 'pkg-config', 'gcc', 'libcap-dev']
+        development_packages = ['golang-go', 'unzip', 'ca-certificates', 'pkg-config', 'gcc']
+        final_packages = ['libcap-dev', 'libpcap-dev']
 
         # Initialize success counter
         success_count = 0
-        total_packages = len(essential_packages) + len(development_packages)
+        total_packages = len(essential_packages) + len(development_packages) + len(final_packages)
 
         # Install essential packages
         for package in essential_packages:
-            if run_with_timeout(['apt', 'install', '-y', package], 180, f"Installing {package}"):
+            if run_with_timeout(['apt', 'install', package, '-y'], 180, f"Installing {package}"):
                 success_count += 1
             else:
                 print(f"{Colors.YELLOW}⚠️ {package} failed, but continuing...{Colors.END}")
 
         # Install development packages
         for package in development_packages:
-            if run_with_timeout(['apt', 'install', '-y', package], 180, f"Installing {package}"):
+            if run_with_timeout(['apt', 'install', package, '-y'], 180, f"Installing {package}"):
                 success_count += 1
             else:
                 print(f"{Colors.YELLOW}⚠️ {package} failed, will try alternative methods later{Colors.END}")
-        
+
+        # Update repository before installing final packages
+        print(f"{Colors.WHITE}Updating package repository before final packages installation...{Colors.END}")
+        run_with_timeout(['apt', 'update'], 300, "Pre-final packages repository update")
+
+        # Install final packages (libcap-dev and libpcap-dev) with non-interactive mode
+        for package in final_packages:
+            if run_with_timeout(['env', 'DEBIAN_FRONTEND=noninteractive', 'apt', 'install', package, '-y'], 180, f"Installing {package}"):
+                success_count += 1
+            else:
+                print(f"{Colors.YELLOW}⚠️ {package} failed, will try alternative methods later{Colors.END}")
+
+        # Update repository after installing final packages
+        print(f"{Colors.WHITE}Updating package repository after final packages installation...{Colors.END}")
+        run_with_timeout(['apt', 'update'], 300, "Post-final packages repository update")
+
         # Evaluate success
         success_rate = (success_count / total_packages) * 100
         print(f"{Colors.GREEN}✅ Package installation completed: {success_count}/{total_packages} packages ({success_rate:.1f}%){Colors.END}")
-        
+
         if success_count >= len(essential_packages):  # At least essential packages must be installed
             return True
         else:
             print(f"{Colors.RED}❌ Critical packages missing. Need at least {len(essential_packages)} essential packages.{Colors.END}")
             return False
-        
+
     except Exception as e:
         print(f"{Colors.RED}❌ Package installation failed: {e}{Colors.END}")
         return False
