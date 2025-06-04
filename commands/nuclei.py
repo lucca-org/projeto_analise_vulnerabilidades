@@ -1,8 +1,40 @@
 import os
+import sys
 import json
 import subprocess
 import shutil
-from utils import run_cmd, get_executable_path
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+
+try:
+    from utils import run_cmd, get_executable_path
+except ImportError:
+    print("Warning: Could not import security tool wrappers (No module named 'utils')")
+    print("Make sure you've run setup_tools.sh to install all required components.")
+    # Provide fallback functions with compatible signatures
+    def run_cmd(cmd, shell=False, check=False, use_sudo=False, timeout=300, retry=1, silent=False):
+        try:
+            if isinstance(cmd, str):
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=check, timeout=timeout)
+            else:
+                result = subprocess.run(cmd, capture_output=True, text=True, check=check, timeout=timeout)
+            return result.returncode == 0
+        except Exception:
+            return False
+    
+    def get_executable_path(cmd):
+        # Check standard PATH
+        path = shutil.which(cmd)
+        if path:
+            return path
+        
+        # Check ~/go/bin directory
+        go_bin_path = os.path.expanduser(f"~/go/bin/{cmd}")
+        if os.path.exists(go_bin_path):
+            return go_bin_path
+        
+        return None
 
 def run_nuclei(target=None, target_list=None, templates=None, tags=None, severity=None,
               output_file=None, jsonl=False, silent=False, store_resp=False, 
@@ -13,290 +45,339 @@ def run_nuclei(target=None, target_list=None, templates=None, tags=None, severit
     
     Parameters:
         target (str): Single target to scan.
-        target_list (str): Path to a file containing targets or a URL string (e.g., "http://example.com/targets").
+        target_list (str): Path to a file containing targets or a URL string.
         templates (str): Custom templates or template directory.
-        tags (str): Tags to include templates by (e.g., "cve,wordpress").
-        severity (str): Filter templates by severity (e.g., "critical,high").
+        tags (str): Tags to include templates by.
+        severity (str): Filter templates by severity.
         output_file (str): Path to save the output.
         jsonl (bool): Output in JSONL format.
-        silent (bool): Run in silent mode.
-        store_resp (bool): Store HTTP request/responses in output directory.
-        headers (list): Custom headers to add to all requests.
-        variables (dict): Custom variables for templates.
-        rate_limit (int): Maximum number of requests per second.
-        timeout (int): Timeout in seconds for HTTP requests.
-        additional_args (list): Additional nuclei arguments.
-        auto_install (bool): Automatically install Nuclei if not found.
-        
+        silent (bool): Show only results in output.
+        store_resp (bool): Store HTTP responses for matches.
+        headers (str): Custom headers for HTTP requests.
+        variables (str): Define variables for templates.
+        rate_limit (int): Requests per second limit.
+        timeout (int): Timeout for requests in seconds.
+        additional_args (list): Additional command-line arguments.
+        auto_install (bool): Whether to attempt auto-installation if nuclei is not found.
+    
     Returns:
-        bool: True if execution was successful, False otherwise.
+        bool: True if nuclei executed successfully, False otherwise.
     """
-    # Check if nuclei is available, install if needed
-    if not check_nuclei():
+    
+    # Get nuclei executable path
+    nuclei_path = get_executable_path("nuclei")
+    
+    if not nuclei_path:
         if auto_install:
-            print("🔧 Nuclei not found. Attempting automatic installation...")
-            if not auto_install_nuclei():
-                print("❌ Failed to install Nuclei automatically.")
-                return False
-        else:
-            print("❌ Nuclei is not installed. Please install it first or set auto_install=True.")
+            print("Nuclei not found. Installing...")
+            if install_nuclei():
+                nuclei_path = get_executable_path("nuclei")
+            
+        if not nuclei_path:
+            print("Error: Nuclei is not installed or not found in PATH")
+            print("Please install nuclei manually or run the setup script.")
             return False
     
-    if not target and not target_list:
-        print("Error: Either target or target_list must be specified.")
-        return False
+    # Build nuclei command
+    cmd = [nuclei_path]
     
-    if target_list and not os.path.isfile(target_list):
-        print(f"Error: Target list file '{target_list}' not found.")
-        # If it's a direct URL, create a temporary file
-        if target_list.startswith(('http://', 'https://')):
-            try:
-                temp_file = "temp_targets.txt"
-                with open(temp_file, "w") as f:
-                    f.write(target_list)
-                target_list = temp_file
-                print(f"Created temporary target file: {temp_file}")
-            except Exception as e:
-                print(f"Error creating temporary file: {e}")
-                return False
-        else:
-            return False
-    
-    cmd = ["nuclei"]
-
+    # Add target parameters
     if target:
         cmd.extend(["-u", target])
-    if target_list:
-        cmd.extend(["-l", target_list])
+    elif target_list:
+        if target_list.startswith(('http://', 'https://')):
+            # If target_list is a URL, use it directly as target
+            cmd.extend(["-u", target_list])
+        else:
+            # If target_list is a file path
+            if os.path.exists(target_list):
+                cmd.extend(["-l", target_list])
+            else:
+                print(f"Error: Target list file not found: {target_list}")
+                return False
+    else:
+        print("Error: Either target or target_list must be specified")
+        return False
+    
+    # Add template parameters
     if templates:
-        cmd.extend(["-t", templates])
+        if os.path.exists(templates):
+            cmd.extend(["-t", templates])
+        else:
+            # Could be a template name or tag
+            cmd.extend(["-t", templates])
+    
     if tags:
         cmd.extend(["-tags", tags])
+    
     if severity:
         cmd.extend(["-severity", severity])
+    
+    # Output configuration
     if output_file:
         cmd.extend(["-o", output_file])
-    if jsonl:
-        cmd.append("-jsonl")
+        if jsonl:
+            cmd.append("-jsonl")
+    
+    # Scanning options
     if silent:
         cmd.append("-silent")
+    
     if store_resp:
         cmd.append("-store-resp")
+    
+    # Request configuration
     if headers:
-        for header in headers:
-            cmd.extend(["-H", header])
+        cmd.extend(["-H", headers])
+    
     if variables:
-        # Detect supported flag for template variables
-        supported_flag = "-var"
-        try:
-            help_output = subprocess.run(["nuclei", "-h"], capture_output=True, text=True, timeout=5).stdout
-            if "-var" not in help_output:
-                supported_flag = "-V"
-        except Exception as e:
-            print(f"Error detecting supported flag for variables: {e}")
-            supported_flag = "-V"  # Default to '-V' if detection fails
-
-        for key, value in variables.items():
-            cmd.extend([supported_flag, f"{key}={value}"])
+        cmd.extend(["-var", variables])
+    
     if rate_limit:
-        cmd.extend(["-rate-limit", str(rate_limit)])
+        cmd.extend(["-rl", str(rate_limit)])
+    
     if timeout:
         cmd.extend(["-timeout", str(timeout)])
     
-    # Add any additional arguments
+    # Add additional arguments
     if additional_args:
         cmd.extend(additional_args)
-
-    # Run with retry for better resilience
-    success = run_cmd(cmd, retry=1)
-    if not success:
-        print("Failed to execute Nuclei. Please check the parameters and try again.")
-        return False
     
-    return True
-
-def update_nuclei_templates():
-    """Update Nuclei templates to the latest version."""
-    print("Updating Nuclei templates...")
-    return run_cmd(["nuclei", "-update-templates"])
-
-def parse_nuclei_results(output_file, jsonl_format=False):
-    """
-    Parse Nuclei results from an output file.
-    
-    Parameters:
-        output_file (str): Path to the Nuclei output file.
-        jsonl_format (bool): Whether the output is in JSONL format.
-        
-    Returns:
-        list: Parsed results or None if parsing failed.
-    """
-    if not os.path.isfile(output_file):
-        print(f"Error: Output file '{output_file}' not found.")
-        return None
-    
+    # Execute nuclei
+    print(f"Running: {' '.join(cmd)}")
     try:
-        with open(output_file, 'r') as f:
-            if jsonl_format:
-                # For JSONL, read line by line
-                results = []
-                for line in f:
-                    if line.strip():
-                        results.append(json.loads(line))
-                return results
-            else:
-                # Simple line-by-line parsing for text format
-                return [line.strip() for line in f if line.strip()]
+        result = run_cmd(cmd, timeout=timeout or 3600, check=False)
+        return result
     except Exception as e:
-        print(f"Error parsing Nuclei results: {e}")
-        return None
-
-def check_nuclei():
-    """
-    Check if nuclei is installed and available in the PATH.
-    
-    Returns:
-        bool: True if nuclei is installed and working, False otherwise.
-    """
-    nuclei_path = get_executable_path("nuclei")
-    if not nuclei_path:
-        print("nuclei not found in PATH or in ~/go/bin.")
-        return False
-        
-    try:
-        # Try running a simple command to check if nuclei is working
-        result = subprocess.run([nuclei_path, "-version"], 
-                              capture_output=True, 
-                              text=True, 
-                              timeout=5)
-        
-        if result.returncode == 0:
-            print(f"nuclei is available: {result.stdout.strip()}")
-            return True
-        else:
-            print("nuclei is installed but not working correctly.")
-            return False
-    except Exception as e:
-        print(f"Error checking nuclei: {e}")
+        print(f"Error running nuclei: {e}")
         return False
 
-def get_nuclei_capabilities():
-    """Get information about nuclei capabilities based on its installation."""
-    capabilities = {
-        "version": "unknown",
-        "templates_count": 0,
-        "features": []
-    }
-    
-    try:
-        # Get version
-        version_output = subprocess.run(["nuclei", "--version"], 
-                                      capture_output=True, 
-                                      text=True, 
-                                      timeout=5).stdout
-        
-        if version_output:
-            capabilities["version"] = version_output.strip()
-        
-        # Get installed templates count
-        templates_output = subprocess.run(["nuclei", "-tl"], 
-                                        capture_output=True, 
-                                        text=True, 
-                                        timeout=10).stdout
-        
-        if templates_output:
-            # Try to count templates
-            try:
-                templates_lines = templates_output.strip().split('\n')
-                capabilities["templates_count"] = len(templates_lines)
-            except:
-                pass
-        
-        # Check for advanced features
-        help_output = subprocess.run(["nuclei", "-h"], 
-                                   capture_output=True, 
-                                   text=True, 
-                                   timeout=5).stdout
-        
-        features = []
-        if "-headless" in help_output:
-            features.append("headless")
-        if "-fuzzing" in help_output:
-            features.append("fuzzing")
-        if "-system-resolvers" in help_output:
-            features.append("system-resolvers")
-        if "-stats" in help_output:
-            features.append("stats")
-            
-        capabilities["features"] = features
-        return capabilities
-    except Exception as e:
-        print(f"Error getting nuclei capabilities: {e}")
-        return capabilities
-
-def auto_install_nuclei():
+def install_nuclei():
     """
-    Automatically install Nuclei vulnerability scanner on Linux systems.
+    Install nuclei using go install.
     
     Returns:
         bool: True if installation was successful, False otherwise.
     """
-    print("🔧 Starting automatic installation of Nuclei...")
+    try:
+        print("Installing nuclei...")
+        install_cmd = ["go", "install", "-v", "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"]
+        
+        result = run_cmd(install_cmd, timeout=300)
+        if result:
+            print("Nuclei installed successfully!")
+            return True
+        else:
+            print("Failed to install nuclei using go install")
+            return False
+    except Exception as e:
+        print(f"Error installing nuclei: {e}")
+        return False
+
+def nuclei_update_templates():
+    """
+    Update nuclei templates to latest version.
     
-    # Check if already installed and working
-    if check_nuclei():
-        print("✅ Nuclei is already installed and working!")
-        return True
+    Returns:
+        bool: True if update was successful, False otherwise.
+    """
+    nuclei_path = get_executable_path("nuclei")
     
-    # Check if Go is installed
-    if not shutil.which("go"):
-        print("❌ Go is not installed. Please install Go first.")
-        print("   You can use the scripts/autoinstall.py script to install Go automatically.")
+    if not nuclei_path:
+        print("Error: Nuclei is not installed")
         return False
     
     try:
-        print("📦 Installing Nuclei using Go...")
+        print("Updating nuclei templates...")
+        cmd = [nuclei_path, "-update-templates"]
+        result = run_cmd(cmd, timeout=300)
         
-        # Install nuclei using go install
-        cmd = ["go", "install", "-v", "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-        
-        if result.returncode != 0:
-            print(f"❌ Failed to install Nuclei: {result.stderr}")
-            # Try alternative installation command for older versions
-            print("🔄 Trying alternative installation method...")
-            cmd = ["go", "install", "-v", "github.com/projectdiscovery/nuclei/v2/cmd/nuclei@latest"]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-            
-            if result.returncode != 0:
-                print(f"❌ Alternative installation also failed: {result.stderr}")
-                return False
-        
-        print("✅ Nuclei installed successfully!")
-        
-        # Verify installation
-        if check_nuclei():
-            print("✅ Nuclei installation verified and working!")
-            
-            # Add ~/go/bin to PATH if not already there
-            go_bin_path = os.path.expanduser("~/go/bin")
-            current_path = os.environ.get("PATH", "")
-            if go_bin_path not in current_path:
-                os.environ["PATH"] = f"{go_bin_path}:{current_path}"
-                print(f"📝 Added {go_bin_path} to PATH for this session")
-            
-            # Update nuclei templates
-            print("📋 Updating Nuclei templates...")
-            update_nuclei_templates()
-            
+        if result:
+            print("Nuclei templates updated successfully!")
             return True
         else:
-            print("❌ Nuclei installation completed but verification failed")
+            print("Failed to update nuclei templates")
             return False
-            
-    except subprocess.TimeoutExpired:
-        print("❌ Installation timed out. Please check your internet connection.")
-        return False
     except Exception as e:
-        print(f"❌ Error during installation: {e}")
+        print(f"Error updating nuclei templates: {e}")
         return False
+
+def get_nuclei_version():
+    """
+    Get the installed version of nuclei.
+    
+    Returns:
+        str: Version string if successful, None otherwise.
+    """
+    nuclei_path = get_executable_path("nuclei")
+    
+    if not nuclei_path:
+        return None
+    
+    try:
+        cmd = [nuclei_path, "-version"]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        
+        if result.returncode == 0:
+            # Extract version from output
+            version_line = result.stdout.strip()
+            return version_line
+        else:
+            return None
+    except Exception:
+        return None
+
+def list_nuclei_templates(tags=None, severity=None):
+    """
+    List available nuclei templates.
+    
+    Parameters:
+        tags (str): Filter templates by tags.
+        severity (str): Filter templates by severity.
+    
+    Returns:
+        bool: True if listing was successful, False otherwise.
+    """
+    nuclei_path = get_executable_path("nuclei")
+    
+    if not nuclei_path:
+        print("Error: Nuclei is not installed")
+        return False
+    
+    try:
+        cmd = [nuclei_path, "-tl"]
+        
+        if tags:
+            cmd.extend(["-tags", tags])
+        
+        if severity:
+            cmd.extend(["-severity", severity])
+        
+        result = run_cmd(cmd, timeout=60)
+        return result
+    except Exception as e:
+        print(f"Error listing nuclei templates: {e}")
+        return False
+
+def check_nuclei():
+    """
+    Check if nuclei is available and working.
+    
+    Returns:
+        bool: True if nuclei is available, False otherwise.
+    """
+    nuclei_path = get_executable_path("nuclei")
+    if not nuclei_path:
+        return False
+    
+    try:
+        cmd = [nuclei_path, "-version"]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        return result.returncode == 0
+    except Exception:
+        return False
+
+def get_nuclei_capabilities():
+    """
+    Get nuclei capabilities and version information.
+    
+    Returns:
+        dict: Dictionary containing nuclei capabilities.
+    """
+    capabilities = {
+        "available": False,
+        "version": None,
+        "templates_updated": False,
+        "installation_path": None
+    }
+    
+    nuclei_path = get_executable_path("nuclei")
+    if nuclei_path:
+        capabilities["available"] = True
+        capabilities["installation_path"] = nuclei_path
+        
+        # Get version
+        version = get_nuclei_version()
+        if version:
+            capabilities["version"] = version
+        
+        # Check if templates directory exists (basic check)
+        home_dir = os.path.expanduser("~")
+        nuclei_templates_dir = os.path.join(home_dir, "nuclei-templates")
+        if os.path.exists(nuclei_templates_dir):
+            capabilities["templates_updated"] = True
+    
+    return capabilities
+
+def update_nuclei_templates():
+    """
+    Update nuclei templates (alias for nuclei_update_templates).
+    
+    Returns:
+        bool: True if update was successful, False otherwise.
+    """
+    return nuclei_update_templates()
+
+# Convenience function for common scanning scenarios
+def quick_nuclei_scan(target, output_file=None, severity="medium,high,critical"):
+    """
+    Perform a quick nuclei scan with common settings.
+    
+    Parameters:
+        target (str): Target to scan.
+        output_file (str): Optional output file.
+        severity (str): Severity filter for templates.
+    
+    Returns:
+        bool: True if scan completed successfully, False otherwise.
+    """
+    return run_nuclei(
+        target=target,
+        severity=severity,
+        output_file=output_file,
+        jsonl=True if output_file else False,
+        silent=True
+    )
+
+if __name__ == "__main__":
+    # Example usage
+    import argparse
+    
+    parser = argparse.ArgumentParser(description="Nuclei vulnerability scanner wrapper")
+    parser.add_argument("-u", "--target", help="Target URL")
+    parser.add_argument("-l", "--list", help="Target list file")
+    parser.add_argument("-t", "--templates", help="Templates to use")
+    parser.add_argument("--tags", help="Template tags")
+    parser.add_argument("-s", "--severity", help="Severity filter")
+    parser.add_argument("-o", "--output", help="Output file")
+    parser.add_argument("--jsonl", action="store_true", help="JSONL output")
+    parser.add_argument("--silent", action="store_true", help="Silent mode")
+    parser.add_argument("--update", action="store_true", help="Update templates")
+    parser.add_argument("--version", action="store_true", help="Show version")
+    parser.add_argument("--install", action="store_true", help="Install nuclei")
+    
+    args = parser.parse_args()
+    
+    if args.install:
+        install_nuclei()
+    elif args.update:
+        nuclei_update_templates()
+    elif args.version:
+        version = get_nuclei_version()
+        if version:
+            print(version)
+        else:
+            print("Nuclei not found or version could not be determined")
+    elif args.target or args.list:
+        run_nuclei(
+            target=args.target,
+            target_list=args.list,
+            templates=args.templates,
+            tags=args.tags,
+            severity=args.severity,
+            output_file=args.output,
+            jsonl=args.jsonl,
+            silent=args.silent
+        )
+    else:
+        parser.print_help()

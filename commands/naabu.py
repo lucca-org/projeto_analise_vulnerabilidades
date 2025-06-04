@@ -1,9 +1,41 @@
 #!/usr/bin/env python3
 import os
+import sys
 import json
 import subprocess
 import shutil
-from utils import run_cmd, get_executable_path
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+
+try:
+    from utils import run_cmd, get_executable_path
+except ImportError:
+    print("Warning: Could not import security tool wrappers (No module named 'utils')")
+    print("Make sure you've run setup_tools.sh to install all required components.")
+    # Provide fallback functions with compatible signatures
+    def run_cmd(cmd, shell=False, check=False, use_sudo=False, timeout=300, retry=1, silent=False):
+        try:
+            if isinstance(cmd, str):
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=check, timeout=timeout)
+            else:
+                result = subprocess.run(cmd, capture_output=True, text=True, check=check, timeout=timeout)
+            return result.returncode == 0
+        except Exception:
+            return False
+    
+    def get_executable_path(cmd):
+        # Check standard PATH
+        path = shutil.which(cmd)
+        if path:
+            return path
+        
+        # Check ~/go/bin directory
+        go_bin_path = os.path.expanduser(f"~/go/bin/{cmd}")
+        if os.path.exists(go_bin_path):
+            return go_bin_path
+        
+        return None
 
 def run_naabu(target=None, target_list=None, ports=None, exclude_ports=None, 
              threads=None, rate=None, timeout=None, json_output=False, 

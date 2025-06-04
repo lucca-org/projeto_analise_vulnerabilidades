@@ -99,21 +99,24 @@ def detect_linux_distro() -> Optional[str]:
         # Try reading /etc/os-release first (most reliable)
         if os.path.exists('/etc/os-release'):
             with open('/etc/os-release', 'r') as f:
-                content = f.read().lower()
-                if 'kali' in content:
-                    return 'kali'
-                elif 'arch' in content:
-                    return 'arch'
-                elif 'ubuntu' in content:
-                    return 'ubuntu'
-                elif 'debian' in content:
-                    return 'debian'
+                content = f.read()
+                if content:  # Ensure content is not None or empty
+                    content = content.lower()
+                    if 'kali' in content:
+                        return 'kali'
+                    elif 'arch' in content:
+                        return 'arch'
+                    elif 'ubuntu' in content:
+                        return 'ubuntu'
+                    elif 'debian' in content:
+                        return 'debian'
         
         # Check /etc/debian_version for Debian-based systems
         if os.path.exists('/etc/debian_version'):
             if os.path.exists('/etc/lsb-release'):
                 with open('/etc/lsb-release', 'r') as f:
-                    if 'ubuntu' in f.read().lower():
+                    lsb_content = f.read()
+                    if lsb_content and 'ubuntu' in lsb_content.lower():
                         return 'ubuntu'
             return 'debian'
         
@@ -148,22 +151,35 @@ def ensure_linux_only() -> bool:
 def check_root_permissions() -> bool:
     """Check for root/sudo permissions."""
     try:
-        # Method 1: Check effective user ID
-        euid = ctypes.CDLL(None).geteuid()
-        if euid == 0:
-            print(f"{Colors.GREEN}✅ Running with root privileges{Colors.END}")
-            return True
+        # Method 1: Check effective user ID (Linux/Unix only)
+        try:
+            # On Windows, ctypes.CDLL(None) fails, so we need to check platform first
+            if platform.system().lower() == "linux":
+                euid = ctypes.CDLL(None).geteuid()
+                if euid == 0:
+                    print(f"{Colors.GREEN}✅ Running with root privileges{Colors.END}")
+                    return True
+            else:
+                print(f"{Colors.YELLOW}⚠️  Not on Linux - skipping root user ID check{Colors.END}")
+        except (OSError, AttributeError) as e:
+            # Not on a Unix-like system or geteuid not available
+            print(f"{Colors.YELLOW}⚠️  Cannot check effective user ID: {e}{Colors.END}")
         
         # Method 2: Check sudo access
         print(f"{Colors.YELLOW}⚠️  Not running as root. Checking sudo access...{Colors.END}")
-        result = subprocess.run(['sudo', '-n', 'true'], 
-                              capture_output=True, check=False)
-        if result.returncode == 0:
-            print(f"{Colors.GREEN}✅ Sudo access confirmed{Colors.END}")
-            return True
-        else:
-            print(f"{Colors.RED}❌ This script requires root privileges or sudo access{Colors.END}")
-            print(f"{Colors.WHITE}Please run: sudo python3 install/setup.py{Colors.END}")
+        try:
+            result = subprocess.run(['sudo', '-n', 'true'], 
+                                  capture_output=True, check=False)
+            if result.returncode == 0:
+                print(f"{Colors.GREEN}✅ Sudo access confirmed{Colors.END}")
+                return True
+            else:
+                print(f"{Colors.RED}❌ This script requires root privileges or sudo access{Colors.END}")
+                print(f"{Colors.WHITE}Please run: sudo python3 install/setup.py{Colors.END}")
+                return False
+        except FileNotFoundError:
+            print(f"{Colors.RED}❌ 'sudo' command not found. This script requires sudo access on Linux{Colors.END}")
+            print(f"{Colors.WHITE}Please ensure you're running on a Linux system with sudo installed{Colors.END}")
             return False
             
     except Exception as e:
