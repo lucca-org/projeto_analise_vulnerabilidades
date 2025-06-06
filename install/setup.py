@@ -730,11 +730,22 @@ def clean_go_mod_cache():
 
 def install_nuclei_with_retries(repo, max_retries=3):
     """Try to install nuclei with retries, cleaning cache and switching proxy if needed."""
+    # Use a specific nuclei version tag instead of latest to reduce dependency bloat
+    # Extract the repo name without version tag
+    base_repo = repo.split('@')[0]
+    specific_version = "v3.1.5"  # Latest stable release
+    specific_repo = f"{base_repo}@{specific_version}"
+    
+    print(f"{Colors.WHITE}Installing nuclei {specific_version} (with reduced dependencies)...{Colors.END}")
+    
     for attempt in range(1, max_retries+1):
         print(f"{Colors.WHITE}Installing nuclei (attempt {attempt}/{max_retries})...{Colors.END}")
         env = os.environ.copy()
         env['CGO_ENABLED'] = '1'
         env['GO111MODULE'] = 'on'
+        # Fix the GOFLAGS format - there was a syntax error with the quotes
+        env['GOFLAGS'] = '-ldflags=-s -w'  # Correct format without nested quotes
+        
         # On 2nd+ attempt, switch to direct proxy
         if attempt >= 2:
             env['GOPROXY'] = 'direct'
@@ -745,9 +756,13 @@ def install_nuclei_with_retries(repo, max_retries=3):
         if attempt >= 2:
             clean_go_mod_cache()
         timeout_seconds = 600  # 10 min
-        result = subprocess.run(['go', 'install', '-v', repo], capture_output=True, text=True, env=env, timeout=timeout_seconds)
+        
+        # Use -trimpath to remove local paths from binary
+        result = subprocess.run(['go', 'install', '-v', '-trimpath', specific_repo], 
+                               capture_output=True, text=True, env=env, timeout=timeout_seconds)
+        
         if result.returncode == 0:
-            print(f"{Colors.GREEN}  ✅ nuclei installed successfully{Colors.END}")
+            print(f"{Colors.GREEN}  ✅ nuclei v{specific_version} installed successfully (reduced dependencies){Colors.END}")
             return True
         else:
             print(f"{Colors.RED}  ❌ nuclei install failed (exit {result.returncode}){Colors.END}")
@@ -772,14 +787,15 @@ def install_security_tools_complete(distro: str) -> bool:
                 print(f"{Colors.RED}❌ System dependencies check failed after recovery attempt{Colors.END}")
                 print(f"{Colors.WHITE}Manual intervention may be required{Colors.END}")
                 return False
-          # Verify Go tools prerequisites (libpcap-dev now guaranteed from Stage 1)
+        
+        # Verify Go tools prerequisites (libpcap-dev now guaranteed from Stage 1)
         if not verify_go_tools_prerequisites():
             print(f"{Colors.RED}❌ Go tools prerequisites not met{Colors.END}")
             return False
         
         tools = {
-            'naabu': 'github.com/projectdiscovery/naabu/v2/cmd/naabu@latest',
-            'httpx': 'github.com/projectdiscovery/httpx/cmd/httpx@latest', 
+            'naabu': 'github.com/projectdiscovery/naabu/v2/cmd/naabu@v2.1.8',
+            'httpx': 'github.com/projectdiscovery/httpx/cmd/httpx@v1.3.7', 
             'nuclei': 'github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest'
         }
         
@@ -803,8 +819,9 @@ def install_security_tools_complete(distro: str) -> bool:
                     env['CGO_ENABLED'] = '1'
                     env['GO111MODULE'] = 'on'
                     env['GOPROXY'] = 'https://proxy.golang.org,direct'
+                    env['GOFLAGS'] = '-ldflags="-s -w"'  # Add this line to reduce binary size
                     timeout_seconds = 600 if tool == 'naabu' else 450
-                    if run_with_timeout(['go', 'install', '-v', repo], timeout_seconds, f"Installing {tool} (timeout: {timeout_seconds//60}min)", allow_warnings=False):
+                    if run_with_timeout(['go', 'install', '-v', '-trimpath', repo], timeout_seconds, f"Installing {tool} (timeout: {timeout_seconds//60}min)", allow_warnings=False):
                         gopath = subprocess.run(['go', 'env', 'GOPATH'], capture_output=True, text=True, check=True).stdout.strip()
                         gobin = os.path.join(gopath, 'bin')
                         tool_path = os.path.join(gobin, tool)
