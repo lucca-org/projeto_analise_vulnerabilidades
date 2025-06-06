@@ -11,8 +11,8 @@ import subprocess
 import datetime
 from pathlib import Path
 
-# Add parent directory to path for imports
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Add current directory to path for imports
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Try to import utils for tool detection
 try:
@@ -309,7 +309,7 @@ def run_scan(scan_type, target, **kwargs):
     print("=" * 60)
     
     try:
-        # Run the scan
+        # Run the scan from root directory
         result = subprocess.run(cmd, cwd=os.getcwd())
         
         print("\n" + "=" * 60)
@@ -457,7 +457,7 @@ def show_help():
     print("  • docs/INSTALL.md - Installation instructions")
     print()
     print("🚀 GETTING STARTED:")
-    print("  • Run: python mtscan.py")
+    print("  • Run: python MTScan.py")
     print("  • Or: python src/workflow.py <target>")
     print()
     print("🌐 EXAMPLES:")

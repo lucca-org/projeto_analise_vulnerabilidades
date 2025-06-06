@@ -1180,17 +1180,20 @@ def print_success_message():
     print(f"{Colors.BOLD}{Colors.GREEN}🎉 INSTALLATION COMPLETED SUCCESSFULLY! 🎉{Colors.END}")
     print(f"{Colors.GREEN}{'='*80}{Colors.END}")
     print(f"{Colors.WHITE}🚀 Your Linux Vulnerability Analysis Toolkit is ready!{Colors.END}")
-    print(f"\n{Colors.CYAN}Important - Add Go tools to PATH:{Colors.END}")
+    print(f"\n{Colors.CYAN}CRITICAL - Add Go tools to PATH (Required):{Colors.END}")
     print(f"{Colors.WHITE}  export PATH=$PATH:~/go/bin{Colors.END}")
-    print(f"{Colors.WHITE}  # Or add to ~/.bashrc for permanent access{Colors.END}")
+    print(f"{Colors.WHITE}  # For permanent access, add to ~/.bashrc:{Colors.END}")
     print(f"{Colors.WHITE}  echo 'export PATH=$PATH:~/go/bin' >> ~/.bashrc{Colors.END}")
+    print(f"{Colors.YELLOW}  💡 Without this, naabu and nuclei won't be found!{Colors.END}")
     print(f"\n{Colors.CYAN}Next Steps:{Colors.END}")
-    print(f"{Colors.WHITE}1. Navigate to the project directory{Colors.END}")
-    print(f"{Colors.WHITE}2. Run a scan: python3 src/workflow.py <target>{Colors.END}")
-    print(f"{Colors.WHITE}3. Check config/optimized_config.json for settings{Colors.END}")
-    print(f"{Colors.WHITE}4. Source config/vat_aliases.sh for shortcuts{Colors.END}")
-    print(f"{Colors.WHITE}  python3 src/workflow.py example.com{Colors.END}")
-    print(f"{Colors.WHITE}  python3 src/workflow.py 192.168.1.0/24{Colors.END}")
+    print(f"{Colors.WHITE}1. Run: export PATH=$PATH:~/go/bin{Colors.END}")
+    print(f"{Colors.WHITE}2. Navigate to the project directory{Colors.END}")
+    print(f"{Colors.WHITE}3. Test: python MTScan.py{Colors.END}")
+    print(f"{Colors.WHITE}4. Run scans: python src/workflow.py <target>{Colors.END}")
+    print(f"{Colors.WHITE}5. Check config/optimized_config.json for settings{Colors.END}")
+    print(f"\n{Colors.CYAN}Example Usage:{Colors.END}")
+    print(f"{Colors.WHITE}  python src/workflow.py example.com{Colors.END}")
+    print(f"{Colors.WHITE}  python src/workflow.py 192.168.1.0/24{Colors.END}")
     print(f"\n{Colors.GREEN}{'='*80}{Colors.END}")
 
 def check_disk_space(min_gb: float = 2.0) -> bool:
@@ -1282,14 +1285,20 @@ def main():
             if response in ['', 'y', 'yes']:
                 print("\n🚀 Launching MTScan...")
                 print("=" * 40)
-                # Change to the parent directory and launch MTScan
+                print(f"{Colors.YELLOW}Note: If tools show as 'Not installed', run: export PATH=$PATH:~/go/bin{Colors.END}")
+                # Change to the parent directory and launch MTScan from root
                 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                os.chdir(parent_dir)
-                subprocess.run(["python", "mtscan.py"])
+                mtscan_path = os.path.join(parent_dir, "MTScan.py")
+                if os.path.exists(mtscan_path):
+                    subprocess.run(["python", mtscan_path], cwd=parent_dir)
+                else:
+                    print("❌ Could not find MTScan.py. Please run it manually.")
             else:
-                print("\n✨ Setup complete! Run 'python mtscan.py' when ready.")
+                print("\n✨ Setup complete! Run 'python MTScan.py' when ready.")
+                print(f"{Colors.YELLOW}Remember: export PATH=$PATH:~/go/bin{Colors.END}")
         except KeyboardInterrupt:
-            print("\n\n✨ Setup complete! Run 'python mtscan.py' when ready.")
+            print("\n\n✨ Setup complete! Run 'python MTScan.py' when ready.")
+            print(f"{Colors.YELLOW}Remember: export PATH=$PATH:~/go/bin{Colors.END}")
         
         return True
         
