@@ -17,6 +17,7 @@ import traceback
 from typing import Optional, Dict, List, Any, Union, Tuple
 import socket
 import subprocess
+import importlib
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -612,14 +613,17 @@ def check_tool_availability(tool_name, common_paths=None):
         try:
             # Run with --version or -version to check if it works
             for flag in ["--version", "-version", "-v", "--help", "-h"]:
-                result = subprocess.run(
-                    [path_result, flag], 
-                    stdout=subprocess.PIPE, 
-                    stderr=subprocess.PIPE,
-                    timeout=5
-                )
-                if result.returncode == 0:
-                    return True, path_result
+                try:
+                    result = subprocess.run(
+                        [path_result, flag], 
+                        stdout=subprocess.PIPE, 
+                        stderr=subprocess.PIPE,
+                        timeout=5
+                    )
+                    if result.returncode == 0:
+                        return True, path_result
+                except:
+                    continue
         except (subprocess.SubprocessError, OSError, FileNotFoundError):
             # Tool exists but might not be working properly
             pass
@@ -631,30 +635,368 @@ def check_tool_availability(tool_name, common_paths=None):
             try:
                 # Try to run the tool to verify it works
                 for flag in ["--version", "-version", "-v", "--help", "-h"]:
-                    result = subprocess.run(
-                        [expanded_path, flag], 
-                        stdout=subprocess.PIPE, 
-                        stderr=subprocess.PIPE,
-                        timeout=5
-                    )
-                    if result.returncode == 0:
-                        return True, expanded_path
+                    try:
+                        result = subprocess.run(
+                            [expanded_path, flag], 
+                            stdout=subprocess.PIPE, 
+                            stderr=subprocess.PIPE,
+                            timeout=5
+                        )
+                        if result.returncode == 0:
+                            return True, expanded_path
+                    except:
+                        continue
             except (subprocess.SubprocessError, OSError, FileNotFoundError):
                 # Tool exists but might not be working properly
                 continue
     
+    # Special case for when tools are installed in root's go/bin but script is run as normal user
+    root_paths = [
+        f"/root/go/bin/{tool_name}"
+    ]
+    
+    for path in root_paths:
+        if os.path.isfile(path):
+            print(f"  ⚠️  {tool_name} found at {path} but not accessible as current user.")
+            print(f"     Try: sudo ln -s {path} /usr/local/bin/{tool_name}")
+            break
+    
     return False, None
+
+def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> bool:
+    """
+    Run individual tool based on command line flag (only one tool at a time).
+    
+    Args:
+        args: Parsed command line arguments
+        tool_paths: Dictionary of detected tool paths
+        output_dir: Output directory for results
+        
+    Returns:
+        bool: True if the selected tool ran successfully
+    """
+    success = True
+    target = args.host or args.target
+    
+    if not target:
+        print("[-] No target specified. Use -host or provide target as positional argument.")
+        return False
+    
+    # Count how many tools are selected
+    tools_selected = sum([args.naabu, args.httpx, args.nuclei])
+    if tools_selected == 0:
+        print("[-] No tool selected. Use -naabu, -httpx, or -nuclei flag.")
+        return False
+    elif tools_selected > 1:
+        print("[-] Only one tool can be run at a time. Please select either -naabu, -httpx, or -nuclei.")
+        return False
+    
+    print(f"[+] Running selected tool on target: {target}")
+    print(f"[+] Results will be saved to: {output_dir}")
+    
+    # Run naabu if requested
+    if args.naabu:
+        print(f"\n[+] Starting naabu port scan...")
+        ports_output = os.path.join(output_dir, "ports.txt")
+        ports_json = os.path.join(output_dir, "ports.json")
+        
+        # Add custom naabu arguments
+        if args.ports:
+            ports_to_scan = args.ports
+        else:
+            ports_to_scan = "top-1000"  # Default
+        
+        # Build naabu arguments for real-time output
+        naabu_args = ["-v"]  # Always verbose for real-time updates
+        
+        if args.json_output:
+            naabu_args.extend(["-json", "-o", ports_json])
+            
+        # Add stealth mode settings if enabled
+        if args.stealth:
+            naabu_args.extend([
+                "-rate", "10",
+                "-c", "25", 
+                "-scan-type", "syn",
+                "-retries", "1"
+            ])
+        else:
+            # Normal speed settings for better real-time feedback
+            naabu_args.extend([
+                "-rate", "1000",
+                "-c", "50"
+            ])
+        
+        print(f"[+] Scanning ports: {ports_to_scan}")
+        print(f"[+] Output file: {ports_output}")
+        print(f"[+] Command: naabu -host {target} -p {ports_to_scan} -o {ports_output}")
+        print(f"[+] Scan starting...")
+        
+        naabu_success = naabu.run_naabu(
+            target=target,
+            ports=ports_to_scan,
+            output_file=ports_output,
+            json_output=args.json_output,
+            silent=False,  # Never silent for real-time updates
+            additional_args=naabu_args
+        )
+        
+        print(f"\n[+] Naabu scan completed!")
+        
+        if naabu_success:
+            # Check if output file was created and has content
+            if os.path.exists(ports_output):
+                file_size = os.path.getsize(ports_output)
+                if file_size > 0:
+                    print(f"[+] Results saved to {ports_output} ({file_size} bytes)")
+                    # Show all results
+                    try:
+                        with open(ports_output, 'r') as f:
+                            lines = f.readlines()
+                            if lines:
+                                print(f"[+] Found {len(lines)} open ports:")
+                                for line in lines:
+                                    print(f"    🟢 {line.strip()}")
+                            else:
+                                print("[!] No open ports found")
+                    except Exception as e:
+                        print(f"[!] Could not read output file: {e}")
+                        success = False
+                else:
+                    print("[!] No open ports found")
+            else:
+                print("[!] Naabu output file was not created")
+                success = False
+        else:
+            print("[-] Naabu scan failed.")
+            success = False
+    
+    # Run httpx if requested
+    elif args.httpx:
+        print(f"\n[+] Starting httpx service detection...")
+        
+        http_output = os.path.join(output_dir, "http_services.txt")
+        http_json = os.path.join(output_dir, "http_services.json")
+        
+        # Determine what to scan
+        httpx_input = target
+        print(f"[+] Target: {httpx_input}")
+        
+        # Build httpx arguments for real-time output
+        httpx_args = ["-v"]  # Always verbose for real-time updates
+        
+        if args.json_output:
+            httpx_args.extend(["-json", "-o", http_json])
+            
+        # Add stealth mode settings if enabled
+        if args.stealth:
+            httpx_args.extend([
+                "-rate-limit", "5",
+                "-retries", "1",
+                "-timeout", "10",
+                "-delay", "5s"
+            ])
+        else:
+            # Normal speed settings
+            httpx_args.extend([
+                "-rate-limit", "150",
+                "-timeout", "5"
+            ])
+        
+        print(f"[+] Output file: {http_output}")
+        print(f"[+] Command: httpx -u {target} -o {http_output}")
+        print(f"[+] Scan starting...")
+        
+        httpx_success = httpx.run_httpx(
+            target_list=httpx_input,
+            output_file=http_output,
+            title=True,
+            status_code=True,
+            tech_detect=not args.stealth,  # Disable tech detect in stealth mode
+            web_server=not args.stealth,   # Disable web server detect in stealth mode
+            follow_redirects=True,
+            silent=False,  # Never silent for real-time updates
+            additional_args=httpx_args
+        )
+        
+        print(f"\n[+] HTTPX scan completed!")
+        
+        if httpx_success:
+            # Check if output file was created and has content
+            if os.path.exists(http_output):
+                file_size = os.path.getsize(http_output)
+                if file_size > 0:
+                    print(f"[+] Results saved to {http_output} ({file_size} bytes)")
+                    # Show all results
+                    try:
+                        with open(http_output, 'r') as f:
+                            lines = f.readlines()
+                            if lines:
+                                print(f"[+] Found {len(lines)} HTTP services:")
+                                for line in lines:
+                                    print(f"    🌐 {line.strip()}")
+                            else:
+                                print("[!] No HTTP services found")
+                    except Exception as e:
+                        print(f"[!] Could not read output file: {e}")
+                        success = False
+                else:
+                    print("[!] No HTTP services found")
+            else:
+                print("[!] HTTPX output file was not created")
+                success = False
+        else:
+            print("[-] HTTPX scan failed.")
+            success = False
+    
+    # Run nuclei if requested
+    elif args.nuclei:
+        print(f"\n[+] Starting nuclei vulnerability scan...")
+        
+        vuln_output = os.path.join(output_dir, "vulnerabilities.txt")
+        vuln_json = os.path.join(output_dir, "vulnerabilities.jsonl")
+        
+        # Determine what to scan
+        nuclei_input = target
+        print(f"[+] Target: {nuclei_input}")
+        
+        # Create output directory for storing responses
+        nuclei_resp_dir = os.path.join(output_dir, "nuclei_responses")
+        create_directory_if_not_exists(nuclei_resp_dir)
+        
+        # Build nuclei arguments for real-time output
+        nuclei_args = ["-v", "-irr", "-stats"]  # Always verbose for real-time updates
+        
+        if args.json_output:
+            nuclei_args.extend(["-jsonl", "-o", vuln_json])
+        
+        nuclei_args.extend(["-me", nuclei_resp_dir])
+        
+        # Add stealth mode settings if enabled
+        if args.stealth:
+            nuclei_args.extend([
+                "-rate-limit", "5",
+                "-bulk-size", "5",
+                "-concurrency", "5",
+                "-timeout", "5",
+                "-retries", "1",
+                "-exclude-tags", "fuzzing,dos,brute-force"
+            ])
+        else:
+            # Normal speed settings
+            nuclei_args.extend([
+                "-rate-limit", "150",
+                "-bulk-size", "25",
+                "-concurrency", "25"
+            ])
+        
+        print(f"[+] Output file: {vuln_output}")
+        print(f"[+] Scanning with tags: {args.tags}")
+        print(f"[+] Severity filter: {args.severity}")
+        print(f"[+] Command: nuclei -target {target} -tags {args.tags} -severity {args.severity} -o {vuln_output}")
+        print(f"[+] Scan starting...")
+        
+        nuclei_success = nuclei.run_nuclei(
+            target_list=nuclei_input,
+            templates=args.templates,
+            tags=args.tags,
+            severity=args.severity,
+            output_file=vuln_output,
+            jsonl=args.json_output,
+            store_resp=True,
+            silent=False,  # Never silent for real-time updates
+            additional_args=nuclei_args
+        )
+        
+        print(f"\n[+] Nuclei scan completed!")
+        
+        if nuclei_success:
+            # Check if output file was created and has content
+            if os.path.exists(vuln_output):
+                file_size = os.path.getsize(vuln_output)
+                if file_size > 0:
+                    print(f"[+] Results saved to {vuln_output} ({file_size} bytes)")
+                    # Show all results
+                    try:
+                        with open(vuln_output, 'r') as f:
+                            lines = f.readlines()
+                            if lines:
+                                print(f"[+] Found {len(lines)} vulnerabilities:")
+                                for line in lines:
+                                    print(f"    🚨 {line.strip()}")
+                            else:
+                                print("[+] No vulnerabilities found - this is good!")
+                    except Exception as e:
+                        print(f"[!] Could not read output file: {e}")
+                        success = False
+                else:
+                    print("[+] No vulnerabilities found - this is good!")
+            else:
+                print("[!] Nuclei output file was not created")
+                success = False
+        else:
+            print("[-] Nuclei scan failed.")
+            success = False
+    
+    # Generate summary for the single tool that was run
+    print(f"\n[+] Generating summary...")
+    summary_success = generate_basic_summary_report(output_dir, target)
+    if summary_success:
+        summary_file = os.path.join(output_dir, "summary.txt")
+        print(f"[+] Summary report generated: {summary_file}")
+        # Show the summary
+        try:
+            with open(summary_file, 'r') as f:
+                print("\n" + "="*60)
+                print(f.read())
+                print("="*60)
+        except Exception as e:
+            print(f"[!] Could not display summary: {e}")
+    else:
+        print("[-] Summary generation failed.")
+    
+    # Always show final results location
+    print(f"\n[+] All results saved in directory: {output_dir}")
+    if os.path.exists(output_dir):
+        print("[+] Directory contents:")
+        try:
+            for item in os.listdir(output_dir):
+                item_path = os.path.join(output_dir, item)
+                if os.path.isfile(item_path):
+                    size = os.path.getsize(item_path)
+                    print(f"    📄 {item} ({size} bytes)")
+                elif os.path.isdir(item_path):
+                    print(f"    📁 {item}/")
+        except Exception as e:
+            print(f"[!] Could not list directory contents: {e}")
+    
+    return success
 
 def main():
     """Main entry point for the vulnerability scanning workflow."""
     parser = argparse.ArgumentParser(description='Automated vulnerability scanning workflow')
-    parser.add_argument('target', help='Target to scan (IP or domain)')
-    parser.add_argument('-p', '--ports', help='Ports to scan (e.g., 80,443,8000-9000)')
+    
+    # Target specification
+    parser.add_argument('target', nargs='?', help='Target to scan (IP or domain)')
+    parser.add_argument('-host', '--host', help='Target host to scan (alternative to positional target)')
+    
+    # Tool selection flags (only one allowed at a time)
+    parser.add_argument('-naabu', '--naabu', action='store_true', help='Run naabu port scanner')
+    parser.add_argument('-httpx', '--httpx', action='store_true', help='Run httpx service detection')
+    parser.add_argument('-nuclei', '--nuclei', action='store_true', help='Run nuclei vulnerability scanner')
+    
+    # Tool-specific options
+    parser.add_argument('-p', '--ports', help='Ports to scan with naabu (e.g., 80,443,8000-9000)')
     parser.add_argument('-t', '--templates', help='Custom nuclei templates (default: uses built-in templates)')
     parser.add_argument('--tags', default='cve', help='Nuclei template tags (default: cve)')
     parser.add_argument('--severity', default='critical,high', help='Vulnerability severity filter (default: critical,high)')
+    
+    # Output options
     parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbose output')
     parser.add_argument('-o', '--output-dir', help='Custom output directory')
+    parser.add_argument('--json-output', action='store_true', help='Enable JSON output for all tools')
+    
+    # Workflow options
     parser.add_argument('--update-templates', action='store_true', help='Update nuclei templates before scanning')
     parser.add_argument('--timeout', type=int, default=3600, help='Maximum scan time in seconds (default: 3600)')
     parser.add_argument('--report-only', help='Generate report for existing results directory')
@@ -689,6 +1031,20 @@ def main():
     
     args = parser.parse_args()
     
+    # Determine target
+    target = args.host or args.target
+    if not target and not args.report_only:
+        print("[-] No target specified. Use -host <target> or provide target as positional argument.")
+        print("\nExamples (one tool at a time):")
+        print("  sudo python src/workflow.py -naabu -host 192.168.0.5")
+        print("  sudo python src/workflow.py -httpx -host example.com")
+        print("  sudo python src/workflow.py -nuclei -host https://example.com")
+        print("  sudo python src/workflow.py 192.168.0.5  # Full scan (traditional mode)")
+        print("\nFor verbose output, add -v flag:")
+        print("  sudo python src/workflow.py -naabu -host 192.168.0.5 -v")
+        print("\nNote: Only one tool can be run at a time in individual mode.")
+        sys.exit(1)
+
     # If only generating a report for existing results
     if args.report_only:
         if not os.path.isdir(args.report_only):
@@ -698,7 +1054,7 @@ def main():
         print(f"[+] Generating report for existing results in {args.report_only}")
         
         if REPORTER_AVAILABLE:
-            success = generate_report(args.report_only, args.target)
+            success = generate_report(args.report_only, target or "unknown")
             if success:
                 print("[+] Report generated successfully!")
                 sys.exit(0)
@@ -706,7 +1062,7 @@ def main():
                 print("[-] Report generation failed.")
                 sys.exit(1)
         else:
-            success = generate_basic_summary_report(args.report_only, args.target)
+            success = generate_basic_summary_report(args.report_only, target or "unknown")
             if success:
                 print("[+] Basic summary report generated successfully!")
                 sys.exit(0)
@@ -724,6 +1080,9 @@ def main():
     
     print("[+] Checking required tools...")
     
+    # Dictionary to store detected tool paths
+    tool_paths = {}
+    
     # Check naabu with common paths
     naabu_paths = [
         "/usr/bin/naabu",
@@ -735,24 +1094,42 @@ def main():
     naabu_ok, naabu_path = check_tool_availability("naabu", naabu_paths)
     if naabu_ok:
         print(f"  ✅ naabu: Available at {naabu_path}")
+        tool_paths['naabu'] = naabu_path
     else:
         print("  ❌ naabu: Not found. Required for port scanning.")
-        tools_found = False
+        if args.naabu:
+            tools_found = False
     
-    # Check httpx with common paths
+    # Check httpx with common paths (both system and Go installations)
     httpx_paths = [
-        "/usr/bin/httpx",
-        "/usr/local/bin/httpx",
-        "/root/go/bin/httpx",
-        "~/go/bin/httpx",
-        f"{os.path.expanduser('~')}/go/bin/httpx"
+        "/usr/bin/httpx",           # Kali Linux system package
+        "/usr/local/bin/httpx",     # System-wide installation
+        "/root/go/bin/httpx",       # Go installation (root)
+        "~/go/bin/httpx",           # Go installation (user)
+        f"{os.path.expanduser('~')}/go/bin/httpx",  # Go installation (expanded user)
+        "/snap/bin/httpx",          # Snap package
+        "/opt/httpx/httpx"          # Custom installation
     ]
     httpx_ok, httpx_path = check_tool_availability("httpx", httpx_paths)
     if httpx_ok:
         print(f"  ✅ httpx: Available at {httpx_path}")
+        tool_paths['httpx'] = httpx_path
     else:
         print("  ❌ httpx: Not found or not working. Required for HTTP service detection.")
-        tools_found = False
+        # Additional check specifically for Kali Linux httpx
+        kali_httpx_paths = [
+            "/usr/bin/httpx-toolkit",
+            "/usr/local/bin/httpx-toolkit"
+        ]
+        for kali_path in kali_httpx_paths:
+            if os.path.exists(kali_path) and os.access(kali_path, os.X_OK):
+                print(f"  💡 Found alternative httpx at {kali_path}")
+                tool_paths['httpx'] = kali_path
+                httpx_ok = True
+                break
+        
+        if not httpx_ok and args.httpx:
+            tools_found = False
     
     # Check nuclei with common paths
     nuclei_paths = [
@@ -765,19 +1142,40 @@ def main():
     nuclei_ok, nuclei_path = check_tool_availability("nuclei", nuclei_paths)
     if nuclei_ok:
         print(f"  ✅ nuclei: Available at {nuclei_path}")
+        tool_paths['nuclei'] = nuclei_path
     else:
         print("  ❌ nuclei: Not found. Required for vulnerability scanning.")
-        tools_found = False
+        if args.nuclei:
+            tools_found = False
+    
+    # Determine if we're in individual tool mode or full scan mode
+    individual_mode = args.naabu or args.httpx or args.nuclei
     
     if not tools_found and not args.force_tools:
         print("[-] One or more required tools are not installed or not working correctly.")
         print("[*] Please run the setup script: python install/setup.py")
+        
+        # Add guidance for tools in root's directory
+        if os.path.isfile("/root/go/bin/naabu") or os.path.isfile("/root/go/bin/nuclei"):
+            print("\n[!] Tools appear to be installed in /root/go/bin/ but aren't accessible to your user.")
+            print("    You can fix this with the following commands:")
+            if os.path.isfile("/root/go/bin/naabu"):
+                print("    sudo ln -s /root/go/bin/naabu /usr/local/bin/naabu")
+            if os.path.isfile("/root/go/bin/nuclei"):
+                print("    sudo ln -s /root/go/bin/nuclei /usr/local/bin/nuclei")
+            if os.path.isfile("/root/go/bin/httpx"):
+                print("    sudo ln -s /root/go/bin/httpx /usr/local/bin/httpx")
+            print("    Or run the script with sudo: sudo python src/workflow.py [arguments]")
+        
         print("[*] Or use --force-tools to continue anyway (not recommended)")
         sys.exit(1)
     elif not tools_found and args.force_tools:
         print("[!] Continuing with missing tools (--force-tools enabled). Expect errors!")
     else:
-        print("[+] All required tools are installed.")
+        if individual_mode:
+            print(f"[+] Required tool for selected mode is available.")
+        else:
+            print("[+] All required tools are installed.")
     
     # Update nuclei templates if requested
     if args.update_templates:
@@ -788,8 +1186,20 @@ def main():
     # Create output directory
     output_dir = args.output_dir
     if not output_dir:
-        target_name = args.target.replace('https://', '').replace('http://', '').replace('/', '_').replace(':', '_')
-        output_dir = create_output_directory(target_name)
+        target_name = target.replace('https://', '').replace('http://', '').replace('/', '_').replace(':', '_')
+        if individual_mode:
+            # Create mode-specific directory name for single tool
+            if args.naabu:
+                tool_name = "naabu"
+            elif args.httpx:
+                tool_name = "httpx"
+            elif args.nuclei:
+                tool_name = "nuclei"
+            else:
+                tool_name = "unknown"
+            output_dir = create_output_directory(f"{target_name}_{tool_name}")
+        else:
+            output_dir = create_output_directory(target_name)
     
     if not output_dir:
         print("[-] Failed to create output directory. Exiting.")
@@ -810,22 +1220,75 @@ def main():
         except Exception as e:
             print(f"[-] Error loading custom configuration: {e}")
     
-    # Run the full scan
+    # Configure tool paths
     try:
-        success = run_full_scan(
-            target=args.target,
-            output_dir=output_dir,
-            ports=args.ports,
-            templates=args.templates,
-            tags=args.tags,
-            severity=args.severity,
-            verbose=args.verbose,
-            timeout=args.timeout,
-            auto_config=args.auto_config,
-            scan_code=args.scan_code,
-            custom_config=custom_config,
-            stealth=args.stealth
-        )
+        if 'naabu' in tool_paths and tool_paths['naabu']:
+            naabu_module = importlib.import_module('commands.naabu')
+            naabu_path = tool_paths['naabu']
+            if hasattr(naabu_module, 'set_naabu_path'):
+                naabu_module.set_naabu_path(naabu_path)
+            else:
+                os.environ['NAABU_PATH'] = naabu_path
+                setattr(naabu_module, 'NAABU_PATH', naabu_path)
+            print(f"[+] Configured naabu path: {naabu_path}")
+        
+        if 'httpx' in tool_paths and tool_paths['httpx']:
+            httpx_module = importlib.import_module('commands.httpx')
+            httpx_path = tool_paths['httpx']
+            if hasattr(httpx_module, 'set_httpx_path'):
+                httpx_module.set_httpx_path(httpx_path)
+            else:
+                os.environ['HTTPX_PATH'] = httpx_path
+                setattr(httpx_module, 'HTTPX_PATH', httpx_path)
+            print(f"[+] Configured httpx path: {httpx_path}")
+        
+        if 'nuclei' in tool_paths and tool_paths['nuclei']:
+            nuclei_module = importlib.import_module('commands.nuclei')
+            nuclei_path = tool_paths['nuclei']
+            if hasattr(nuclei_module, 'set_nuclei_path'):
+                nuclei_module.set_nuclei_path(nuclei_path)
+            else:
+                os.environ['NUCLEI_PATH'] = nuclei_path
+                setattr(nuclei_module, 'NUCLEI_PATH', nuclei_path)
+            print(f"[+] Configured nuclei path: {nuclei_path}")
+    
+    except Exception as e:
+        print(f"[!] Warning: Could not configure tool paths: {e}")
+        if args.verbose:
+            traceback.print_exc()
+    
+    # Also set the paths in the custom_config to ensure they're used
+    if not custom_config:
+        custom_config = {}
+    
+    if 'tool_paths' not in custom_config:
+        custom_config['tool_paths'] = {}
+    
+    # Only update with non-None paths
+    valid_tool_paths = {k: v for k, v in tool_paths.items() if v is not None}
+    custom_config['tool_paths'].update(valid_tool_paths)
+    
+    # Run the scan
+    try:
+        if individual_mode:
+            # Run individual tools mode
+            success = run_individual_tools(args, tool_paths, output_dir)
+        else:
+            # Run full scan mode (traditional)
+            success = run_full_scan(
+                target=target,
+                output_dir=output_dir,
+                ports=args.ports,
+                templates=args.templates,
+                tags=args.tags,
+                severity=args.severity,
+                verbose=args.verbose,
+                timeout=args.timeout,
+                auto_config=args.auto_config,
+                scan_code=args.scan_code,
+                custom_config=custom_config,
+                stealth=args.stealth
+            )
         
         if not success:
             print("[-] Scan workflow completed with some issues. Review the output for details.")
@@ -835,10 +1298,34 @@ def main():
         sys.exit(130)  # Standard exit code for SIGINT
     except Exception as e:
         print(f"[-] An unexpected error occurred: {str(e)}")
+        if args.verbose:
+            traceback.print_exc()
         sys.exit(1)
     
     print("[+] Scan completed successfully!")
+    
+    # Ask if user wants to return to MTScan menu
+    try:
+        response = input("\n🎯 Return to MTScan menu? [Y/n]: ").strip().lower()
+        if response in ['', 'y', 'yes']:
+            print("\n🚀 Launching MTScan menu...")
+            # Get the correct path to mtscan.py (should be in parent directory)
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            parent_dir = os.path.dirname(script_dir)
+            mtscan_path = os.path.join(parent_dir, "mtscan.py")
+            
+            if os.path.exists(mtscan_path):
+                subprocess.run(["python", mtscan_path], cwd=parent_dir)
+            else:
+                # Fallback: try to find mtscan.py in current working directory
+                if os.path.exists("mtscan.py"):
+                    subprocess.run(["python", "mtscan.py"])
+                else:
+                    print("❌ Could not find mtscan.py. Please run it manually.")
+    except KeyboardInterrupt:
+        pass
+    except Exception as e:
+        print(f"[!] Could not return to MTScan menu: {e}")
+        print("💡 You can manually run: python mtscan.py")
+    
     sys.exit(0)
-
-if __name__ == "__main__":
-    main()

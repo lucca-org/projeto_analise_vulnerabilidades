@@ -4,21 +4,63 @@ reporter.py - Generate comprehensive security reports from scan results
 """
 
 import os
+import sys
 import json
+import logging
 import datetime
-import shutil
-from pathlib import Path
+from typing import Dict, List, Any, Optional
+import tempfile
+import platform
+import getpass
 import re
 import traceback
-import logging
-from typing import Dict, List, Any, Optional, Union
+import shutil
 
 # Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-logger = logging.getLogger('reporter')
+current_user = getpass.getuser()
+log_directory = os.path.join(tempfile.gettempdir(), f"vulnerability_scan_{current_user}")
+log_file = os.path.join(log_directory, "vulnerability_reporter.log")
+
+# Create a logger instance
+logger = logging.getLogger(__name__)
+
+# Create user-specific log directory with appropriate permissions
+try:
+    if not os.path.exists(log_directory):
+        os.makedirs(log_directory, exist_ok=True)
+        # Set appropriate permissions for the directory
+        if platform.system() == "Linux":
+            import stat
+            os.chmod(log_directory, stat.S_IRWXU)  # Read, write, execute for user only
+except Exception as e:
+    print(f"Warning: Could not create log directory: {e}")
+    # Fallback to current directory
+    log_directory = os.path.abspath("logs")
+    if not os.path.exists(log_directory):
+        os.makedirs(log_directory, exist_ok=True)
+    log_file = os.path.join(log_directory, "vulnerability_reporter.log")
+
+# Configure logging with error handling
+try:
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler(),
+        ]
+    )
+    
+    # Try to add a file handler, but continue without it if permissions are an issue
+    try:
+        file_handler = logging.FileHandler(log_file)
+        file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+        logging.getLogger().addHandler(file_handler)
+    except (PermissionError, IOError) as e:
+        print(f"Warning: Could not create log file {log_file}: {e}")
+        print("Continuing without file logging...")
+        
+except Exception as e:
+    print(f"Warning: Error setting up logging: {e}")
 
 # Import modules with fallback handling
 try:
@@ -92,23 +134,10 @@ except ImportError:
     console = None
     logger.warning("Rich library not available. Install: pip install rich")
 
-import tempfile
 import csv
 import base64
 import hashlib
 import xml.etree.ElementTree as ET
-
-# Update logging configuration to be Windows-compatible
-log_file = os.path.join(tempfile.gettempdir(), 'vulnerability_reporter.log')
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler(),
-        logging.FileHandler(log_file)
-    ],
-    force=True
-)
 
 
 class AdvancedReporter:

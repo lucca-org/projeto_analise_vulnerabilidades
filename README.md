@@ -374,3 +374,144 @@ nuclei -target example.com -t cves/
 ## License
 
 This project is licensed under the MIT License - see the LICENSE file for details.
+
+## Usage Modes
+
+### Individual Tool Mode
+Perfect for targeted assessments or when you only need specific functionality:
+
+- **Port Scanning Only**: `-naabu -host <target>`
+- **HTTP Service Discovery**: `-httpx -host <target>`
+- **Vulnerability Assessment**: `-nuclei -host <target>`
+
+### Combined Tool Mode
+Run multiple tools in sequence with automatic result chaining:
+
+- **naabu → nuclei**: Port scan followed by vulnerability assessment
+- **httpx → nuclei**: HTTP discovery followed by vulnerability scanning
+- **naabu → httpx → nuclei**: Complete chain with all tools
+
+### Full Workflow Mode
+Traditional mode that runs all tools automatically:
+```bash
+sudo python src/workflow.py <target>
+```
+
+## 🔧 Tool Configuration
+
+The toolkit automatically detects tool installations in common locations:
+
+### naabu
+- `/usr/bin/naabu`
+- `/usr/local/bin/naabu`
+- `/root/go/bin/naabu`
+- `~/go/bin/naabu`
+
+### httpx
+- `/usr/bin/httpx` (Kali Linux system package)
+- `/usr/local/bin/httpx`
+- `/root/go/bin/httpx`
+- `~/go/bin/httpx`
+
+### nuclei
+- `/usr/bin/nuclei`
+- `/usr/local/bin/nuclei`
+- `/root/go/bin/nuclei`
+- `~/go/bin/nuclei`
+
+## 📁 Output Structure
+
+Results are organized in timestamped directories:
+
+### Individual Tool Mode
+```
+results_<target>_<tools>_<timestamp>/
+├── ports.txt              # naabu results (if used)
+├── ports.json              # naabu JSON output
+├── http_services.txt       # httpx results (if used)
+├── http_services.json      # httpx JSON output
+├── vulnerabilities.txt     # nuclei results (if used)
+├── vulnerabilities.jsonl   # nuclei JSONL output
+├── nuclei_responses/       # HTTP responses (if nuclei used)
+└── summary.txt            # Executive summary
+```
+
+### Full Workflow Mode
+```
+results_<target>_<timestamp>/
+├── ports.txt
+├── ports.json
+├── http_services.txt
+├── http_services.json
+├── vulnerabilities.txt
+├── vulnerabilities.jsonl
+├── nuclei_responses/
+├── code_vulnerabilities.md (if --scan-code used)
+└── summary.txt
+```
+
+## 🔍 Examples
+
+### Basic Port Scanning
+```bash
+# Quick port scan
+sudo python src/workflow.py -naabu -host 192.168.1.1
+
+# Custom ports
+sudo python src/workflow.py -naabu -host 192.168.1.1 -p "22,80,443,8080"
+
+# Top 100 ports only
+sudo python src/workflow.py -naabu -host 192.168.1.1 -p "top-100"
+```
+
+### HTTP Service Discovery
+```bash
+# Basic HTTP enumeration
+sudo python src/workflow.py -httpx -host example.com
+
+# From previous port scan results
+sudo python src/workflow.py -naabu -httpx -host 192.168.1.1
+```
+
+### Vulnerability Assessment
+```bash
+# Target-based scanning
+sudo python src/workflow.py -nuclei -host https://example.com
+
+# Chain with service discovery
+sudo python src/workflow.py -httpx -nuclei -host 192.168.1.1
+
+# Custom severity levels
+sudo python src/workflow.py -nuclei -host example.com --severity "critical,high"
+```
+
+### Complete Assessments
+```bash
+# Full automated scan
+sudo python src/workflow.py 192.168.1.1
+
+# Full scan with stealth mode
+sudo python src/workflow.py 192.168.1.1 -s
+
+# Comprehensive assessment with all options
+sudo python src/workflow.py -naabu -httpx -nuclei -host 192.168.1.1 -s -v --json-output
+```
+
+## 🤝 Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Test on multiple Linux distributions
+4. Submit a pull request
+
+## 📄 License
+
+This project is licensed under the MIT License. See LICENSE file for details.
+
+## ⚠️ Disclaimer
+
+This toolkit is designed for authorized security testing and research purposes only. Users are responsible for ensuring they have proper authorization before scanning any targets. The authors are not responsible for any misuse or damage caused by this software.
+
+---
+
+**Platform Support**: Linux Only | **Version**: 2.0 | **Last Updated**: 2024

@@ -977,38 +977,10 @@ def setup_python_environment() -> bool:
         print(f"{Colors.RED}❌ Python environment setup failed: {e}{Colors.END}")
         return False
 
-def run_setup_scripts() -> bool:
-    """Run additional setup scripts if they exist."""
-    try:
-        print(f"\n{Colors.BLUE}📜 Phase 5: Additional Setup Scripts{Colors.END}")
-        
-        script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        setup_script = os.path.join(script_dir, 'scripts', 'setup_tools.sh')
-        
-        if os.path.exists(setup_script):
-            print(f"{Colors.WHITE}Running setup_tools.sh...{Colors.END}")
-            
-            # Fix line endings and permissions
-            subprocess.run(['sed', '-i', 's/\r$//', setup_script], check=True)
-            os.chmod(setup_script, 0o755)
-            
-            # Run the script
-            subprocess.run(['bash', setup_script], check=True, cwd=script_dir,
-                          stdout=subprocess.DEVNULL)
-            print(f"{Colors.GREEN}✅ Additional setup completed{Colors.END}")
-        else:
-            print(f"{Colors.YELLOW}⚠️  setup_tools.sh not found, skipping{Colors.END}")
-        
-        return True
-        
-    except Exception as e:
-        print(f"{Colors.RED}❌ Setup scripts execution failed: {e}{Colors.END}")
-        return False
-
 def create_configuration_files() -> bool:
     """Create optimized configuration files."""
     try:
-        print(f"\n{Colors.BLUE}⚙️  Phase 6: Configuration Optimization{Colors.END}")
+        print(f"\n{Colors.BLUE}⚙️  Phase 4: Configuration Optimization{Colors.END}")
         
         script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         config_dir = os.path.join(script_dir, 'config')
@@ -1086,7 +1058,7 @@ alias vat-update="nuclei -update-templates"
 def final_verification() -> bool:
     """Comprehensive final verification."""
     try:
-        print(f"\n{Colors.BLUE}🔍 Phase 7: Final Verification{Colors.END}")
+        print(f"\n{Colors.BLUE}🔍 Phase 5: Final Verification{Colors.END}")
         
         tools_to_check = ['naabu', 'httpx', 'nuclei', 'go']
         all_good = True
@@ -1291,7 +1263,6 @@ def main():
             ("Minimal System Packages", lambda: install_system_packages(distro_config)),
             ("Go Environment", setup_go_environment_complete),
             ("Security Tools", lambda: install_security_tools_complete(distro)),
-            ("Setup Scripts", run_setup_scripts),
             ("Configuration", create_configuration_files),
             ("Final Verification", final_verification)
         ]
@@ -1304,6 +1275,22 @@ def main():
         
         # Success!
         print_success_message()
+        
+        # Auto-launch MTScan menu
+        try:
+            response = input("🎯 Launch MTScan interactive menu now? [Y/n]: ").strip().lower()
+            if response in ['', 'y', 'yes']:
+                print("\n🚀 Launching MTScan...")
+                print("=" * 40)
+                # Change to the parent directory and launch MTScan
+                parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+                os.chdir(parent_dir)
+                subprocess.run(["python", "mtscan.py"])
+            else:
+                print("\n✨ Setup complete! Run 'python mtscan.py' when ready.")
+        except KeyboardInterrupt:
+            print("\n\n✨ Setup complete! Run 'python mtscan.py' when ready.")
+        
         return True
         
     except KeyboardInterrupt:
