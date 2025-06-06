@@ -9,12 +9,13 @@ import sys
 import subprocess
 import platform
 from pathlib import Path
-from src.utils import verify_linux_platform
 
-# Add the project directory to the Python path
-project_dir = Path(__file__).parent
+# Add the project directory to the Python path (now moved to tests/ subdirectory)
+project_dir = Path(__file__).parent.parent  # Go up one level from tests/
 sys.path.insert(0, str(project_dir / "src"))
 sys.path.insert(0, str(project_dir / "commands"))
+
+from src.utils import verify_linux_platform
 
 # Color codes for terminal output
 class Colors:

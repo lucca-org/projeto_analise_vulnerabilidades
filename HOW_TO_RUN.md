@@ -26,7 +26,7 @@ sudo python3 install/setup.py
 ### **Step 2: Validation (Recommended)**
 ```bash
 # Verify everything is working correctly
-python3 validate_installation.py
+python3 tests/validate_installation.py
 ```
 **Expected Result:** 95.5% success rate (only fails on Windows - expected)
 
@@ -161,7 +161,7 @@ sudo apt update --allow-unauthenticated
 #### **6. Validation Failures**
 ```bash
 # Run comprehensive validation
-python3 validate_installation.py
+python3 tests/validate_installation.py
 
 # Expected: 95.5% success rate on Linux
 # Only expected failure: Platform check on Windows
@@ -172,7 +172,7 @@ python3 validate_installation.py
 # Clean installation and start fresh
 rm -rf ~/go/bin/{naabu,httpx,nuclei}
 sudo python3 install/setup.py
-python3 validate_installation.py
+python3 tests/validate_installation.py
 ```
 
 ---
@@ -198,7 +198,7 @@ python3 validate_installation.py
 
 ## 💡 Pro Tips
 
-1. **Always validate** after installation: `python3 validate_installation.py`
+1. **Always validate** after installation: `python3 tests/validate_installation.py`
 2. **Use verbose mode** for debugging: `--verbose`
 3. **Check output directory** for results after each scan
 4. **Run on dedicated security systems** (Kali Linux recommended)

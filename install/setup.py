@@ -719,6 +719,47 @@ def attempt_dependency_recovery(distro: str) -> bool:
         print(f"{Colors.RED}❌ Recovery attempt failed: {e}{Colors.END}")
         return False
 
+def clean_go_mod_cache():
+    """Clean Go module cache to resolve download issues."""
+    try:
+        print(f"{Colors.YELLOW}Cleaning Go module cache...{Colors.END}")
+        subprocess.run(['go', 'clean', '-modcache'], check=True)
+        print(f"{Colors.GREEN}  ✅ Go module cache cleaned{Colors.END}")
+    except Exception as e:
+        print(f"{Colors.YELLOW}  ⚠️ Could not clean Go module cache: {e}{Colors.END}")
+
+def install_nuclei_with_retries(repo, max_retries=3):
+    """Try to install nuclei with retries, cleaning cache and switching proxy if needed."""
+    for attempt in range(1, max_retries+1):
+        print(f"{Colors.WHITE}Installing nuclei (attempt {attempt}/{max_retries})...{Colors.END}")
+        env = os.environ.copy()
+        env['CGO_ENABLED'] = '1'
+        env['GO111MODULE'] = 'on'
+        # On 2nd+ attempt, switch to direct proxy
+        if attempt >= 2:
+            env['GOPROXY'] = 'direct'
+            print(f"{Colors.YELLOW}  Using GOPROXY=direct for retry{Colors.END}")
+        else:
+            env['GOPROXY'] = 'https://proxy.golang.org,direct'
+        # On 2nd+ attempt, clean cache
+        if attempt >= 2:
+            clean_go_mod_cache()
+        timeout_seconds = 600  # 10 min
+        result = subprocess.run(['go', 'install', '-v', repo], capture_output=True, text=True, env=env, timeout=timeout_seconds)
+        if result.returncode == 0:
+            print(f"{Colors.GREEN}  ✅ nuclei installed successfully{Colors.END}")
+            return True
+        else:
+            print(f"{Colors.RED}  ❌ nuclei install failed (exit {result.returncode}){Colors.END}")
+            print(f"{Colors.YELLOW}  --- go install output ---{Colors.END}")
+            print(result.stdout[-1000:])
+            print(result.stderr[-1000:])
+            if attempt == max_retries:
+                print(f"{Colors.RED}  ❌ nuclei installation failed after {max_retries} attempts{Colors.END}")
+                return False
+            print(f"{Colors.YELLOW}  Retrying nuclei installation...{Colors.END}")
+    return False
+
 def install_security_tools_complete(distro: str) -> bool:
     """Install all security tools with enhanced dependency checking and error handling."""
     try:
@@ -745,72 +786,38 @@ def install_security_tools_complete(distro: str) -> bool:
         success_count = 0
         
         for tool, repo in tools.items():
-            try:
-                print(f"{Colors.WHITE}Installing {tool}...{Colors.END}")
-                
-                # Check if already installed
-                if shutil.which(tool):
-                    print(f"{Colors.GREEN}  ✅ {tool} already installed{Colors.END}")
+            if tool == 'nuclei':
+                if install_nuclei_with_retries(repo, max_retries=3):
                     success_count += 1
-                    continue                # Install using go install with enhanced environment and timeout protection
-                env = os.environ.copy()
-                env['CGO_ENABLED'] = '1'  # Enable CGO for tools that need it (like naabu)
-                env['GO111MODULE'] = 'on'  # Ensure module mode
-                env['GOPROXY'] = 'https://proxy.golang.org,direct'  # Use reliable proxy
-                
-                # Extend timeout for naabu due to libpcap compilation
-                timeout_seconds = 600 if tool == 'naabu' else 450  # 10 min for naabu, 7.5 min for others                # Use timeout protection for go install with strict error handling
-                if run_with_timeout(['go', 'install', '-v', repo], timeout_seconds, f"Installing {tool} (timeout: {timeout_seconds//60}min)", allow_warnings=False):
-                    # Verify the tool was actually installed in GOBIN
-                    try:
+                else:
+                    print(f"{Colors.RED}  ❌ nuclei installation failed after multiple attempts{Colors.END}")
+                    continue
+            else:
+                try:
+                    print(f"{Colors.WHITE}Installing {tool}...{Colors.END}")
+                    if shutil.which(tool):
+                        print(f"{Colors.GREEN}  ✅ {tool} already installed{Colors.END}")
+                        success_count += 1
+                        continue
+                    env = os.environ.copy()
+                    env['CGO_ENABLED'] = '1'
+                    env['GO111MODULE'] = 'on'
+                    env['GOPROXY'] = 'https://proxy.golang.org,direct'
+                    timeout_seconds = 600 if tool == 'naabu' else 450
+                    if run_with_timeout(['go', 'install', '-v', repo], timeout_seconds, f"Installing {tool} (timeout: {timeout_seconds//60}min)", allow_warnings=False):
                         gopath = subprocess.run(['go', 'env', 'GOPATH'], capture_output=True, text=True, check=True).stdout.strip()
                         gobin = os.path.join(gopath, 'bin')
                         tool_path = os.path.join(gobin, tool)
-                        
-                        # Enhanced verification with debugging info
                         print(f"{Colors.WHITE}  Verifying {tool} installation at {tool_path}...{Colors.END}")
-                        
                         if os.path.exists(tool_path) and os.access(tool_path, os.X_OK):
                             print(f"{Colors.GREEN}  ✅ {tool} installed and verified at {tool_path}{Colors.END}")
                             success_count += 1
                         else:
                             print(f"{Colors.RED}  ❌ {tool} installation reported success but binary not found at {tool_path}{Colors.END}")
-                            print(f"{Colors.RED}  This indicates a Go environment or installation issue{Colors.END}")
-                            print(f"{Colors.WHITE}  Debug info: GOPATH={gopath}, GOBIN={gobin}{Colors.END}")
-                            print(f"{Colors.WHITE}  Directory exists: {os.path.exists(gobin)}, Directory contents: {os.listdir(gobin) if os.path.exists(gobin) else 'N/A'}{Colors.END}")
-                            if tool == 'nuclei':
-                                print(f"{Colors.RED}  ❌ Nuclei installation failed - Go install did not create binary{Colors.END}")
-                                print(f"{Colors.YELLOW}  Check GOBIN directory exists and is writable: {gobin}{Colors.END}")
-                    except subprocess.CalledProcessError as e:
-                        print(f"{Colors.RED}  ❌ Failed to get Go environment: {e}{Colors.END}")
-                        print(f"{Colors.RED}  This indicates a serious Go installation issue{Colors.END}")
-                else:
-                    print(f"{Colors.RED}  ❌ {tool} installation failed via go install{Colors.END}")
-                    if tool == 'nuclei':
-                        print(f"{Colors.RED}  ❌ Nuclei installation failed completely{Colors.END}")
-                        print(f"{Colors.YELLOW}  This setup script requires go install to work properly{Colors.END}")
                     else:
-                        print(f"{Colors.RED}  ❌ {tool} installation failed - check Go environment{Colors.END}")
-                
-            except subprocess.CalledProcessError as e:
-                print(f"{Colors.RED}  ❌ Failed to install {tool}: {e}{Colors.END}")
-                if e.stderr:
-                    error_msg = e.stderr.decode()
-                    print(f"{Colors.RED}  Error: {error_msg}{Colors.END}")
-                    
-                    # Provide specific guidance for common errors
-                    if 'pcap.h' in error_msg.lower():
-                        print(f"{Colors.YELLOW}  💡 Solution: Install libpcap development package{Colors.END}")
-                        print(f"{Colors.WHITE}     Ubuntu/Debian: sudo apt install libpcap-dev{Colors.END}")
-                        print(f"{Colors.WHITE}     Arch Linux: sudo pacman -S libpcap{Colors.END}")
-                    elif 'gcc' in error_msg.lower() or 'compiler' in error_msg.lower():
-                        print(f"{Colors.YELLOW}  💡 Solution: Install build tools{Colors.END}")
-                        print(f"{Colors.WHITE}     Ubuntu/Debian: sudo apt install build-essential{Colors.END}")
-                        print(f"{Colors.WHITE}     Arch Linux: sudo pacman -S base-devel{Colors.END}")
-                    elif 'permission denied' in error_msg.lower():
-                        print(f"{Colors.YELLOW}  💡 Solution: Check Go installation and GOPATH permissions{Colors.END}")
-                    elif 'network' in error_msg.lower() or 'timeout' in error_msg.lower():
-                        print(f"{Colors.YELLOW}  💡 Solution: Check internet connection and try again{Colors.END}")
+                        print(f"{Colors.RED}  ❌ {tool} installation failed via go install{Colors.END}")
+                except Exception as e:
+                    print(f"{Colors.RED}  ❌ Failed to install {tool}: {e}{Colors.END}")
           # Update nuclei templates if nuclei was installed (with optimization)
         if shutil.which('nuclei'):
             print(f"{Colors.WHITE}Updating nuclei templates (optimized)...{Colors.END}")

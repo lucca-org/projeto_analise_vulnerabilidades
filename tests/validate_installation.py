@@ -16,7 +16,7 @@ Features:
 - Tests toolkit integration and workflow functionality
 - Provides comprehensive installation health report
 
-Usage: python3 validate_installation.py
+Usage: python3 tests/validate_installation.py
 """
 
 import sys
@@ -41,9 +41,8 @@ class Colors:
 
 class InstallationValidator:
     """Comprehensive installation validator for the toolkit."""
-    
     def __init__(self):
-        self.project_root = Path(__file__).parent
+        self.project_root = Path(__file__).parent.parent  # Go up one level from tests/
         self.errors = []
         self.warnings = []
         self.success_count = 0
@@ -237,12 +236,11 @@ class InstallationValidator:
         if self.warnings:
             print(f"\n{Colors.YELLOW}⚠️  Warnings:{Colors.RESET}")
             for i, warning in enumerate(self.warnings, 1):
-                self.print_colored(f"  {i}. {warning}", Colors.YELLOW)
-          # Recommendations
+                self.print_colored(f"  {i}. {warning}", Colors.YELLOW)        # Recommendations
         print(f"\n{Colors.CYAN}💡 Recommendations:{Colors.RESET}")
         self.print_colored(f"  1. Run 'sudo python3 install/setup.py' on Linux to install security tools", Colors.CYAN)
         self.print_colored(f"  2. Run 'python3 scripts/autoinstall.py' for Python environment setup", Colors.CYAN)
-        self.print_colored(f"  3. Run 'python3 verify_installation.py' for detailed tool testing", Colors.CYAN)
+        self.print_colored(f"  3. Run 'python3 tests/verify_installation.py' for detailed tool testing", Colors.CYAN)
         
         print(f"\n{Colors.MAGENTA}📝 Architecture Notes:{Colors.RESET}")
         self.print_colored(f"  • Legacy scripts (setup_tools.sh, fix_*.sh) functionality integrated into master installer", Colors.MAGENTA)

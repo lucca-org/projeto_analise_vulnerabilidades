@@ -77,13 +77,13 @@ After installation, verify everything is working:
 
 ```bash
 # Comprehensive installation validation (Recommended)
-python3 validate_installation.py
+python3 tests/validate_installation.py
 
 # Python environment validation
 python3 scripts/autoinstall.py
 
 # Legacy tool validation
-python3 verify_installation.py
+python3 tests/verify_installation.py
 ```
 
 ## Architecture
@@ -114,7 +114,9 @@ Linux Vulnerability Analysis Toolkit/
 │   └── requirements.txt           # 📦 Python dependencies
 ├── output/                        # 📁 Scan results output
 ├── reports/                       # 📁 Generated reports
-└── validate_installation.py      # ✅ Comprehensive validation script
+└── tests/                         # 🧪 Testing and validation
+    ├── validate_installation.py   # ✅ Comprehensive validation script
+    └── verify_installation.py     # 🔍 Tool verification script
 ```
 
 ### Key Architecture Improvements
@@ -141,7 +143,7 @@ Linux Vulnerability Analysis Toolkit/
    - Tool availability checking
    - Configuration file creation
 
-3. **validate_installation.py** (Comprehensive Validator)
+3. **tests/validate_installation.py** (Comprehensive Validator)
    - Installation integrity verification
    - Tool functionality testing
    - Configuration validation
@@ -164,7 +166,7 @@ sudo python3 install/setup.py
 #### **Step 2: Validation (Recommended)**
 ```bash
 # Verify installation is working correctly
-python3 validate_installation.py
+python3 tests/validate_installation.py
 ```
 
 #### **Step 3: Run Vulnerability Scans**
@@ -213,7 +215,7 @@ python3 run.py --target example.com --verbose
 |---------|-------------|---------|
 | `python3 run.py <target>` | Basic vulnerability scan | `python3 run.py example.com` |
 | `bash scripts/run_toolkit.sh <target>` | Alternative launcher | `bash scripts/run_toolkit.sh example.com` |
-| `python3 validate_installation.py` | Validate installation | Check system status |
+| `python3 tests/validate_installation.py` | Validate installation | Check system status |
 | `python3 scripts/autoinstall.py` | Python environment setup | Setup dependencies |
 
 **💡 For detailed usage instructions, see [HOW_TO_RUN.md](HOW_TO_RUN.md)**
@@ -236,13 +238,13 @@ Always validate your installation after setup:
 
 ```bash
 # Comprehensive installation validation
-python3 validate_installation.py
+python3 tests/validate_installation.py
 
 # Python environment validation
 python3 scripts/autoinstall.py
 
 # Legacy tool validation
-python3 verify_installation.py
+python3 tests/verify_installation.py
 ```
 
 ### Common Issues & Solutions
@@ -288,7 +290,7 @@ pip3 install -r config/requirements.txt
 python3 scripts/autoinstall.py
 
 # Run comprehensive validation
-python3 validate_installation.py
+python3 tests/validate_installation.py
 
 # Fix permissions
 chmod +x scripts/*.sh
@@ -333,7 +335,7 @@ rm -rf ~/go/bin/{naabu,httpx,nuclei}
 sudo python3 install/setup.py
 
 # 3. Validate installation
-python3 validate_installation.py
+python3 tests/validate_installation.py
 ```
 
 #### **Manual Tool Installation**
