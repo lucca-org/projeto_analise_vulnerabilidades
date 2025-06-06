@@ -313,7 +313,7 @@ def run_scan(scan_type, target, **kwargs):
     # Add target
     cmd.extend(["-host", target])
     
-    # Add output directory
+    # Add output directory - use the session directory we created
     cmd.extend(["-o", session_dir])
     
     # Add options
@@ -335,21 +335,49 @@ def run_scan(scan_type, target, **kwargs):
     print("=" * 60)
     
     try:
-        # Run the scan from root directory
-        result = subprocess.run(cmd, cwd=os.getcwd())
+        # Capture both stdout and stderr to save results
+        result = subprocess.run(
+            cmd, 
+            cwd=os.getcwd(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True
+        )
+        
+        # Save command output to files
+        output_file = os.path.join(session_dir, f"{scan_type}_output.txt")
+        error_file = os.path.join(session_dir, f"{scan_type}_errors.txt")
+        
+        if result.stdout:
+            with open(output_file, 'w') as f:
+                f.write(result.stdout)
+            print(f"✅ Output saved to: {output_file}")
+        
+        if result.stderr:
+            with open(error_file, 'w') as f:
+                f.write(result.stderr)
+            print(f"⚠️  Errors/warnings saved to: {error_file}")
+        
+        # Also print the output to console if verbose
+        if kwargs.get('verbose') and result.stdout:
+            print("\n📊 SCAN OUTPUT:")
+            print("-" * 40)
+            print(result.stdout)
         
         print("\n" + "=" * 60)
         if result.returncode == 0:
             print("✅ Scan completed successfully!")
             print(f"📊 Results saved in: {session_dir}")
             
-            # Create a simple summary file
-            create_scan_summary(session_dir, scan_type, target, kwargs)
-            
         elif result.returncode == 2:
             print("⚠️  Scan completed with some issues.")
         else:
             print("❌ Scan failed.")
+            if result.stderr:
+                print(f"Error details: {result.stderr[:200]}...")
+        
+        # Update summary with final results
+        update_scan_summary(session_dir, scan_type, target, kwargs, result)
         
         # Show quick results preview
         show_quick_results_preview(session_dir)
@@ -363,21 +391,47 @@ def run_scan(scan_type, target, **kwargs):
         print(f"\n❌ Error running scan: {e}")
         input("Press Enter to continue...")
 
-def create_scan_summary(session_dir, scan_type, target, options):
-    """Create a summary file for the scan."""
+def update_scan_summary(session_dir, scan_type, target, options, result):
+    """Update the summary file with scan results."""
     summary_path = os.path.join(session_dir, "scan_summary.txt")
     
-    with open(summary_path, 'w') as f:
-        f.write(f"MTScan Results Summary\n")
-        f.write(f"=" * 40 + "\n\n")
-        f.write(f"Scan Type: {scan_type}\n")
-        f.write(f"Target: {target}\n")
-        f.write(f"Timestamp: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-        f.write(f"Session Directory: {session_dir}\n\n")
+    with open(summary_path, 'a') as f:
+        f.write(f"\nScan Results:\n")
+        f.write(f"Return Code: {result.returncode}\n")
+        f.write(f"Success: {'Yes' if result.returncode == 0 else 'No'}\n")
         
-        f.write("Options:\n")
-        for key, value in options.items():
-            f.write(f"  {key}: {value}\n")
+        # Count output lines if available
+        if result.stdout:
+            lines = result.stdout.strip().split('\n')
+            f.write(f"Output Lines: {len(lines)}\n")
+            
+            # Try to extract meaningful results based on scan type
+            if scan_type == "naabu":
+                # Count open ports
+                ports = [line for line in lines if ':' in line and line.strip()]
+                f.write(f"Open Ports Found: {len(ports)}\n")
+                if ports:
+                    f.write("Sample Ports:\n")
+                    for port in ports[:5]:  # Show first 5
+                        f.write(f"  {port.strip()}\n")
+            
+            elif scan_type == "httpx":
+                # Count HTTP services
+                services = [line for line in lines if line.startswith('http')]
+                f.write(f"HTTP Services Found: {len(services)}\n")
+                if services:
+                    f.write("Sample Services:\n")
+                    for service in services[:5]:  # Show first 5
+                        f.write(f"  {service.strip()}\n")
+            
+            elif scan_type == "nuclei":
+                # Count vulnerabilities
+                vulns = [line for line in lines if '[' in line and ']' in line]
+                f.write(f"Potential Issues Found: {len(vulns)}\n")
+                if vulns:
+                    f.write("Sample Findings:\n")
+                    for vuln in vulns[:3]:  # Show first 3
+                        f.write(f"  {vuln.strip()}\n")
         
         f.write(f"\nFiles in this session:\n")
         try:
@@ -399,29 +453,133 @@ def show_quick_results_preview(session_dir):
         files = [f for f in os.listdir(session_dir) if os.path.isfile(os.path.join(session_dir, f))]
         
         if not files:
-            print("  No result files found.")
+            print("  ❌ No result files found in session directory.")
+            print(f"  📁 Directory: {session_dir}")
             return
+        
+        print(f"  📁 Session: {os.path.basename(session_dir)}")
+        print(f"  📊 Found {len(files)} files:")
+        print()
+        
+        has_meaningful_results = False
         
         for file in sorted(files):
             file_path = os.path.join(session_dir, file)
             size = os.path.getsize(file_path)
             print(f"  📄 {file} ({size} bytes)")
             
-            # Show preview for text files
-            if file.endswith(('.txt', '.json')) and size > 0 and size < 10000:
-                try:
-                    with open(file_path, 'r') as f:
-                        content = f.read()
-                        lines = content.strip().split('\n')
-                        if len(lines) > 0:
-                            print(f"      Preview: {lines[0][:80]}...")
-                            if len(lines) > 1:
-                                print(f"      ({len(lines)} total lines)")
-                except:
-                    pass
+            # Show meaningful preview based on file type
+            if size > 0:
+                if file.endswith('_output.txt'):
+                    try:
+                        with open(file_path, 'r') as f:
+                            content = f.read().strip()
+                            if content:
+                                lines = content.split('\n')
+                                non_empty_lines = [line.strip() for line in lines if line.strip()]
+                                
+                                print(f"      📋 {len(lines)} total lines, {len(non_empty_lines)} with content")
+                                
+                                if non_empty_lines:
+                                    has_meaningful_results = True
+                                    print(f"      🎯 Results preview:")
+                                    
+                                    # Show first few meaningful lines
+                                    shown = 0
+                                    for line in non_empty_lines[:5]:
+                                        if len(line) > 5:  # Skip very short lines
+                                            print(f"        ➤ {line[:80]}")
+                                            shown += 1
+                                    
+                                    if len(non_empty_lines) > shown:
+                                        print(f"        📝 ... and {len(non_empty_lines) - shown} more results")
+                                else:
+                                    print("      ⚠️  File contains only empty lines")
+                            else:
+                                print("      ⚠️  File is empty")
+                    except Exception as e:
+                        print(f"      ❌ Error reading output: {e}")
+                
+                elif file.endswith('_errors.txt'):
+                    try:
+                        with open(file_path, 'r') as f:
+                            content = f.read().strip()
+                            if content:
+                                lines = content.split('\n')
+                                print(f"      ⚠️  {len(lines)} error/warning lines")
+                                # Show first error line as preview
+                                if lines and lines[0].strip():
+                                    print(f"      Preview: {lines[0][:80]}...")
+                            else:
+                                print("      ✅ No errors reported")
+                    except:
+                        print("      ❌ Error reading error file")
+                
+                elif file.endswith('.json') and size < 50000:
+                    try:
+                        with open(file_path, 'r') as f:
+                            content = f.read().strip()
+                            if content:
+                                lines = content.split('\n')
+                                print(f"      📋 JSON data with {len(lines)} entries")
+                                has_meaningful_results = True
+                                # Show first line as preview
+                                if lines and lines[0].strip():
+                                    preview = lines[0][:100]
+                                    print(f"      Preview: {preview}...")
+                    except:
+                        print("      ❌ JSON preview unavailable")
+                
+                elif file == "scan_summary.txt":
+                    print("      📊 Scan summary and statistics")
+                    # Show a quick summary preview
+                    try:
+                        with open(file_path, 'r') as f:
+                            content = f.read()
+                            if "Open Ports Found:" in content:
+                                for line in content.split('\n'):
+                                    if "Open Ports Found:" in line:
+                                        print(f"      🎯 {line.strip()}")
+                                        has_meaningful_results = True
+                            elif "HTTP Services Found:" in content:
+                                for line in content.split('\n'):
+                                    if "HTTP Services Found:" in line:
+                                        print(f"      🎯 {line.strip()}")
+                                        has_meaningful_results = True
+                            elif "Potential Issues Found:" in content:
+                                for line in content.split('\n'):
+                                    if "Potential Issues Found:" in line:
+                                        print(f"      🎯 {line.strip()}")
+                                        has_meaningful_results = True
+                    except:
+                        pass
+            else:
+                print("      ⚠️  Empty file")
+            
+            print()  # Add spacing between files
+        
+        # Overall result assessment
+        print("─" * 40)
+        if has_meaningful_results:
+            print("  ✅ Scan produced results! Check the files above for details.")
+        else:
+            print("  ⚠️  No meaningful scan results detected.")
+            print("  💡 This could indicate:")
+            print("     • Target is not reachable or responsive")
+            print("     • No open ports/services found (legitimate result)")
+            print("     • Firewall blocking the scan")
+            print("     • Network connectivity issues")
+            print("     • Scan parameters may need adjustment")
+        
+        # Show direct file access info
+        print(f"\n  💻 To view files manually:")
+        print(f"     cd {session_dir}")
+        print(f"     ls -la")
+        print(f"     cat *_output.txt")
         
     except Exception as e:
-        print(f"  Error reading results: {e}")
+        print(f"  ❌ Error reading results: {e}")
+        print(f"  📁 Attempted to read from: {session_dir}")
 
 def view_results():
     """View previous scan results."""
