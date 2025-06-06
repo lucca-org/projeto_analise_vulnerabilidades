@@ -219,82 +219,49 @@ def get_executable_path(cmd: str) -> Optional[str]:
     cmd_path = shutil.which(cmd)
     if cmd_path:
         return cmd_path
-        
-    # Check in ~/go/bin
+          # Check in ~/go/bin
     go_bin_path = os.path.expanduser(f"~/go/bin/{cmd}")
     if os.path.exists(go_bin_path) and os.access(go_bin_path, os.X_OK):
         return go_bin_path
-    
-    # Check Windows common locations if on Windows
-    if platform.system() == "Windows":
-        for path in [f"C:\\Program Files\\{cmd}\\{cmd}.exe", 
-                    f"C:\\Program Files (x86)\\{cmd}\\{cmd}.exe"]:
-            if os.path.exists(path):
-                return path
     
     return None
 
 def get_system_memory_gb() -> float:
     """
-    Get system memory in GB in a platform-independent way
-    
-    Returns:
-        Memory in GB (float)
+    Get the total system memory in GB (Linux only).
     """
     try:
-        if platform.system() == "Linux":
-            with open('/proc/meminfo', 'r') as f:
-                for line in f:
-                    if line.startswith('MemTotal:'):
-                        # Extract value and convert from KB to GB
-                        mem_kb = int(line.split()[1])
-                        return mem_kb / (1024 * 1024)
-        elif platform.system() == "Windows":
-            import ctypes
-            kernel32 = ctypes.windll.kernel32
-            c_ulong = ctypes.c_ulong
-            class MEMORYSTATUS(ctypes.Structure):
-                _fields_ = [
-                    ('dwLength', c_ulong),
-                    ('dwMemoryLoad', c_ulong),
-                    ('dwTotalPhys', c_ulong),
-                    ('dwAvailPhys', c_ulong),
-                    ('dwTotalPageFile', c_ulong),
-                    ('dwAvailPageFile', c_ulong),
-                    ('dwTotalVirtual', c_ulong),
-                    ('dwAvailVirtual', c_ulong)
-                ]
-            memory_status = MEMORYSTATUS()
-            memory_status.dwLength = ctypes.sizeof(MEMORYSTATUS)
-            kernel32.GlobalMemoryStatus(ctypes.byref(memory_status))
-            return memory_status.dwTotalPhys / (1024 * 1024 * 1024)
-        elif platform.system() == "Darwin":  # macOS
-            result = subprocess.run(['sysctl', '-n', 'hw.memsize'], 
-                                  capture_output=True, text=True)
-            mem_bytes = int(result.stdout.strip())
-            return mem_bytes / (1024 * 1024 * 1024)
+        with open('/proc/meminfo', 'r') as f:
+            for line in f:
+                if line.startswith('MemTotal:'):
+                    mem_kb = int(line.split()[1])
+                    return mem_kb / (1024 * 1024)
     except Exception as e:
         print(f"Error detecting system memory: {e}")
-    
-    # Default to a conservative 4GB if detection fails
-    return 4.0
+    return 4.0  # Default to 4GB if detection fails
 
-# Add utility to safely handle both Windows and Unix paths
 def normalize_path(path: str) -> str:
-    """Convert file paths to the correct format for the current OS."""
-    if platform.system().lower() == "windows":
-        return path.replace('/', '\\')
-    else:
-        return path.replace('\\', '/')
+    """
+    Normalize file paths for Linux systems.
+    """
+    return path.replace('\\', '/')
 
 # Add utility for ensuring proper file permissions 
 def ensure_executable(file_path: str) -> bool:
-    """Make sure a file is executable (Unix only)."""
-    if platform.system().lower() != "windows":
-        try:
-            os.chmod(file_path, 0o755)
-            return True
-        except Exception as e:
-            print(f"Error making {file_path} executable: {e}")
-            return False
+    """Make sure a file is executable (Linux only)."""
+    try:
+        os.chmod(file_path, 0o755)
+        return True
+    except Exception as e:
+        print(f"Error making {file_path} executable: {e}")
+        return False
+
+def verify_linux_platform() -> bool:
+    """Verify that the script is running on a Linux platform."""
+    import platform
+    if platform.system().lower() != "linux":
+        print("❌ This toolkit is designed EXCLUSIVELY for Linux systems.")
+        print("✅ Supported: Debian, Kali Linux, Ubuntu, Arch Linux")
+        print("❌ NOT Supported: Windows, macOS, WSL")
+        return False
     return True

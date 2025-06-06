@@ -1,18 +1,52 @@
 import os
+import sys
 import json
 import subprocess
-from utils import run_cmd, get_executable_path
+import platform
+import shutil
+
+# Add parent directory to path for imports
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
+
+try:
+    from utils import run_cmd, get_executable_path
+except ImportError:
+    print("Warning: Could not import security tool wrappers (No module named 'utils')")
+    print("Make sure you've run setup_tools.sh to install all required components.")
+    # Provide fallback functions with compatible signatures
+    def run_cmd(cmd, shell=False, check=False, use_sudo=False, timeout=300, retry=1, silent=False):
+        try:
+            if isinstance(cmd, str):
+                result = subprocess.run(cmd, shell=True, capture_output=True, text=True, check=check, timeout=timeout)
+            else:
+                result = subprocess.run(cmd, capture_output=True, text=True, check=check, timeout=timeout)
+            return result.returncode == 0
+        except Exception:
+            return False
+    
+    def get_executable_path(cmd):
+        # Check standard PATH
+        path = shutil.which(cmd)
+        if path:
+            return path
+        
+        # Check ~/go/bin directory
+        go_bin_path = os.path.expanduser(f"~/go/bin/{cmd}")
+        if os.path.exists(go_bin_path):
+            return go_bin_path
+        
+        return None
 
 def run_httpx(target=None, target_list=None, output_file=None, json_output=False,
              title=False, status_code=False, tech_detect=False, web_server=False,
              follow_redirects=False, silent=False, timeout=None, threads=None,
-             additional_args=None):
+             additional_args=None, auto_install=True):
     """
     Run HTTPX tool with the specified parameters.
     
     Parameters:
         target (str): Single target to scan.
-        target_list (str): Path to a file containing targets or a URL string (converted to a temporary file).
+        target_list (str): Path to a file containing targets or a URL string.
         output_file (str): Path to save the output.
         json_output (bool): Output in JSON format.
         title (bool): Extract title of the page.
@@ -24,32 +58,40 @@ def run_httpx(target=None, target_list=None, output_file=None, json_output=False
         timeout (int): Timeout in seconds.
         threads (int): Number of threads to use.
         additional_args (list): Additional httpx arguments.
+        auto_install (bool): Automatically install HTTPX if not found.
         
     Returns:
         bool: True if execution was successful, False otherwise.
     """
+    
+    # Check if httpx is available, install if needed
+    if not check_httpx():
+        if auto_install:
+            print("🔧 HTTPX not found. Attempting automatic installation...")
+            if not auto_install_httpx():
+                print("❌ Failed to install HTTPX automatically.")
+                return False
+        else:
+            print("❌ HTTPX is not installed. Please install it first or set auto_install=True.")
+            return False
+    
+    # Get httpx path after ensuring it's installed
+    httpx_path = get_executable_path("httpx")
+    if not httpx_path:
+        print("❌ HTTPX installation verification failed - executable not found in PATH")
+        return False
+    
+    # Validate parameters
     if not target and not target_list:
         print("Error: Either target or target_list must be specified.")
         return False
     
-    if target_list:
-        if not os.path.isfile(target_list):
-            # If it's a direct URL, create a temporary file
-            if target_list.startswith(('http://', 'https://')):
-                try:
-                    temp_file = "temp_targets.txt"
-                    with open(temp_file, "w") as f:
-                        f.write(target_list)
-                    target_list = temp_file
-                    print(f"Created temporary target file: {temp_file}")
-                except Exception as e:
-                    print(f"Error creating temporary file: {e}")
-                    return False
-            else:
-                print(f"Error: Target list file '{target_list}' not found.")
-                return False
+    if target_list and not os.path.isfile(target_list):
+        print(f"Error: Target list file '{target_list}' not found.")
+        return False
     
-    cmd = ["httpx"]
+    # Build the command using the found httpx path
+    cmd = [httpx_path]
     
     if target:
         cmd.extend(["-u", target])
@@ -79,6 +121,10 @@ def run_httpx(target=None, target_list=None, output_file=None, json_output=False
     # Add any additional arguments
     if additional_args:
         cmd.extend(additional_args)
+    
+    # Print command for debugging
+    if not silent:
+        print(f"Running: {' '.join(cmd)}")
     
     # Run with retry for better resilience
     success = run_cmd(cmd, retry=1)
@@ -137,41 +183,124 @@ def check_httpx():
         result = subprocess.run([httpx_path, "-version"], 
                               capture_output=True, 
                               text=True, 
-                              timeout=5)
+                              timeout=10)
         
         if result.returncode == 0:
-            print(f"httpx is available: {result.stdout.strip()}")
+            version = result.stdout.strip()
+            print(f"httpx is available at {httpx_path}: {version}")
             return True
         else:
-            print("httpx is installed but not working correctly.")
+            print(f"httpx is installed at {httpx_path} but not working correctly.")
             return False
     except Exception as e:
-        print(f"Error checking httpx: {e}")
+        print(f"Error checking httpx at {httpx_path}: {e}")
         return False
 
-def get_httpx_capabilities():
-    """Get information about HTTPX capabilities based on its installation."""
-    capabilities = {
-        "version": None,
-        "available_flags": []
-    }
+def auto_install_httpx():
+    """
+    Automatically install HTTPX on Linux systems.
+    
+    Returns:
+        bool: True if installation was successful, False otherwise.
+    """
+    print("🔧 Starting automatic installation of HTTPX...")
+    
+    # Check if already installed and working
+    if check_httpx():
+        print("✅ HTTPX is already installed and working!")
+        return True
+    
+    # Check if Go is installed
+    if not shutil.which("go"):
+        print("❌ Go is not installed. Please install Go first.")
+        return False
     
     try:
-        # Get version
-        process = subprocess.run(["httpx", "-version"], capture_output=True, text=True)
-        if process.returncode == 0 and process.stdout:
-            capabilities["version"] = process.stdout.strip()
+        print("📦 Installing HTTPX using Go...")
         
-        # Get help to determine available flags
-        process = subprocess.run(["httpx", "-h"], capture_output=True, text=True)
-        if process.returncode == 0 and process.stdout:
-            help_text = process.stdout
-            # Parse flags from help text
-            for line in help_text.split("\n"):
-                if line.strip().startswith("-"):
-                    flag = line.split()[0].strip()
-                    capabilities["available_flags"].append(flag)
+        # Install httpx using go install
+        cmd = ["go", "install", "-v", "github.com/projectdiscovery/httpx/cmd/httpx@latest"]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        
+        if result.returncode != 0:
+            print(f"❌ Failed to install HTTPX: {result.stderr}")
+            return False
+        
+        print("✅ HTTPX installed successfully!")
+        
+        # Verify installation
+        if check_httpx():
+            print("✅ HTTPX installation verified and working!")
+            return True
+        else:
+            print("❌ HTTPX installation completed but verification failed")
+            return False
+            
+    except subprocess.TimeoutExpired:
+        print("❌ Installation timed out. Please check your internet connection.")
+        return False
     except Exception as e:
-        print(f"Error checking HTTPX capabilities: {e}")
+        print(f"❌ Error during installation: {e}")
+        return False
+
+def get_httpx_version():
+    """
+    Get the installed version of httpx.
+    
+    Returns:
+        str: Version string if successful, None otherwise.
+    """
+    httpx_path = get_executable_path("httpx")
+    
+    if not httpx_path:
+        return None
+    
+    try:
+        cmd = [httpx_path, "-version"]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+        
+        if result.returncode == 0:
+            # Extract version from output
+            version_line = result.stdout.strip()
+            return version_line
+        else:
+            return None
+    except Exception:
+        return None
+
+def get_httpx_capabilities():
+    """
+    Get httpx capabilities and version information.
+    
+    Returns:
+        dict: Dictionary containing httpx capabilities.
+    """
+    capabilities = {
+        "available": False,
+        "version": None,
+        "installation_path": None,
+        "features": []
+    }
+    
+    httpx_path = get_executable_path("httpx")
+    if httpx_path:
+        capabilities["available"] = True
+        capabilities["installation_path"] = httpx_path
+        
+        # Get version
+        version = get_httpx_version()
+        if version:
+            capabilities["version"] = version
+        
+        # Basic features that httpx supports
+        capabilities["features"] = [
+            "HTTP/HTTPS probing",
+            "Custom headers",
+            "Follow redirects",
+            "JSON output",
+            "Rate limiting",
+            "Timeout control",
+            "Status code filtering"
+        ]
     
     return capabilities
