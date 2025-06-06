@@ -273,8 +273,30 @@ def get_scan_options():
     
     return options
 
+def ensure_results_directory():
+    """Ensure the results directory exists."""
+    results_dir = "scan_results"
+    if not os.path.exists(results_dir):
+        os.makedirs(results_dir)
+        print(f"📁 Created results directory: {results_dir}")
+    return results_dir
+
+def create_scan_session_dir(target, scan_type):
+    """Create a unique directory for this scan session."""
+    results_dir = ensure_results_directory()
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    # Clean target name for filename
+    clean_target = target.replace("http://", "").replace("https://", "").replace("/", "_")
+    session_name = f"{scan_type}_{clean_target}_{timestamp}"
+    session_dir = os.path.join(results_dir, session_name)
+    os.makedirs(session_dir, exist_ok=True)
+    return session_dir
+
 def run_scan(scan_type, target, **kwargs):
     """Run a scan with the specified parameters."""
+    # Create session directory for results
+    session_dir = create_scan_session_dir(target, scan_type)
+    
     cmd = ["sudo", "python", "src/workflow.py"]
     
     # Add tool-specific flag
@@ -291,6 +313,9 @@ def run_scan(scan_type, target, **kwargs):
     # Add target
     cmd.extend(["-host", target])
     
+    # Add output directory
+    cmd.extend(["-o", session_dir])
+    
     # Add options
     if kwargs.get('ports'):
         cmd.extend(["-p", kwargs['ports']])
@@ -305,6 +330,7 @@ def run_scan(scan_type, target, **kwargs):
         cmd.append("--json-output")
     
     print(f"\n🚀 Starting {scan_type} scan on {target}...")
+    print(f"📂 Results will be saved to: {session_dir}")
     print(f"📋 Command: {' '.join(cmd)}")
     print("=" * 60)
     
@@ -315,10 +341,18 @@ def run_scan(scan_type, target, **kwargs):
         print("\n" + "=" * 60)
         if result.returncode == 0:
             print("✅ Scan completed successfully!")
+            print(f"📊 Results saved in: {session_dir}")
+            
+            # Create a simple summary file
+            create_scan_summary(session_dir, scan_type, target, kwargs)
+            
         elif result.returncode == 2:
             print("⚠️  Scan completed with some issues.")
         else:
             print("❌ Scan failed.")
+        
+        # Show quick results preview
+        show_quick_results_preview(session_dir)
         
         input("\nPress Enter to continue...")
         
@@ -329,6 +363,66 @@ def run_scan(scan_type, target, **kwargs):
         print(f"\n❌ Error running scan: {e}")
         input("Press Enter to continue...")
 
+def create_scan_summary(session_dir, scan_type, target, options):
+    """Create a summary file for the scan."""
+    summary_path = os.path.join(session_dir, "scan_summary.txt")
+    
+    with open(summary_path, 'w') as f:
+        f.write(f"MTScan Results Summary\n")
+        f.write(f"=" * 40 + "\n\n")
+        f.write(f"Scan Type: {scan_type}\n")
+        f.write(f"Target: {target}\n")
+        f.write(f"Timestamp: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+        f.write(f"Session Directory: {session_dir}\n\n")
+        
+        f.write("Options:\n")
+        for key, value in options.items():
+            f.write(f"  {key}: {value}\n")
+        
+        f.write(f"\nFiles in this session:\n")
+        try:
+            for file in os.listdir(session_dir):
+                if file != "scan_summary.txt":
+                    file_path = os.path.join(session_dir, file)
+                    if os.path.isfile(file_path):
+                        size = os.path.getsize(file_path)
+                        f.write(f"  - {file} ({size} bytes)\n")
+        except:
+            f.write("  (Error reading session files)\n")
+
+def show_quick_results_preview(session_dir):
+    """Show a quick preview of scan results."""
+    print(f"\n📊 QUICK RESULTS PREVIEW:")
+    print("=" * 40)
+    
+    try:
+        files = [f for f in os.listdir(session_dir) if os.path.isfile(os.path.join(session_dir, f))]
+        
+        if not files:
+            print("  No result files found.")
+            return
+        
+        for file in sorted(files):
+            file_path = os.path.join(session_dir, file)
+            size = os.path.getsize(file_path)
+            print(f"  📄 {file} ({size} bytes)")
+            
+            # Show preview for text files
+            if file.endswith(('.txt', '.json')) and size > 0 and size < 10000:
+                try:
+                    with open(file_path, 'r') as f:
+                        content = f.read()
+                        lines = content.strip().split('\n')
+                        if len(lines) > 0:
+                            print(f"      Preview: {lines[0][:80]}...")
+                            if len(lines) > 1:
+                                print(f"      ({len(lines)} total lines)")
+                except:
+                    pass
+        
+    except Exception as e:
+        print(f"  Error reading results: {e}")
+
 def view_results():
     """View previous scan results."""
     clear_screen()
@@ -336,11 +430,25 @@ def view_results():
     print("📊 PREVIOUS SCAN RESULTS:")
     print("=" * 50)
     
+    results_base_dir = "scan_results"
+    
+    if not os.path.exists(results_base_dir):
+        print("No scan results directory found.")
+        print(f"Results will be created in: {results_base_dir}/")
+        input("\nPress Enter to continue...")
+        return
+    
     # Find all result directories
     result_dirs = []
-    for item in os.listdir('.'):
-        if os.path.isdir(item) and item.startswith('results_'):
-            result_dirs.append(item)
+    try:
+        for item in os.listdir(results_base_dir):
+            item_path = os.path.join(results_base_dir, item)
+            if os.path.isdir(item_path):
+                result_dirs.append(item)
+    except:
+        print("Error reading results directory.")
+        input("\nPress Enter to continue...")
+        return
     
     if not result_dirs:
         print("No previous scan results found.")
@@ -348,62 +456,107 @@ def view_results():
         return
     
     # Sort by modification time (newest first)
-    result_dirs.sort(key=lambda x: os.path.getmtime(x), reverse=True)
+    result_dirs.sort(key=lambda x: os.path.getmtime(os.path.join(results_base_dir, x)), reverse=True)
     
     # Display results
-    for i, result_dir in enumerate(result_dirs[:10], 1):  # Show last 10
-        stat = os.stat(result_dir)
+    for i, result_dir in enumerate(result_dirs[:15], 1):  # Show last 15
+        full_path = os.path.join(results_base_dir, result_dir)
+        stat = os.stat(full_path)
         mod_time = datetime.datetime.fromtimestamp(stat.st_mtime)
-        print(f"  [{i}] {result_dir} - {mod_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        # Parse scan info from directory name
+        parts = result_dir.split('_')
+        if len(parts) >= 3:
+            scan_type = parts[0]
+            target = parts[1]
+            print(f"  [{i:2}] {scan_type.upper()} scan of {target}")
+            print(f"      📅 {mod_time.strftime('%Y-%m-%d %H:%M:%S')} | 📁 {result_dir}")
+        else:
+            print(f"  [{i:2}] {result_dir} - {mod_time.strftime('%Y-%m-%d %H:%M:%S')}")
+        
+        if i % 5 == 0:  # Add spacing every 5 entries
+            print()
     
     print(f"\n  [0] Back to main menu")
     
     while True:
-        choice = input("\nSelect result to view [0-{}]: ".format(len(result_dirs[:10]))).strip()
+        choice = input(f"\nSelect result to view [0-{min(15, len(result_dirs))}]: ").strip()
         
         if choice == "0":
             return
         
         try:
             choice_idx = int(choice) - 1
-            if 0 <= choice_idx < len(result_dirs[:10]):
+            if 0 <= choice_idx < len(result_dirs[:15]):
                 selected_dir = result_dirs[choice_idx]
-                view_result_details(selected_dir)
+                full_path = os.path.join(results_base_dir, selected_dir)
+                view_result_details(full_path, selected_dir)
                 return
             else:
                 print("❌ Invalid choice.")
         except ValueError:
             print("❌ Please enter a number.")
 
-def view_result_details(result_dir):
+def view_result_details(result_path, result_name):
     """View details of a specific result directory."""
     clear_screen()
     print_banner()
-    print(f"📊 SCAN RESULTS: {result_dir}")
+    print(f"📊 SCAN RESULTS: {result_name}")
     print("=" * 60)
     
     # Show directory contents
     try:
-        files = os.listdir(result_dir)
+        files = os.listdir(result_path)
+        
+        print("📁 FILES IN THIS SCAN:")
+        print("-" * 30)
+        
         for file in sorted(files):
-            file_path = os.path.join(result_dir, file)
+            file_path = os.path.join(result_path, file)
             if os.path.isfile(file_path):
                 size = os.path.getsize(file_path)
-                print(f"  📄 {file} ({size} bytes)")
+                mod_time = datetime.datetime.fromtimestamp(os.path.getmtime(file_path))
+                print(f"  📄 {file}")
+                print(f"      Size: {size} bytes | Modified: {mod_time.strftime('%H:%M:%S')}")
+                
+                # Show content preview for small files
+                if file.endswith(('.txt', '.json')) and size > 0 and size < 5000:
+                    try:
+                        with open(file_path, 'r') as f:
+                            content = f.read().strip()
+                            if content:
+                                lines = content.split('\n')
+                                print(f"      Content: {len(lines)} lines")
+                                if len(lines) <= 3:
+                                    for line in lines:
+                                        print(f"        {line[:100]}")
+                                else:
+                                    print(f"        {lines[0][:100]}...")
+                                    print(f"        ... ({len(lines)-2} more lines) ...")
+                                    print(f"        {lines[-1][:100]}")
+                    except:
+                        print("      (Preview unavailable)")
+                print()
             elif os.path.isdir(file_path):
                 print(f"  📁 {file}/")
         
         # Show summary if available
-        summary_path = os.path.join(result_dir, "summary.txt")
+        summary_path = os.path.join(result_path, "scan_summary.txt")
         if os.path.exists(summary_path):
-            print("\n📋 SUMMARY:")
+            print("\n📋 SCAN SUMMARY:")
             print("=" * 40)
-            with open(summary_path, 'r') as f:
-                print(f.read())
+            try:
+                with open(summary_path, 'r') as f:
+                    print(f.read())
+            except:
+                print("Error reading summary file.")
+        
+        print(f"\n📂 Full path: {result_path}")
         
     except Exception as e:
         print(f"❌ Error reading results: {e}")
     
+    print(f"\n💡 To view files manually: ls -la {result_path}")
     input("\nPress Enter to continue...")
 
 def update_templates():
@@ -500,6 +653,9 @@ def install_tools():
 
 def main():
     """Main menu loop."""
+    # Ensure results directory exists at startup
+    ensure_results_directory()
+    
     while True:
         clear_screen()
         print_banner()
