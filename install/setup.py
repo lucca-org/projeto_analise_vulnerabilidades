@@ -221,7 +221,7 @@ def validate_system_requirements() -> Tuple[bool, Optional[str]]:
     
     return True, distro
 
-def run_with_timeout(cmd: List[str], timeout_seconds: int = 300, description: str = "") -> bool:
+def run_with_timeout(cmd: List[str], timeout_seconds: int = 300, description: str = "", allow_warnings: bool = True) -> bool:
     """Run command with timeout protection and enhanced progress indication."""
     try:
         print(f"{Colors.WHITE}{description}...{Colors.END}")
@@ -246,12 +246,40 @@ def run_with_timeout(cmd: List[str], timeout_seconds: int = 300, description: st
                 print(f"{Colors.GREEN}✅ {description} completed successfully{Colors.END}")
                 return True
             else:
-                print(f"{Colors.YELLOW}⚠️ {description} completed with warnings (exit code: {process.returncode}){Colors.END}")
-                if stderr:
-                    error_msg = stderr.decode().strip()
-                    if error_msg and "error" in error_msg.lower():
-                        print(f"{Colors.YELLOW}  Warning: {error_msg[:200]}{Colors.END}")
-                return True  # Continue on warnings for most package operations
+                # Enhanced error handling for Go tool installations
+                if 'go install' in ' '.join(cmd) or any('github.com' in arg for arg in cmd):
+                    # For Go installations, any non-zero exit code is a failure
+                    print(f"{Colors.RED}❌ {description} failed (exit code: {process.returncode}){Colors.END}")
+                    if stderr:
+                        error_msg = stderr.decode().strip()
+                        if error_msg:
+                            print(f"{Colors.RED}  Error details: {error_msg[:300]}{Colors.END}")
+                            
+                            # Provide specific guidance for common Go installation errors
+                            if 'no such file or directory' in error_msg.lower():
+                                print(f"{Colors.YELLOW}  💡 GOBIN directory may not exist or be in PATH{Colors.END}")
+                            elif 'permission denied' in error_msg.lower():
+                                print(f"{Colors.YELLOW}  💡 Check GOPATH/bin directory permissions{Colors.END}")
+                            elif 'connection refused' in error_msg.lower() or 'timeout' in error_msg.lower():
+                                print(f"{Colors.YELLOW}  💡 Network connectivity issue - check internet connection{Colors.END}")
+                            elif 'pcap.h' in error_msg.lower():
+                                print(f"{Colors.YELLOW}  💡 Missing libpcap-dev package for naabu compilation{Colors.END}")
+                    return False
+                elif allow_warnings:
+                    # For package operations, warnings may be acceptable
+                    print(f"{Colors.YELLOW}⚠️ {description} completed with warnings (exit code: {process.returncode}){Colors.END}")
+                    if stderr:
+                        error_msg = stderr.decode().strip()
+                        if error_msg and "error" in error_msg.lower():
+                            print(f"{Colors.YELLOW}  Warning: {error_msg[:200]}{Colors.END}")
+                    return True  # Continue on warnings for most package operations
+                else:
+                    print(f"{Colors.RED}❌ {description} failed (exit code: {process.returncode}){Colors.END}")
+                    if stderr:
+                        error_msg = stderr.decode().strip()
+                        if error_msg:
+                            print(f"{Colors.RED}  Error: {error_msg[:200]}{Colors.END}")
+                    return False
                 
         except subprocess.TimeoutExpired:
             print(f"{Colors.YELLOW}⚠️ {description} timed out after {timeout_seconds}s{Colors.END}")
@@ -374,71 +402,167 @@ def install_system_packages(distro_config: Dict) -> bool:
         return False
 
 def setup_go_environment_complete() -> bool:
-    """Complete Go environment setup."""
+    """Complete Go environment setup with proper directory creation and validation."""
     try:
         print(f"\n{Colors.BLUE}🔧 Phase 2: Go Environment Setup{Colors.END}")
         
         # Check if Go is already properly installed
+        go_installed = False
         try:
             result = subprocess.run(['go', 'version'], 
                                   capture_output=True, text=True, check=True)
             version = result.stdout.strip()
             print(f"{Colors.GREEN}✅ Go already installed: {version}{Colors.END}")
-            
-            # Verify GOPATH and GOBIN
-            gopath = subprocess.run(['go', 'env', 'GOPATH'], 
-                                  capture_output=True, text=True, check=True).stdout.strip()
-            gobin = os.path.join(gopath, 'bin')
-            
-            # Ensure GOBIN is in PATH
-            current_path = os.environ.get('PATH', '')
-            if gobin not in current_path:
-                os.environ['PATH'] = f"{gobin}:{current_path}"
-                print(f"{Colors.GREEN}✅ Added {gobin} to PATH{Colors.END}")
-            
-            return True
+            go_installed = True
             
         except (subprocess.CalledProcessError, FileNotFoundError):
             print(f"{Colors.YELLOW}⚠️  Go not found or improperly configured{Colors.END}")
         
         # Install/configure Go manually if needed
-        print(f"{Colors.WHITE}Installing Go manually...{Colors.END}")
-        go_version = "1.21.5"
-        go_archive = f"go{go_version}.linux-amd64.tar.gz"
-        
-        # Download Go
-        subprocess.run([
-            'wget', '-q', 
-            f'https://golang.org/dl/{go_archive}',
-            '-O', f'/tmp/{go_archive}'
-        ], check=True)
-        
-        # Extract Go
-        subprocess.run(['sudo', 'tar', '-C', '/usr/local', '-xzf', f'/tmp/{go_archive}'], check=True)
-        
-        # Set up environment
-        go_bin = '/usr/local/go/bin'
-        current_path = os.environ.get('PATH', '')
-        if go_bin not in current_path:
-            os.environ['PATH'] = f"{go_bin}:{current_path}"
+        if not go_installed:
+            print(f"{Colors.WHITE}Installing Go manually...{Colors.END}")
+            go_version = "1.21.5"
+            go_archive = f"go{go_version}.linux-amd64.tar.gz"
             
-        # Add to shell profile
-        profile_lines = [
-            'export PATH=$PATH:/usr/local/go/bin',
-            'export GOPATH=$HOME/go',
-            'export PATH=$PATH:$GOPATH/bin'
-        ]
+            try:
+                # Download Go
+                subprocess.run([
+                    'wget', '-q', 
+                    f'https://golang.org/dl/{go_archive}',
+                    '-O', f'/tmp/{go_archive}'
+                ], check=True)
+                
+                # Extract Go
+                subprocess.run(['sudo', 'tar', '-C', '/usr/local', '-xzf', f'/tmp/{go_archive}'], check=True)
+                
+                # Set up Go binary path
+                go_bin = '/usr/local/go/bin'
+                current_path = os.environ.get('PATH', '')
+                if go_bin not in current_path:
+                    os.environ['PATH'] = f"{go_bin}:{current_path}"
+                    print(f"{Colors.GREEN}✅ Added {go_bin} to PATH{Colors.END}")
+                
+                # Verify Go installation worked
+                result = subprocess.run(['go', 'version'], 
+                                      capture_output=True, text=True, check=True)
+                version = result.stdout.strip()
+                print(f"{Colors.GREEN}✅ Go installed successfully: {version}{Colors.END}")
+                
+            except subprocess.CalledProcessError as e:
+                print(f"{Colors.RED}❌ Failed to install Go: {e}{Colors.END}")
+                return False
         
-        for profile in ['.bashrc', '.zshrc']:
-            profile_path = os.path.expanduser(f'~/{profile}')
-            if os.path.exists(profile_path):
-                with open(profile_path, 'a') as f:
-                    f.write('\n# Go environment\n')
-                    for line in profile_lines:
-                        f.write(f'{line}\n')
-        
-        print(f"{Colors.GREEN}✅ Go environment configured{Colors.END}")
-        return True
+        # Now set up GOPATH and GOBIN properly
+        try:
+            # Get GOPATH from Go environment
+            gopath_result = subprocess.run(['go', 'env', 'GOPATH'], 
+                                         capture_output=True, text=True, check=True)
+            gopath = gopath_result.stdout.strip()
+            
+            if not gopath:
+                # Set default GOPATH if not set
+                gopath = os.path.expanduser('~/go')
+                print(f"{Colors.WHITE}Setting GOPATH to default: {gopath}{Colors.END}")
+            
+            print(f"{Colors.WHITE}GOPATH: {gopath}{Colors.END}")
+            
+            # Ensure GOPATH directory exists
+            if not os.path.exists(gopath):
+                os.makedirs(gopath, exist_ok=True)
+                print(f"{Colors.GREEN}✅ Created GOPATH directory: {gopath}{Colors.END}")
+            
+            # Ensure GOPATH/bin directory exists (CRITICAL FIX)
+            gobin = os.path.join(gopath, 'bin')
+            if not os.path.exists(gobin):
+                os.makedirs(gobin, exist_ok=True)
+                print(f"{Colors.GREEN}✅ Created GOBIN directory: {gobin}{Colors.END}")
+            else:
+                print(f"{Colors.GREEN}✅ GOBIN directory exists: {gobin}{Colors.END}")
+            
+            # Ensure GOPATH/src directory exists (for older Go versions)
+            gosrc = os.path.join(gopath, 'src')
+            if not os.path.exists(gosrc):
+                os.makedirs(gosrc, exist_ok=True)
+                print(f"{Colors.GREEN}✅ Created GOSRC directory: {gosrc}{Colors.END}")
+            
+            # Set proper permissions on Go directories
+            import stat
+            for go_dir in [gopath, gobin, gosrc]:
+                if os.path.exists(go_dir):
+                    os.chmod(go_dir, stat.S_IRWXU | stat.S_IRGRP | stat.S_IXGRP | stat.S_IROTH | stat.S_IXOTH)
+            
+            # Ensure GOBIN is in PATH for current session (CRITICAL FIX)
+            current_path = os.environ.get('PATH', '')
+            if gobin not in current_path:
+                os.environ['PATH'] = f"{gobin}:{current_path}"
+                print(f"{Colors.GREEN}✅ Added {gobin} to current session PATH{Colors.END}")
+            else:
+                print(f"{Colors.GREEN}✅ {gobin} already in PATH{Colors.END}")
+            
+            # Set Go environment variables for current session
+            os.environ['GOPATH'] = gopath
+            os.environ['GOBIN'] = gobin
+            
+            # Add to shell profiles for future sessions
+            profile_lines = [
+                'export PATH=$PATH:/usr/local/go/bin',
+                f'export GOPATH={gopath}',
+                f'export GOBIN={gobin}',
+                'export PATH=$PATH:$GOBIN'
+            ]
+            
+            for profile in ['.bashrc', '.zshrc']:
+                profile_path = os.path.expanduser(f'~/{profile}')
+                if os.path.exists(profile_path):
+                    # Check if Go environment is already configured
+                    with open(profile_path, 'r') as f:
+                        content = f.read()
+                    
+                    if '# Go environment' not in content:
+                        with open(profile_path, 'a') as f:
+                            f.write('\n# Go environment\n')
+                            for line in profile_lines:
+                                f.write(f'{line}\n')
+                        print(f"{Colors.GREEN}✅ Added Go environment to {profile}{Colors.END}")
+            
+            # Final validation
+            print(f"{Colors.WHITE}Validating Go environment...{Colors.END}")
+            
+            # Test Go command
+            subprocess.run(['go', 'version'], check=True, capture_output=True)
+            print(f"{Colors.GREEN}  ✅ Go command working{Colors.END}")
+            
+            # Test GOPATH
+            if os.path.exists(gopath) and os.path.isdir(gopath):
+                print(f"{Colors.GREEN}  ✅ GOPATH directory accessible{Colors.END}")
+            else:
+                print(f"{Colors.RED}  ❌ GOPATH directory issue{Colors.END}")
+                return False
+            
+            # Test GOBIN
+            if os.path.exists(gobin) and os.path.isdir(gobin):
+                print(f"{Colors.GREEN}  ✅ GOBIN directory accessible{Colors.END}")
+            else:
+                print(f"{Colors.RED}  ❌ GOBIN directory issue{Colors.END}")
+                return False
+            
+            # Test write permissions
+            test_file = os.path.join(gobin, '.test_write')
+            try:
+                with open(test_file, 'w') as f:
+                    f.write('test')
+                os.remove(test_file)
+                print(f"{Colors.GREEN}  ✅ GOBIN directory writable{Colors.END}")
+            except Exception as e:
+                print(f"{Colors.RED}  ❌ GOBIN directory not writable: {e}{Colors.END}")
+                return False
+            
+            print(f"{Colors.GREEN}✅ Go environment configured and validated successfully{Colors.END}")
+            return True
+            
+        except subprocess.CalledProcessError as e:
+            print(f"{Colors.RED}❌ Go environment configuration failed: {e}{Colors.END}")
+            return False
         
     except Exception as e:
         print(f"{Colors.RED}❌ Go environment setup failed: {e}{Colors.END}")
@@ -635,20 +759,38 @@ def install_security_tools_complete(distro: str) -> bool:
                 env['GOPROXY'] = 'https://proxy.golang.org,direct'  # Use reliable proxy
                 
                 # Extend timeout for naabu due to libpcap compilation
-                timeout_seconds = 600 if tool == 'naabu' else 450  # 10 min for naabu, 7.5 min for others
-                
-                # Use timeout protection for go install (can hang on network issues)
-                if run_with_timeout(['go', 'install', '-v', repo], timeout_seconds, f"Installing {tool} (timeout: {timeout_seconds//60}min)"):
-                    print(f"{Colors.GREEN}  ✅ {tool} installed successfully{Colors.END}")
-                    success_count += 1
+                timeout_seconds = 600 if tool == 'naabu' else 450  # 10 min for naabu, 7.5 min for others                # Use timeout protection for go install with strict error handling
+                if run_with_timeout(['go', 'install', '-v', repo], timeout_seconds, f"Installing {tool} (timeout: {timeout_seconds//60}min)", allow_warnings=False):
+                    # Verify the tool was actually installed in GOBIN
+                    try:
+                        gopath = subprocess.run(['go', 'env', 'GOPATH'], capture_output=True, text=True, check=True).stdout.strip()
+                        gobin = os.path.join(gopath, 'bin')
+                        tool_path = os.path.join(gobin, tool)
+                        
+                        # Enhanced verification with debugging info
+                        print(f"{Colors.WHITE}  Verifying {tool} installation at {tool_path}...{Colors.END}")
+                        
+                        if os.path.exists(tool_path) and os.access(tool_path, os.X_OK):
+                            print(f"{Colors.GREEN}  ✅ {tool} installed and verified at {tool_path}{Colors.END}")
+                            success_count += 1
+                        else:
+                            print(f"{Colors.RED}  ❌ {tool} installation reported success but binary not found at {tool_path}{Colors.END}")
+                            print(f"{Colors.RED}  This indicates a Go environment or installation issue{Colors.END}")
+                            print(f"{Colors.WHITE}  Debug info: GOPATH={gopath}, GOBIN={gobin}{Colors.END}")
+                            print(f"{Colors.WHITE}  Directory exists: {os.path.exists(gobin)}, Directory contents: {os.listdir(gobin) if os.path.exists(gobin) else 'N/A'}{Colors.END}")
+                            if tool == 'nuclei':
+                                print(f"{Colors.RED}  ❌ Nuclei installation failed - Go install did not create binary{Colors.END}")
+                                print(f"{Colors.YELLOW}  Check GOBIN directory exists and is writable: {gobin}{Colors.END}")
+                    except subprocess.CalledProcessError as e:
+                        print(f"{Colors.RED}  ❌ Failed to get Go environment: {e}{Colors.END}")
+                        print(f"{Colors.RED}  This indicates a serious Go installation issue{Colors.END}")
                 else:
-                    print(f"{Colors.YELLOW}  ⚠️ {tool} installation timed out or failed{Colors.END}")
-                    
-                    # For nuclei specifically, offer alternative installation method
+                    print(f"{Colors.RED}  ❌ {tool} installation failed via go install{Colors.END}")
                     if tool == 'nuclei':
-                        print(f"{Colors.CYAN}  💡 Alternative: Install from GitHub releases{Colors.END}")
-                        print(f"{Colors.CYAN}     wget https://github.com/projectdiscovery/nuclei/releases/latest/download/nuclei_linux_amd64.zip{Colors.END}")
-                        print(f"{Colors.CYAN}     unzip nuclei_linux_amd64.zip && sudo mv nuclei /usr/local/bin/{Colors.END}")
+                        print(f"{Colors.RED}  ❌ Nuclei installation failed completely{Colors.END}")
+                        print(f"{Colors.YELLOW}  This setup script requires go install to work properly{Colors.END}")
+                    else:
+                        print(f"{Colors.RED}  ❌ {tool} installation failed - check Go environment{Colors.END}")
                 
             except subprocess.CalledProcessError as e:
                 print(f"{Colors.RED}  ❌ Failed to install {tool}: {e}{Colors.END}")
@@ -696,11 +838,17 @@ def install_security_tools_complete(distro: str) -> bool:
                     if error_msg:
                         print(f"{Colors.YELLOW}  Error: {error_msg}{Colors.END}")
                 print(f"{Colors.YELLOW}  💡 Templates can be updated later: nuclei -update-templates{Colors.END}")
-        
-        # Evaluate installation success
+          # Evaluate installation success - nuclei is critical for vulnerability analysis
         if success_count >= 2:  # At least 2 out of 3 tools must be installed
-            print(f"{Colors.GREEN}✅ Security tools installation completed ({success_count}/3 tools){Colors.END}")
-            return True
+            # Check if nuclei specifically was installed (critical for vulnerability scanning)
+            if shutil.which('nuclei'):
+                print(f"{Colors.GREEN}✅ Security tools installation completed ({success_count}/3 tools) - nuclei available{Colors.END}")
+                return True
+            else:
+                print(f"{Colors.YELLOW}⚠️  {success_count}/3 tools installed but nuclei is missing{Colors.END}")
+                print(f"{Colors.RED}❌ Nuclei is critical for vulnerability analysis - installation incomplete{Colors.END}")
+                print(f"{Colors.WHITE}The setup requires nuclei to be installed via 'go install' for proper operation{Colors.END}")
+                return False
         else:
             print(f"{Colors.RED}❌ Insufficient tools installed ({success_count}/3){Colors.END}")
             print(f"{Colors.WHITE}Minimum 2 tools required for operation{Colors.END}")
@@ -1139,51 +1287,6 @@ def main():
         return False
     except Exception as e:
         print(f"\n{Colors.RED}❌ Unexpected error during installation: {e}{Colors.END}")
-        return False
-
-def try_alternative_nuclei_installation() -> bool:
-    """Alternative nuclei installation method using GitHub releases."""
-    try:
-        print(f"{Colors.CYAN}🔄 Trying alternative nuclei installation method...{Colors.END}")
-        
-        # Detect architecture
-        import platform
-        arch = platform.machine().lower()
-        if arch in ['x86_64', 'amd64']:
-            arch_suffix = 'linux_amd64'
-        elif arch in ['aarch64', 'arm64']:
-            arch_suffix = 'linux_arm64'
-        else:
-            print(f"{Colors.YELLOW}⚠️ Unsupported architecture: {arch}{Colors.END}")
-            return False
-        
-        # Download and install nuclei binary
-        nuclei_url = f"https://github.com/projectdiscovery/nuclei/releases/latest/download/nuclei_{arch_suffix}.zip"
-        
-        print(f"{Colors.WHITE}Downloading nuclei from GitHub releases...{Colors.END}")
-        if run_with_timeout(['wget', '-q', nuclei_url, '-O', '/tmp/nuclei.zip'], 180, "Downloading nuclei"):
-            print(f"{Colors.WHITE}Extracting and installing nuclei...{Colors.END}")
-            
-            # Extract and install
-            if (run_with_timeout(['unzip', '-q', '/tmp/nuclei.zip', '-d', '/tmp/'], 60, "Extracting nuclei") and
-                run_with_timeout(['sudo', 'mv', '/tmp/nuclei', '/usr/local/bin/nuclei'], 30, "Installing nuclei") and
-                run_with_timeout(['sudo', 'chmod', '+x', '/usr/local/bin/nuclei'], 10, "Making nuclei executable")):
-                
-                # Cleanup
-                subprocess.run(['rm', '-f', '/tmp/nuclei.zip', '/tmp/nuclei'], 
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-                
-                print(f"{Colors.GREEN}✅ Nuclei installed successfully via GitHub releases{Colors.END}")
-                return True
-            else:
-                print(f"{Colors.RED}❌ Failed to extract/install nuclei binary{Colors.END}")
-                return False
-        else:
-            print(f"{Colors.RED}❌ Failed to download nuclei from GitHub{Colors.END}")
-            return False
-            
-    except Exception as e:
-        print(f"{Colors.RED}❌ Alternative nuclei installation failed: {e}{Colors.END}")
         return False
 
 if __name__ == "__main__":
