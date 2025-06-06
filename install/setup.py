@@ -486,11 +486,13 @@ def check_system_dependencies(distro: str) -> bool:
                     if result.returncode == 0:
                         print(f"{Colors.GREEN}  ✅ {dep} is installed{Colors.END}")
                     else:
+                        print(f"{Colors.RED}  ❌ {dep} is missing{Colors.END}")
                         missing_deps.append(dep)
                 except subprocess.CalledProcessError:
                     print(f"{Colors.RED}  ❌ {dep} is missing{Colors.END}")
                     missing_deps.append(dep)
-          # Install missing dependencies automatically
+        
+        # Install missing dependencies automatically
         if missing_deps:
             print(f"\n{Colors.YELLOW}Installing missing dependencies: {', '.join(missing_deps)}{Colors.END}")
             
@@ -511,7 +513,8 @@ def check_system_dependencies(distro: str) -> bool:
                 print(f"{Colors.RED}❌ Failed to install dependencies: {e}{Colors.END}")
                 print(f"{Colors.YELLOW}Please install manually: {' '.join(missing_deps)}{Colors.END}")
                 return False
-          # Check for broken packages
+        
+        # Check for broken packages
         run_with_timeout(['apt', '--fix-broken', 'install', '-y'], 180, "Fixing broken packages")
         
         return True
@@ -529,8 +532,7 @@ def verify_go_tools_prerequisites() -> bool:
         pcap_headers = [
             '/usr/include/pcap.h',
             '/usr/local/include/pcap.h',
-            '/usr/include/pcap/pcap.h'
-        ]
+            '/usr/include/pcap/pcap.h'        ]
         
         pcap_found = False
         for header in pcap_headers:
@@ -571,7 +573,7 @@ def attempt_dependency_recovery(distro: str) -> bool:
             subprocess.run(['pacman', '-Scc', '--noconfirm'], 
                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
             subprocess.run(['pacman', '-Sy'], check=True,
-                          stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)        
+                          stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
         else:
             print(f"{Colors.WHITE}Cleaning apt cache and updating...{Colors.END}")
             subprocess.run(['env', 'DEBIAN_FRONTEND=noninteractive', 'apt-get', 'clean'], 
