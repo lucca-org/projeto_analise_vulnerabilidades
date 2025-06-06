@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-MTScan.py - Multi Tool Scan Interactive Menu
+mtscan.py - Multi Tool Scan Interactive Menu
 Main interface for the Linux Vulnerability Analysis Toolkit
 """
 
@@ -457,7 +457,7 @@ def show_help():
     print("  • docs/INSTALL.md - Installation instructions")
     print()
     print("🚀 GETTING STARTED:")
-    print("  • Run: python MTScan.py")
+    print("  • Run: python mtscan.py")
     print("  • Or: python src/workflow.py <target>")
     print()
     print("🌐 EXAMPLES:")
