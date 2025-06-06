@@ -103,7 +103,8 @@ def run_full_scan(target: str, output_dir: str, ports: Optional[str] = None,
                  templates: Optional[str] = None, tags: str = "cve", 
                  severity: str = "critical,high", verbose: bool = False, 
                  timeout: int = 3600, auto_config: bool = True,
-                 scan_code: bool = False, custom_config: Optional[Dict[str, Any]] = None) -> bool:
+                 scan_code: bool = False, custom_config: Optional[Dict[str, Any]] = None,
+                 stealth: bool = False) -> bool:
     """
     Run the complete vulnerability scanning workflow with robust error handling.
     
@@ -119,11 +120,14 @@ def run_full_scan(target: str, output_dir: str, ports: Optional[str] = None,
         auto_config (bool): Automatically configure tools based on system capabilities.
         scan_code (bool): Scan web application code if found during http enumeration.
         custom_config (dict): Custom configuration settings to override defaults.
+        stealth (bool): Use stealth mode for scanning to reduce detection risk.
     
     Returns:
         bool: True if workflow completed successfully, False otherwise.
     """
     print(f"[+] Starting full scan on {target}")
+    if stealth:
+        print("[+] STEALTH MODE ENABLED - Using slower but more discreet scanning techniques")
     print(f"[+] Results will be saved to {output_dir}")
     
     # Auto-configure tools if requested and available
@@ -153,7 +157,20 @@ def run_full_scan(target: str, output_dir: str, ports: Optional[str] = None,
         
         # Prepare naabu arguments with auto-configuration
         naabu_args = ["--json", "-o", ports_json]
-        if naabu_config:
+        
+        # Apply stealth mode settings if enabled
+        if stealth:
+            # Configure naabu for stealth operation
+            naabu_args.extend([
+                "-rate", "10",  # Very slow packet rate
+                "-c", "25",     # Lower connection pool size
+                "-scan-type", "syn",  # SYN scan is generally more stealthy
+                "-retries", "1",      # Fewer retries to avoid triggering alerts
+                "-warm-up-time", "5", # Add warm-up time to avoid immediate full connections
+                "-ping", "false"      # Skip ping to be more discreet
+            ])
+        elif naabu_config:
+            # Apply normal configuration if not in stealth mode
             if 'scan_type' in naabu_config:
                 naabu_args.extend(["--scan-type", naabu_config['scan_type']])
             if 'threads' in naabu_config and not verbose:  # Only use configured threads if not in verbose mode
@@ -197,7 +214,7 @@ def run_full_scan(target: str, output_dir: str, ports: Optional[str] = None,
         # Prepare httpx arguments with auto-configuration
         httpx_args = ["--json", "-o", http_json]
         
-        # Set default values
+        # Initialize all variables to avoid "possibly unbound" errors
         title_val = True
         status_code_val = True
         tech_detect_val = True
@@ -205,9 +222,27 @@ def run_full_scan(target: str, output_dir: str, ports: Optional[str] = None,
         follow_redirects_val = True
         timeout_val = None
         threads_val = None
-            
-        # Apply configured settings if available
-        if httpx_config:
+        
+        # Apply stealth mode settings if enabled
+        if stealth:
+            # Configure httpx for stealth operation
+            httpx_args.extend([
+                "-rate-limit", "5",   # Very low rate limit
+                "-retries", "1",      # Fewer retries
+                "-timeout", "10",     # Shorter timeout
+                "-delay", "5s",       # Add delay between requests
+                "-random-agent",      # Use random user-agents to avoid fingerprinting
+                "-no-fingerprint"     # Skip extensive fingerprinting which can be noisy
+            ])
+            title_val = False         # Disable extra feature probing in stealth mode
+            status_code_val = True
+            tech_detect_val = False   # Technology detection can be noisy
+            web_server_val = False    # Web server detection can be noisy
+            follow_redirects_val = True
+            timeout_val = 10          # Set timeout value explicitly in stealth mode
+            threads_val = 5           # Set threads value explicitly in stealth mode
+        elif httpx_config:
+            # Apply configured settings if available
             title_val = httpx_config.get('title', True)
             status_code_val = httpx_config.get('status_code', True)
             tech_detect_val = httpx_config.get('tech_detect', True)
@@ -276,18 +311,41 @@ def run_full_scan(target: str, output_dir: str, ports: Optional[str] = None,
             "-me", nuclei_resp_dir
         ]
         
-        # Add configured settings
-        if nuclei_config:
-            if 'rate_limit' in nuclei_config:
-                nuclei_args.extend(["-rate-limit", str(nuclei_config['rate_limit'])])
-            if 'bulk_size' in nuclei_config:
-                nuclei_args.extend(["-bulk-size", str(nuclei_config['bulk_size'])])
-            if 'timeout' in nuclei_config:
-                nuclei_args.extend(["-timeout", str(nuclei_config['timeout'])])
-            if 'retries' in nuclei_config:
-                nuclei_args.extend(["-retries", str(nuclei_config['retries'])])
-            if 'exclude_tags' in nuclei_config and nuclei_config['exclude_tags']:
-                nuclei_args.extend(["-exclude-tags", nuclei_config['exclude_tags']])
+        # Apply stealth mode settings if enabled
+        if stealth:
+            # Configure nuclei for stealth operation
+            nuclei_args.extend([
+                "-rate-limit", "5",        # Very low rate limit
+                "-bulk-size", "5",         # Small bulk size
+                "-concurrency", "5",       # Low concurrency
+                "-timeout", "5",           # Short timeout
+                "-retries", "1",           # Fewer retries
+                "-headless-options", "delay=1000",  # Add delay for headless operations
+                "-headless-workers", "1",  # Only one headless worker
+                "-no-interactsh",          # Disable interactsh to avoid callbacks
+                "-no-meta",                # Avoid additional metadata requests
+                "-scan-strategy", "host-spray" # Host-based scan strategy is more discreet
+            ])
+            
+            # In stealth mode, focus on passive templates when possible
+            if templates is None:
+                nuclei_args.extend(["-tags", "passive,cve"])
+            
+            # Skip some noisy tags in stealth mode
+            nuclei_args.extend(["-exclude-tags", "fuzzing,dos,brute-force"])
+        elif nuclei_config:
+            # Add configured settings
+            if nuclei_config:
+                if 'rate_limit' in nuclei_config:
+                    nuclei_args.extend(["-rate-limit", str(nuclei_config['rate_limit'])])
+                if 'bulk_size' in nuclei_config:
+                    nuclei_args.extend(["-bulk-size", str(nuclei_config['bulk_size'])])
+                if 'timeout' in nuclei_config:
+                    nuclei_args.extend(["-timeout", str(nuclei_config['timeout'])])
+                if 'retries' in nuclei_config:
+                    nuclei_args.extend(["-retries", str(nuclei_config['retries'])])
+                if 'exclude_tags' in nuclei_config and nuclei_config['exclude_tags']:
+                    nuclei_args.extend(["-exclude-tags", nuclei_config['exclude_tags']])
         
         # If time is very limited, add rate limiting to avoid overwhelming the target
         if remaining_time < timeout * 0.2:
@@ -525,6 +583,68 @@ def check_network_connectivity():
         print(f"Error checking network: {e}")
         return False
 
+def check_tool_availability(tool_name, common_paths=None):
+    """
+    Check if a tool is available in any of the common installation paths.
+    
+    Args:
+        tool_name: Name of the tool to check
+        common_paths: List of common installation paths to check for the tool
+        
+    Returns:
+        tuple: (bool, str) - Whether the tool is available and its path
+    """
+    # Default common paths if none provided
+    if common_paths is None:
+        common_paths = [
+            f"/usr/bin/{tool_name}",
+            f"/usr/local/bin/{tool_name}",
+            f"/root/go/bin/{tool_name}",
+            f"~/go/bin/{tool_name}",
+            f"{os.path.expanduser('~')}/go/bin/{tool_name}",
+            f"{os.path.expanduser('~')}/.local/bin/{tool_name}"
+        ]
+    
+    # First check if tool is in PATH
+    path_result = get_executable_path(tool_name)
+    if path_result:
+        # Test if the tool actually works
+        try:
+            # Run with --version or -version to check if it works
+            for flag in ["--version", "-version", "-v", "--help", "-h"]:
+                result = subprocess.run(
+                    [path_result, flag], 
+                    stdout=subprocess.PIPE, 
+                    stderr=subprocess.PIPE,
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    return True, path_result
+        except (subprocess.SubprocessError, OSError, FileNotFoundError):
+            # Tool exists but might not be working properly
+            pass
+    
+    # Then check common paths
+    for path in common_paths:
+        expanded_path = os.path.expanduser(path)
+        if os.path.isfile(expanded_path) and os.access(expanded_path, os.X_OK):
+            try:
+                # Try to run the tool to verify it works
+                for flag in ["--version", "-version", "-v", "--help", "-h"]:
+                    result = subprocess.run(
+                        [expanded_path, flag], 
+                        stdout=subprocess.PIPE, 
+                        stderr=subprocess.PIPE,
+                        timeout=5
+                    )
+                    if result.returncode == 0:
+                        return True, expanded_path
+            except (subprocess.SubprocessError, OSError, FileNotFoundError):
+                # Tool exists but might not be working properly
+                continue
+    
+    return False, None
+
 def main():
     """Main entry point for the vulnerability scanning workflow."""
     parser = argparse.ArgumentParser(description='Automated vulnerability scanning workflow')
@@ -541,6 +661,8 @@ def main():
     parser.add_argument('--auto-config', action='store_true', help='Use automatic configuration based on system capabilities')
     parser.add_argument('--scan-code', action='store_true', help='Scan web application code for vulnerabilities')
     parser.add_argument('--config-file', help='Use custom configuration file')
+    parser.add_argument('--force-tools', action='store_true', help='Force continue even if tools check fails')
+    parser.add_argument('-s', '--stealth', action='store_true', help='Enable stealth mode for more discreet scanning')
     
     # Enforce Linux-only operation
     if platform.system().lower() != "linux":
@@ -598,28 +720,64 @@ def main():
         sys.exit(1)
     
     # Check if required tools are installed
-    tool_checks = []
+    tools_found = True
     
     print("[+] Checking required tools...")
     
-    # Check naabu
-    naabu_ok = naabu.check_naabu()
-    tool_checks.append(naabu_ok)
+    # Check naabu with common paths
+    naabu_paths = [
+        "/usr/bin/naabu",
+        "/usr/local/bin/naabu",
+        "/root/go/bin/naabu",
+        "~/go/bin/naabu",
+        f"{os.path.expanduser('~')}/go/bin/naabu"
+    ]
+    naabu_ok, naabu_path = check_tool_availability("naabu", naabu_paths)
+    if naabu_ok:
+        print(f"  ✅ naabu: Available at {naabu_path}")
+    else:
+        print("  ❌ naabu: Not found. Required for port scanning.")
+        tools_found = False
     
-    # Check httpx
-    httpx_ok = httpx.check_httpx()
-    tool_checks.append(httpx_ok)
+    # Check httpx with common paths
+    httpx_paths = [
+        "/usr/bin/httpx",
+        "/usr/local/bin/httpx",
+        "/root/go/bin/httpx",
+        "~/go/bin/httpx",
+        f"{os.path.expanduser('~')}/go/bin/httpx"
+    ]
+    httpx_ok, httpx_path = check_tool_availability("httpx", httpx_paths)
+    if httpx_ok:
+        print(f"  ✅ httpx: Available at {httpx_path}")
+    else:
+        print("  ❌ httpx: Not found or not working. Required for HTTP service detection.")
+        tools_found = False
     
-    # Check nuclei
-    nuclei_ok = nuclei.check_nuclei()
-    tool_checks.append(nuclei_ok)
+    # Check nuclei with common paths
+    nuclei_paths = [
+        "/usr/bin/nuclei",
+        "/usr/local/bin/nuclei",
+        "/root/go/bin/nuclei",
+        "~/go/bin/nuclei",
+        f"{os.path.expanduser('~')}/go/bin/nuclei"
+    ]
+    nuclei_ok, nuclei_path = check_tool_availability("nuclei", nuclei_paths)
+    if nuclei_ok:
+        print(f"  ✅ nuclei: Available at {nuclei_path}")
+    else:
+        print("  ❌ nuclei: Not found. Required for vulnerability scanning.")
+        tools_found = False
     
-    if not all(tool_checks):
-        print("[-] One or more required tools are not installed.")
+    if not tools_found and not args.force_tools:
+        print("[-] One or more required tools are not installed or not working correctly.")
         print("[*] Please run the setup script: python install/setup.py")
+        print("[*] Or use --force-tools to continue anyway (not recommended)")
         sys.exit(1)
-    
-    print("[+] All required tools are installed.")
+    elif not tools_found and args.force_tools:
+        print("[!] Continuing with missing tools (--force-tools enabled). Expect errors!")
+    else:
+        print("[+] All required tools are installed.")
     
     # Update nuclei templates if requested
     if args.update_templates:
@@ -665,7 +823,8 @@ def main():
             timeout=args.timeout,
             auto_config=args.auto_config,
             scan_code=args.scan_code,
-            custom_config=custom_config  # Now passing a dict
+            custom_config=custom_config,
+            stealth=args.stealth
         )
         
         if not success:
