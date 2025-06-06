@@ -1188,7 +1188,7 @@ def print_success_message():
     print(f"\n{Colors.CYAN}Next Steps:{Colors.END}")
     print(f"{Colors.WHITE}1. Run: export PATH=$PATH:~/go/bin{Colors.END}")
     print(f"{Colors.WHITE}2. Navigate to the project directory{Colors.END}")
-    print(f"{Colors.WHITE}3. Test: python MTScan.py{Colors.END}")
+    print(f"{Colors.WHITE}3. Test: python mtscan.py{Colors.END}")
     print(f"{Colors.WHITE}4. Run scans: python src/workflow.py <target>{Colors.END}")
     print(f"{Colors.WHITE}5. Check config/optimized_config.json for settings{Colors.END}")
     print(f"\n{Colors.CYAN}Example Usage:{Colors.END}")
@@ -1286,18 +1286,18 @@ def main():
                 print("\n🚀 Launching MTScan...")
                 print("=" * 40)
                 print(f"{Colors.YELLOW}Note: If tools show as 'Not installed', run: export PATH=$PATH:~/go/bin{Colors.END}")
-                # Change to the parent directory and launch MTScan from root
+                # Change to the parent directory and launch mtscan from root
                 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-                mtscan_path = os.path.join(parent_dir, "MTScan.py")
+                mtscan_path = os.path.join(parent_dir, "mtscan.py")
                 if os.path.exists(mtscan_path):
                     subprocess.run(["python", mtscan_path], cwd=parent_dir)
                 else:
-                    print("❌ Could not find MTScan.py. Please run it manually.")
+                    print("❌ Could not find mtscan.py. Please run it manually.")
             else:
-                print("\n✨ Setup complete! Run 'python MTScan.py' when ready.")
+                print("\n✨ Setup complete! Run 'python mtscan.py' when ready.")
                 print(f"{Colors.YELLOW}Remember: export PATH=$PATH:~/go/bin{Colors.END}")
         except KeyboardInterrupt:
-            print("\n\n✨ Setup complete! Run 'python MTScan.py' when ready.")
+            print("\n\n✨ Setup complete! Run 'python mtscan.py' when ready.")
             print(f"{Colors.YELLOW}Remember: export PATH=$PATH:~/go/bin{Colors.END}")
         
         return True

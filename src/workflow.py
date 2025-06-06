@@ -1309,24 +1309,24 @@ def main():
         response = input("\n🎯 Return to MTScan menu? [Y/n]: ").strip().lower()
         if response in ['', 'y', 'yes']:
             print("\n🚀 Launching MTScan menu...")
-            # Get the correct path to MTScan.py (should be in parent directory)
+            # Get the correct path to mtscan.py (should be in parent directory)
             script_dir = os.path.dirname(os.path.abspath(__file__))
             parent_dir = os.path.dirname(script_dir)
-            mtscan_path = os.path.join(parent_dir, "MTScan.py")
+            mtscan_path = os.path.join(parent_dir, "mtscan.py")
             
             if os.path.exists(mtscan_path):
                 subprocess.run(["python", mtscan_path], cwd=parent_dir)
             else:
-                # Fallback: try to find MTScan.py in current working directory
-                if os.path.exists("MTScan.py"):
-                    subprocess.run(["python", "MTScan.py"])
+                # Fallback: try to find mtscan.py in current working directory
+                if os.path.exists("mtscan.py"):
+                    subprocess.run(["python", "mtscan.py"])
                 else:
-                    print("❌ Could not find MTScan.py. Please run it manually.")
-                    print("💡 Try: python MTScan.py")
+                    print("❌ Could not find mtscan.py. Please run it manually.")
+                    print("💡 Try: python mtscan.py")
     except KeyboardInterrupt:
         pass
     except Exception as e:
         print(f"[!] Could not return to MTScan menu: {e}")
-        print("💡 You can manually run: python MTScan.py")
+        print("💡 You can manually run: python mtscan.py")
     
     sys.exit(0)
