@@ -20,4 +20,4 @@ jsonschema==4.19.0
 pyyaml==6.0.1
 
 # HTTP testing
-pytest-httpx==0.24.0
+pytest-httpx==0.35.0
