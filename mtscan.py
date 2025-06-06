@@ -292,10 +292,43 @@ def create_scan_session_dir(target, scan_type):
     os.makedirs(session_dir, exist_ok=True)
     return session_dir
 
+def check_target_connectivity(target):
+    """Check if target is reachable before scanning."""
+    print(f"🔍 Checking connectivity to {target}...")
+    
+    # Clean target for ping (remove protocol, paths)
+    clean_target = target.replace("http://", "").replace("https://", "").split("/")[0]
+    
+    try:
+        # Try ping first
+        ping_result = subprocess.run(
+            ["ping", "-c", "1", "-W", "3", clean_target],
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        if ping_result.returncode == 0:
+            print(f"✅ Target {clean_target} is reachable via ping")
+            return True
+        else:
+            print(f"⚠️  Target {clean_target} not responding to ping")
+            print("   (This is normal for many hosts - continuing with scan)")
+            return True  # Don't block scan just because ping fails
+            
+    except Exception as e:
+        print(f"⚠️  Connectivity check failed: {e}")
+        print("   Proceeding with scan anyway...")
+        return True
+
 def run_scan(scan_type, target, **kwargs):
     """Run a scan with the specified parameters."""
     # Create session directory for results
     session_dir = create_scan_session_dir(target, scan_type)
+    
+    # Check connectivity first
+    if not check_target_connectivity(target):
+        print("❌ Target appears unreachable. Continuing anyway...")
     
     cmd = ["sudo", "python", "src/workflow.py"]
     
@@ -334,61 +367,221 @@ def run_scan(scan_type, target, **kwargs):
     print(f"📋 Command: {' '.join(cmd)}")
     print("=" * 60)
     
+    # Add debug information
+    print(f"🔧 Debug Info:")
+    print(f"   Working Directory: {os.getcwd()}")
+    print(f"   Session Directory: {session_dir}")
+    print(f"   Python Path: {sys.executable}")
+    
+    # Check if workflow.py exists
+    workflow_path = "src/workflow.py"
+    if os.path.exists(workflow_path):
+        print(f"   ✅ Workflow script found: {workflow_path}")
+    else:
+        print(f"   ❌ Workflow script NOT found: {workflow_path}")
+        print("   Available files in src/:")
+        try:
+            if os.path.exists("src"):
+                for f in os.listdir("src"):
+                    print(f"      - {f}")
+            else:
+                print("      src/ directory not found!")
+        except:
+            pass
+        input("\nPress Enter to continue...")
+        return
+    
+    print("=" * 60)
+    
     try:
-        # Capture both stdout and stderr to save results
-        result = subprocess.run(
-            cmd, 
-            cwd=os.getcwd(),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            text=True
-        )
-        
-        # Save command output to files
+        # Create output files beforehand
         output_file = os.path.join(session_dir, f"{scan_type}_output.txt")
         error_file = os.path.join(session_dir, f"{scan_type}_errors.txt")
+        realtime_file = os.path.join(session_dir, f"{scan_type}_realtime.txt")
         
-        if result.stdout:
+        print(f"📝 Output files:")
+        print(f"   📄 Output: {output_file}")
+        print(f"   📄 Errors: {error_file}")
+        print(f"   📄 Realtime: {realtime_file}")
+        print()
+        
+        # Run with real-time output if verbose
+        if kwargs.get('verbose'):
+            print("🔄 Starting scan with real-time output...")
+            print("─" * 40)
+            
+            # Start process with real-time output
+            process = subprocess.Popen(
+                cmd,
+                cwd=os.getcwd(),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+                universal_newlines=True
+            )
+            
+            # Capture output in real-time
+            stdout_lines = []
+            stderr_lines = []
+            
+            # Read output line by line
+            while process.poll() is None:
+                # Read stdout
+                if process.stdout:
+                    line = process.stdout.readline()
+                    if line:
+                        line = line.rstrip()
+                        print(f"📤 {line}")
+                        stdout_lines.append(line)
+                        
+                        # Also save to realtime file
+                        with open(realtime_file, 'a') as f:
+                            f.write(f"{datetime.datetime.now().strftime('%H:%M:%S')} | {line}\n")
+                
+                # Read stderr
+                if process.stderr:
+                    err_line = process.stderr.readline()
+                    if err_line:
+                        err_line = err_line.rstrip()
+                        print(f"⚠️  {err_line}")
+                        stderr_lines.append(err_line)
+            
+            # Get remaining output
+            remaining_stdout, remaining_stderr = process.communicate()
+            if remaining_stdout:
+                for line in remaining_stdout.split('\n'):
+                    if line.strip():
+                        print(f"📤 {line}")
+                        stdout_lines.append(line)
+            
+            if remaining_stderr:
+                for line in remaining_stderr.split('\n'):
+                    if line.strip():
+                        print(f"⚠️  {line}")
+                        stderr_lines.append(line)
+            
+            # Combine results
+            stdout_result = '\n'.join(stdout_lines)
+            stderr_result = '\n'.join(stderr_lines)
+            return_code = process.returncode
+            
+            print("─" * 40)
+            
+        else:
+            # Run without real-time output
+            print("🔄 Running scan (no real-time output)...")
+            result = subprocess.run(
+                cmd, 
+                cwd=os.getcwd(),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=300  # 5 minute timeout
+            )
+            
+            stdout_result = result.stdout
+            stderr_result = result.stderr
+            return_code = result.returncode
+        
+        # Save outputs to files
+        if stdout_result:
             with open(output_file, 'w') as f:
-                f.write(result.stdout)
+                f.write(stdout_result)
             print(f"✅ Output saved to: {output_file}")
+            print(f"   📊 {len(stdout_result.split())} lines written")
+        else:
+            print(f"⚠️  No stdout output received")
+            # Create empty file to indicate scan was attempted
+            with open(output_file, 'w') as f:
+                f.write("# No output received from scan\n")
         
-        if result.stderr:
+        if stderr_result:
             with open(error_file, 'w') as f:
-                f.write(result.stderr)
+                f.write(stderr_result)
             print(f"⚠️  Errors/warnings saved to: {error_file}")
+            
+            # Show first few error lines
+            error_lines = stderr_result.split('\n')[:3]
+            for line in error_lines:
+                if line.strip():
+                    print(f"   🔍 {line}")
         
-        # Also print the output to console if verbose
-        if kwargs.get('verbose') and result.stdout:
-            print("\n📊 SCAN OUTPUT:")
-            print("-" * 40)
-            print(result.stdout)
+        # Enhanced debugging output
+        print(f"\n🔍 SCAN DEBUGGING:")
+        print(f"   Return Code: {return_code}")
+        print(f"   Stdout Length: {len(stdout_result) if stdout_result else 0} chars")
+        print(f"   Stderr Length: {len(stderr_result) if stderr_result else 0} chars")
+        
+        # Check what files were actually created
+        print(f"\n📁 Files created in session directory:")
+        try:
+            session_files = os.listdir(session_dir)
+            for file in session_files:
+                file_path = os.path.join(session_dir, file)
+                size = os.path.getsize(file_path)
+                print(f"   📄 {file} ({size} bytes)")
+                
+                # Show content preview for small files
+                if size > 0 and size < 1000:
+                    try:
+                        with open(file_path, 'r') as f:
+                            content = f.read()
+                            lines = content.split('\n')
+                            print(f"      Preview ({len(lines)} lines):")
+                            for line in lines[:3]:
+                                if line.strip():
+                                    print(f"        {line[:80]}")
+                    except:
+                        print(f"      (Cannot preview content)")
+        except Exception as e:
+            print(f"   ❌ Error listing files: {e}")
         
         print("\n" + "=" * 60)
-        if result.returncode == 0:
+        if return_code == 0:
             print("✅ Scan completed successfully!")
-            print(f"📊 Results saved in: {session_dir}")
-            
-        elif result.returncode == 2:
+        elif return_code == 2:
             print("⚠️  Scan completed with some issues.")
         else:
-            print("❌ Scan failed.")
-            if result.stderr:
-                print(f"Error details: {result.stderr[:200]}...")
+            print(f"❌ Scan failed with return code: {return_code}")
+        
+        print(f"📊 Results saved in: {session_dir}")
+        
+        # For nuclei specifically, check if it needs special handling
+        if scan_type == "nuclei":
+            print(f"\n💡 Nuclei-specific notes:")
+            print(f"   • Nuclei requires targets with open HTTP services")
+            print(f"   • Consider running port scan first to find services")
+            print(f"   • Target format should be: http://192.168.0.5 or https://192.168.0.5")
+            print(f"   • Run 'nuclei -list' to see available templates")
+            
+            # Suggest URL format
+            if not target.startswith(('http://', 'https://')):
+                print(f"   💡 Try: http://{target} or https://{target}")
         
         # Update summary with final results
-        update_scan_summary(session_dir, scan_type, target, kwargs, result)
+        update_scan_summary(session_dir, scan_type, target, kwargs, type('Result', (), {
+            'returncode': return_code,
+            'stdout': stdout_result,
+            'stderr': stderr_result
+        })())
         
         # Show quick results preview
         show_quick_results_preview(session_dir)
         
         input("\nPress Enter to continue...")
         
+    except subprocess.TimeoutExpired:
+        print("\n\n⏰ Scan timed out after 5 minutes.")
+        input("Press Enter to continue...")
     except KeyboardInterrupt:
         print("\n\n⚠️  Scan interrupted by user.")
         input("Press Enter to continue...")
     except Exception as e:
         print(f"\n❌ Error running scan: {e}")
+        print(f"   Exception type: {type(e).__name__}")
+        print(f"   Working directory: {os.getcwd()}")
+        print(f"   Command attempted: {' '.join(cmd)}")
         input("Press Enter to continue...")
 
 def update_scan_summary(session_dir, scan_type, target, options, result):

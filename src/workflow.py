@@ -856,88 +856,326 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
         vuln_output = os.path.join(output_dir, "vulnerabilities.txt")
         vuln_json = os.path.join(output_dir, "vulnerabilities.jsonl")
         
-        # Determine what to scan
-        nuclei_input = target
-        print(f"[+] Target: {nuclei_input}")
+        # Initialize variables to avoid "possibly unbound" errors
+        nuclei_targets = []
+        debug_output = os.path.join(output_dir, "nuclei_debug.txt")
+        
+        # Ensure target is in proper URL format for nuclei
+        nuclei_target = target
+        if not target.startswith(('http://', 'https://')):
+            # Try both HTTP and HTTPS
+            print(f"[+] Target doesn't specify protocol. Testing both HTTP and HTTPS...")
+            nuclei_targets = [f"http://{target}", f"https://{target}"]
+            
+            # Create a temporary target file
+            target_file = os.path.join(output_dir, "nuclei_targets.txt")
+            with open(target_file, 'w') as f:
+                for t in nuclei_targets:
+                    f.write(f"{t}\n")
+            nuclei_input = target_file
+            print(f"[+] Created target file: {target_file}")
+            print(f"[+] Testing URLs: {', '.join(nuclei_targets)}")
+        else:
+            nuclei_input = target
+            nuclei_targets = [target]  # Ensure nuclei_targets is always defined
+            print(f"[+] Target: {nuclei_input}")
         
         # Create output directory for storing responses
         nuclei_resp_dir = os.path.join(output_dir, "nuclei_responses")
         create_directory_if_not_exists(nuclei_resp_dir)
         
-        # Build nuclei arguments for real-time output
-        nuclei_args = ["-v", "-irr", "-stats"]  # Always verbose for real-time updates
+        # DIRECT NUCLEI EXECUTION - BYPASS THE WRAPPER MODULE
+        print(f"[+] Using direct nuclei execution to bypass potential wrapper issues...")
         
+        # Determine the nuclei executable path
+        nuclei_cmd = tool_paths.get('nuclei', 'nuclei')
+        print(f"[+] Nuclei executable: {nuclei_cmd}")
+        
+        # Build the complete command directly
+        cmd = [nuclei_cmd]
+        
+        # Add target
+        if isinstance(nuclei_input, str) and not os.path.isfile(nuclei_input):
+            # Single target
+            cmd.extend(["-target", nuclei_input])
+        else:
+            # Target file
+            cmd.extend(["-list", nuclei_input])
+        
+        # Add basic output
+        cmd.extend(["-o", vuln_output])
+        
+        # Add JSON output if requested
         if args.json_output:
-            nuclei_args.extend(["-jsonl", "-o", vuln_json])
+            cmd.extend(["-jsonl", "-json-output", vuln_json])
         
-        nuclei_args.extend(["-me", nuclei_resp_dir])
+        # Add template filtering
+        if args.templates:
+            cmd.extend(["-templates", args.templates])
+        else:
+            # Use tags for better targeting
+            cmd.extend(["-tags", args.tags])
+        
+        # Add severity filter
+        cmd.extend(["-severity", args.severity])
+        
+        # Add verbose and other useful flags
+        cmd.extend(["-v", "-stats"])
+        
+        # Add response storage
+        cmd.extend(["-store-resp", "-store-resp-dir", nuclei_resp_dir])
         
         # Add stealth mode settings if enabled
         if args.stealth:
-            nuclei_args.extend([
+            cmd.extend([
                 "-rate-limit", "5",
-                "-bulk-size", "5",
+                "-bulk-size", "5", 
                 "-concurrency", "5",
                 "-timeout", "5",
                 "-retries", "1",
-                "-exclude-tags", "fuzzing,dos,brute-force"
+                "-exclude-tags", "fuzzing,dos,brute-force",
+                "-no-interactsh"
             ])
         else:
-            # Normal speed settings
-            nuclei_args.extend([
-                "-rate-limit", "150",
-                "-bulk-size", "25",
-                "-concurrency", "25"
+            # Normal speed settings but not too aggressive
+            cmd.extend([
+                "-rate-limit", "50",
+                "-bulk-size", "10",
+                "-concurrency", "10",
+                "-timeout", "10"
             ])
         
+        # Final command info
         print(f"[+] Output file: {vuln_output}")
-        print(f"[+] Scanning with tags: {args.tags}")
-        print(f"[+] Severity filter: {args.severity}")
-        print(f"[+] Command: nuclei -target {target} -tags {args.tags} -severity {args.severity} -o {vuln_output}")
+        print(f"[+] Response directory: {nuclei_resp_dir}")
+        print(f"[+] Tags: {args.tags}")
+        print(f"[+] Severity: {args.severity}")
+        print(f"[+] Full command: {' '.join(cmd)}")
+        print(f"[+] Working directory: {output_dir}")
         print(f"[+] Scan starting...")
+        print("="*60)
         
-        nuclei_success = nuclei.run_nuclei(
-            target_list=nuclei_input,
-            templates=args.templates,
-            tags=args.tags,
-            severity=args.severity,
-            output_file=vuln_output,
-            jsonl=args.json_output,
-            store_resp=True,
-            silent=False,  # Never silent for real-time updates
-            additional_args=nuclei_args
-        )
+        # Initialize return code for error handling
+        return_code = -1
         
-        print(f"\n[+] Nuclei scan completed!")
-        
-        if nuclei_success:
-            # Check if output file was created and has content
-            if os.path.exists(vuln_output):
-                file_size = os.path.getsize(vuln_output)
-                if file_size > 0:
-                    print(f"[+] Results saved to {vuln_output} ({file_size} bytes)")
-                    # Show all results
-                    try:
-                        with open(vuln_output, 'r') as f:
-                            lines = f.readlines()
-                            if lines:
-                                print(f"[+] Found {len(lines)} vulnerabilities:")
-                                for line in lines:
-                                    print(f"    🚨 {line.strip()}")
-                            else:
-                                print("[+] No vulnerabilities found - this is good!")
-                    except Exception as e:
-                        print(f"[!] Could not read output file: {e}")
-                        success = False
+        # Run nuclei with direct subprocess execution
+        try:
+            # Run the command with real-time output
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+                universal_newlines=True,
+                cwd=output_dir
+            )
+            
+            # Capture output in real-time
+            stdout_lines = []
+            stderr_lines = []
+            
+            print("[+] Real-time nuclei output:")
+            print("-" * 40)
+            
+            # Read output line by line
+            while process.poll() is None:
+                # Read stdout
+                if process.stdout:
+                    line = process.stdout.readline()
+                    if line:
+                        line = line.rstrip()
+                        print(f"📤 {line}")
+                        stdout_lines.append(line)
+                
+                # Read stderr
+                if process.stderr:
+                    err_line = process.stderr.readline()
+                    if err_line:
+                        err_line = err_line.rstrip()
+                        print(f"⚠️  {err_line}")
+                        stderr_lines.append(err_line)
+            
+            # Get remaining output
+            remaining_stdout, remaining_stderr = process.communicate()
+            if remaining_stdout:
+                for line in remaining_stdout.split('\n'):
+                    if line.strip():
+                        print(f"📤 {line}")
+                        stdout_lines.append(line)
+            
+            if remaining_stderr:
+                for line in remaining_stderr.split('\n'):
+                    if line.strip():
+                        print(f"⚠️  {line}")
+                        stderr_lines.append(line)
+            
+            return_code = process.returncode
+            
+            print("-" * 40)
+            print(f"[+] Nuclei process completed with return code: {return_code}")
+            
+            # Save raw output for debugging
+            with open(debug_output, 'w') as f:
+                f.write("NUCLEI DEBUG OUTPUT\n")
+                f.write("="*50 + "\n")
+                f.write(f"Command: {' '.join(cmd)}\n")
+                f.write(f"Return code: {return_code}\n")
+                f.write(f"Working directory: {output_dir}\n")
+                f.write(f"Nuclei executable: {nuclei_cmd}\n")
+                f.write(f"Target input: {nuclei_input}\n")
+                f.write("\nSTDOUT:\n")
+                f.write('\n'.join(stdout_lines))
+                f.write("\n\nSTDERR:\n")
+                f.write('\n'.join(stderr_lines))
+                
+                # Add environment info
+                f.write(f"\n\nENVIRONMENT INFO:\n")
+                f.write(f"PATH: {os.environ.get('PATH', 'Not set')}\n")
+                f.write(f"USER: {os.environ.get('USER', 'Not set')}\n")
+                f.write(f"HOME: {os.environ.get('HOME', 'Not set')}\n")
+                f.write(f"PWD: {os.getcwd()}\n")
+            
+            print(f"[+] Debug info saved to: {debug_output}")
+            
+            # Test nuclei executable directly
+            print(f"\n[+] Testing nuclei executable directly...")
+            try:
+                test_result = subprocess.run([nuclei_cmd, "-version"], 
+                                           capture_output=True, text=True, timeout=10)
+                if test_result.returncode == 0:
+                    print(f"✅ Nuclei version test successful: {test_result.stdout.strip()}")
                 else:
-                    print("[+] No vulnerabilities found - this is good!")
+                    print(f"❌ Nuclei version test failed: {test_result.stderr}")
+            except Exception as e:
+                print(f"❌ Could not test nuclei executable: {e}")
+            
+            # Check if nuclei can reach the target
+            print(f"\n[+] Testing nuclei connectivity to target...")
+            test_target = nuclei_input if isinstance(nuclei_input, str) and not os.path.isfile(nuclei_input) else nuclei_targets[0]
+            simple_test_cmd = [nuclei_cmd, "-target", test_target, "-tags", "tech-detect", "-timeout", "5"]
+            try:
+                test_result = subprocess.run(simple_test_cmd, 
+                                           capture_output=True, text=True, timeout=30)
+                print(f"[+] Connectivity test return code: {test_result.returncode}")
+                if test_result.stdout:
+                    print(f"[+] Connectivity test output: {test_result.stdout[:200]}...")
+                if test_result.stderr:
+                    print(f"[+] Connectivity test errors: {test_result.stderr[:200]}...")
+            except Exception as e:
+                print(f"❌ Connectivity test failed: {e}")
+            
+        except Exception as e:
+            print(f"[-] Error running nuclei directly: {e}")
+            return_code = -1
+            
+        # Enhanced result checking
+        nuclei_success = (return_code == 0)
+        results_found = False
+        
+        print(f"\n[+] Checking nuclei results...")
+        print("="*40)
+        
+        # Check main output file
+        if os.path.exists(vuln_output):
+            file_size = os.path.getsize(vuln_output)
+            print(f"📄 Main output file: {vuln_output} ({file_size} bytes)")
+            if file_size > 0:
+                results_found = True
+                
+                # Show all results
+                try:
+                    with open(vuln_output, 'r') as f:
+                        lines = f.readlines()
+                        if lines:
+                            print(f"[+] Found {len(lines)} vulnerabilities:")
+                            for i, line in enumerate(lines):
+                                print(f"    🚨 {line.strip()}")
+                                if i >= 10:  # Limit output
+                                    print(f"    ... and {len(lines) - i - 1} more results")
+                                    break
+                        else:
+                            print("[+] No vulnerabilities found in output file")
+                except Exception as e:
+                    print(f"[!] Could not read output file: {e}")
             else:
-                print("[!] Nuclei output file was not created")
-                success = False
+                print(f"⚠️  Output file exists but is empty")
         else:
-            print("[-] Nuclei scan failed.")
+            print(f"❌ Main output file not created: {vuln_output}")
+        
+        # Check JSON output file if enabled
+        if args.json_output and os.path.exists(vuln_json):
+            file_size = os.path.getsize(vuln_json)
+            print(f"📄 JSON output file: {vuln_json} ({file_size} bytes)")
+            if file_size > 0:
+                results_found = True
+                
+                # Count JSON lines
+                try:
+                    with open(vuln_json, 'r') as f:
+                        json_lines = [line for line in f if line.strip()]
+                        print(f"[+] JSON file contains {len(json_lines)} result entries")
+                        # Show first entry
+                        if json_lines:
+                            print(f"    Sample: {json_lines[0][:100]}...")
+                except Exception as e:
+                    print(f"[!] Could not read JSON file: {e}")
+        
+        # Check response directory
+        if os.path.exists(nuclei_resp_dir):
+            try:
+                resp_files = os.listdir(nuclei_resp_dir)
+                print(f"📁 Response directory: {nuclei_resp_dir} ({len(resp_files)} files)")
+                if resp_files:
+                    results_found = True
+                    # Show first few files
+                    for i, filename in enumerate(sorted(resp_files)[:5]):
+                        filepath = os.path.join(nuclei_resp_dir, filename)
+                        size = os.path.getsize(filepath)
+                        print(f"    📄 {filename} ({size} bytes)")
+                    if len(resp_files) > 5:
+                        print(f"    ... and {len(resp_files) - 5} more files")
+                else:
+                    print(f"⚠️  Response directory is empty")
+            except Exception as e:
+                print(f"[!] Could not list response directory: {e}")
+        
+        # Check for any other files that might have been created
+        print(f"\n[+] Checking for any other nuclei output files...")
+        try:
+            all_files = os.listdir(output_dir)
+            nuclei_files = [f for f in all_files if 'nuclei' in f.lower() or f.endswith('.jsonl')]
+            for file in nuclei_files:
+                filepath = os.path.join(output_dir, file)
+                if os.path.isfile(filepath):
+                    size = os.path.getsize(filepath)
+                    print(f"    📄 {file} ({size} bytes)")
+                    if size > 0 and not results_found:
+                        results_found = True
+        except Exception as e:
+            print(f"[!] Could not check directory: {e}")
+        
+        # Final assessment
+        print("="*40)
+        if results_found:
+            print("✅ Nuclei scan produced results!")
+            success = True
+        elif return_code == 0:
+            print("✅ Nuclei scan completed successfully but found no vulnerabilities")
+            print("   This could be good news - no obvious vulnerabilities detected!")
+            success = True
+        else:
+            print("❌ Nuclei scan failed or produced no results")
             success = False
-    
+            
+            # Provide debugging suggestions
+            print("\n💡 Debugging suggestions:")
+            print(f"   • Check target format: {nuclei_input}")
+            print(f"   • Verify target is reachable: ping {target.replace('http://', '').replace('https://', '').split('/')[0]}")
+            print(f"   • Try manual test: {nuclei_cmd} -target {nuclei_input} -tags tech-detect -v")
+            print(f"   • Check if HTTP service is running: curl -I {nuclei_input}")
+            print(f"   • Review debug file: {debug_output}")
+
     # Generate summary for the single tool that was run
     print(f"\n[+] Generating summary...")
     summary_success = generate_basic_summary_report(output_dir, target)
