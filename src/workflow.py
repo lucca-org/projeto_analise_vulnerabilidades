@@ -243,6 +243,29 @@ def check_tool_availability(tool_name, common_paths=None):
     
     return False, None
 
+def get_port_specification(port_spec: str) -> Optional[str]:
+    """
+    Convert common port specifications to naabu-compatible port ranges.
+    
+    Args:
+        port_spec (str): Port specification like "top-100", "top-1000", "all", or specific ports
+    
+    Returns:
+        Optional[str]: Naabu-compatible port specification, or None to use naabu defaults
+    """
+    if port_spec == "top-100":
+        # Top 100 most common ports
+        return "7,9,13,21-23,25-26,37,53,79-81,88,106,110-111,113,119,135,139,143-144,179,199,389,427,443-445,465,513-515,543-544,548,554,587,631,646,873,990,993,995,1025-1029,1110,1433,1720,1723,1755,1900,2000-2001,2049,2121,2717,3000,3128,3306,3389,3986,4899,5000,5009,5051,5060,5101,5190,5357,5432,5631,5666,5800,5900,6000-6001,6646,7070,8000,8008-8009,8080-8081,8443,8888,9100,9999-10000,32768,49152-49157"
+    elif port_spec == "top-1000":
+        # Use naabu's default top 1000 ports by not specifying -p at all
+        return None
+    elif port_spec == "all":
+        # All ports 1-65535
+        return "1-65535"
+    else:
+        # Return as-is for custom port specifications
+        return port_spec
+
 def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> bool:
     """Run individual tool based on command line flag (only one tool at a time)."""
     success = True
@@ -278,12 +301,14 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
             ports_json = os.path.join(output_dir, "ports.json") if args.json_output else None
         else:
             ports_output = None
-            ports_json = None
-
+            ports_json = None        # Always apply port specification mapping, whether from args or default
         if args.ports:
             ports_to_scan = args.ports
         else:
             ports_to_scan = "top-1000"
+        
+        # Apply port specification mapping to convert common specs to naabu-compatible formats
+        mapped_ports = get_port_specification(ports_to_scan)
 
         naabu_args = ["-v"]
 
@@ -307,7 +332,7 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
 
         naabu_success = naabu.run_naabu(
             target=target,
-            ports=ports_to_scan,
+            ports=mapped_ports,
             output_file=ports_output if not args.json_output else ports_json,
             json_output=bool(args.save_output and args.json_output),
             save_output=args.save_output,
