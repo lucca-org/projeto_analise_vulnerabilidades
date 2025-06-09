@@ -15,7 +15,7 @@ DEFAULT_RETRY = 1
 SECURITY_TOOLS = ["naabu", "httpx", "nuclei"]
 
 def run_cmd(cmd: Union[str, List[str]], shell: bool = False, check: bool = False, use_sudo: bool = False, timeout: int = DEFAULT_TIMEOUT, retry: int = DEFAULT_RETRY, silent: bool = False) -> bool:
-    """Enhanced command runner with better retry logic and error detection."""
+    """Enhanced command runner with real-time output for security tools."""
     if isinstance(cmd, list):
         cmd_str = ' '.join(cmd)
     else:
@@ -39,33 +39,31 @@ def run_cmd(cmd: Union[str, List[str]], shell: bool = False, check: bool = False
                     # We're not on a Unix system, so we can't use sudo
                     pass
             
-            # Start process
-            process = subprocess.Popen(
-                cmd, 
-                shell=shell, 
-                stdout=subprocess.PIPE if not silent else subprocess.DEVNULL, 
-                stderr=subprocess.PIPE if not silent else subprocess.DEVNULL, 
-                text=True
-            )
+            # For security tools, we want real-time output, so don't capture stdout/stderr
+            # unless explicitly silenced
+            if silent:
+                # Silent mode - capture all output
+                process = subprocess.Popen(
+                    cmd, 
+                    shell=shell, 
+                    stdout=subprocess.DEVNULL, 
+                    stderr=subprocess.DEVNULL, 
+                    text=True
+                )
+            else:
+                # Real-time mode - let output pass through to terminal
+                process = subprocess.Popen(
+                    cmd, 
+                    shell=shell, 
+                    text=True
+                )
             
             # Wait with timeout
             try:
-                stdout, stderr = process.communicate(timeout=timeout)
-                
-                # Process output if collected
-                if not silent and stdout and stdout.strip():
-                    # Only show first 10 lines if output is very long
-                    if stdout.count('\n') > 20:
-                        short_stdout = '\n'.join(stdout.split('\n')[:10])
-                        print(f"{short_stdout}\n[...output truncated...]")
-                    else:
-                        print(stdout)
+                process.wait(timeout=timeout)
                 
                 # Check return code
                 if process.returncode != 0:
-                    if not silent and stderr and stderr.strip():
-                        print(f"Error: {stderr}")
-                    
                     # Retry logic
                     if attempt < retry:
                         if not silent:

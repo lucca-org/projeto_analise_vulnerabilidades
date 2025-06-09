@@ -55,12 +55,13 @@ def run_naabu(target=None, target_list=None, ports=None, exclude_ports=None,
         json_output (bool): Output in JSON format when saving to file.
         output_file (str): Path to save the output (only used if save_output=True).
         save_output (bool): Save output to file (real-time output always shown).
-        tool_silent (bool): Make naabu tool itself run silently.
-        additional_args (list): Additional naabu arguments.
+        tool_silent (bool): Make naabu tool itself run silently.        additional_args (list): Additional naabu arguments.
         auto_install (bool): Automatically install naabu if not found.
-          Returns:
+        
+    Returns:
         bool: True if execution was successful, False otherwise.
-    """    # Check if naabu is available, install if needed
+    """
+    # Check if naabu is available, install if needed
     if not check_naabu():
         if auto_install:
             print(" Naabu not found. Attempting automatic installation...")
@@ -70,8 +71,7 @@ def run_naabu(target=None, target_list=None, ports=None, exclude_ports=None,
         else:
             print(" Naabu is not installed. Please install it first or set auto_install=True.")
             return False
-    
-    # Get the actual path to naabu
+      # Get the actual path to naabu
     naabu_path = get_executable_path("naabu")
     if not naabu_path:
         print(" Naabu not found in PATH or in ~/go/bin.")
@@ -95,6 +95,9 @@ def run_naabu(target=None, target_list=None, ports=None, exclude_ports=None,
         cmd.extend(["-l", target_list])
     if ports:
         cmd.extend(["-p", ports])
+    else:
+        # If no ports specified, use top 1000 ports by default
+        print("No ports specified, using naabu's default top 1000 ports")
     if exclude_ports:
         cmd.extend(["-exclude-ports", exclude_ports])
     if threads:
@@ -103,12 +106,15 @@ def run_naabu(target=None, target_list=None, ports=None, exclude_ports=None,
         cmd.extend(["-rate", str(rate)])
     if timeout:
         cmd.extend(["-timeout", str(timeout)])
+    else:
+        # Set a reasonable default timeout (in milliseconds)
+        cmd.extend(["-timeout", "5000"])
     if json_output:
         cmd.append("-json")
-    
-    # Only add output file if we want to save output
+      # Only add output file if we want to save output
     if save_output and output_file:
         cmd.extend(["-o", output_file])
+    
     if tool_silent:
         cmd.append("-silent")
     
@@ -117,13 +123,18 @@ def run_naabu(target=None, target_list=None, ports=None, exclude_ports=None,
         cmd.extend(additional_args)
     
     # Always use connect scan mode for better compatibility across systems
-    if "--scan-type" not in cmd and "-scan-type" not in cmd:
-        if "--connect" not in cmd and "-connect" not in cmd:
-            if "--so" not in cmd and "-so" not in cmd and "--syn" not in cmd and "-syn" not in cmd:
-                cmd.append("-scan-type")
-                cmd.append("connect")
-                print("Using connect scan mode for better cross-platform compatibility")    # Always show real-time output to user
-    print(f" Running Naabu: {' '.join(cmd)}")
+    if "-scan-type" not in str(cmd) and "--scan-type" not in str(cmd):
+        if "-connect" not in str(cmd) and "--connect" not in str(cmd):
+            if "-so" not in str(cmd) and "--so" not in str(cmd) and "-syn" not in str(cmd) and "--syn" not in str(cmd):
+                cmd.extend(["-scan-type", "connect"])
+                print("Using connect scan mode for better cross-platform compatibility")
+    
+    # Add verbose mode to see scan progress
+    if "-v" not in cmd and "--verbose" not in cmd:
+        cmd.append("-v")
+    
+    # Always show real-time output to user
+    print(f"Running Naabu: {' '.join(cmd)}")
 
     # Run with retry for better resilience - real-time output always shown
     success = run_cmd(cmd, retry=1, silent=False)

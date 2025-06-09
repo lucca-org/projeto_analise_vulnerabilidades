@@ -1,37 +1,42 @@
-# Linux Vulnerability Analysis Toolkit
+# MTScan - Linux Vulnerability Analysis Toolkit
 
- A comprehensive security toolkit for automated vulnerability scanning and analysis, designed **exclusively for Linux systems**.
+A comprehensive security toolkit for automated vulnerability scanning and analysis, designed **exclusively for Linux systems**.
 
-##  Recent Enhancements
+## 🚀 Recent Enhancements
 
-✅ **Enhanced Master Installer**: Single-point installation with integrated functionality  
-✅ **Streamlined Architecture**: Legacy scripts consolidated for improved reliability  
-✅ **Comprehensive Validation**: Advanced installation verification system (95.5% success rate)  
-✅ **UTF-8 Support**: Robust encoding handling for international environments  
-✅ **Optimized Workflow**: Simplified installation and usage process
+✅ **Interactive Menu Interface**: User-friendly `mtscan.py` interface for guided scanning  
+✅ **Network Connectivity Enforcement**: Automatic scan termination on network failure (no user prompts)  
+✅ **Port Information Display**: Real-time port range information during scans  
+✅ **Tool Path Resolution**: Fixed executable path detection for reliable tool execution  
+✅ **Output Formatting**: Clean, consistent output formatting across all interfaces  
+✅ **Enhanced Installation**: Master installer with comprehensive validation  
+✅ **Multi-Mode Support**: Interactive menu and direct command-line workflows  
 
 ## Overview
 
 This toolkit integrates powerful security tools (naabu, httpx, nuclei) into a streamlined workflow for vulnerability scanning. It automates the entire process from port scanning to vulnerability detection and report generation.
 
-** IMPORTANT: This toolkit only works on Linux systems due to the security tools' dependencies on Linux kernel features and libraries.**
+**⚠️ IMPORTANT: This toolkit only works on Linux systems due to the security tools' dependencies on Linux kernel features and libraries.**
 
 ## Features
 
--  **Comprehensive Scanning**: Automated port scanning, HTTP service detection, and vulnerability discovery
--  **Zero-Configuration**: Just provide a target and the toolkit does the rest
--  **Auto-Installation**: Automatically installs and configures all necessary tools
--  **Report Generation**: Creates detailed vulnerability reports in multiple formats
--  **Linux-Optimized**: Built specifically for Linux security environments
--  **Multi-Distro Support**: Works on Debian, Ubuntu, Kali Linux, Arch Linux, and more
+- 🔍 **Comprehensive Scanning**: Automated port scanning, HTTP service detection, and vulnerability discovery
+- 📊 **Enhanced Real-time Output**: Live port range information and scan progress display
+- 🔗 **Network Connectivity Enforcement**: Automatic scan termination if network connectivity fails
+- ⚡ **Zero-Configuration**: Just provide a target and the toolkit does the rest
+- 🛠️ **Auto-Installation**: Automatically installs and configures all necessary tools
+- 📋 **Report Generation**: Creates detailed vulnerability reports in multiple formats
+- 🐧 **Linux-Optimized**: Built specifically for Linux security environments
+- 🌍 **Multi-Distro Support**: Works on Debian, Ubuntu, Kali Linux, Arch Linux, and more
+- ✨ **Clean Output Formatting**: Consistent, professional output across all scan types
 
 ## Supported Linux Distributions
 
--  Kali Linux (Recommended for security testing)
--  Debian
--  Ubuntu
--  Arch Linux
--  Fedora/CentOS/RHEL (Basic support)
+- 🔥 Kali Linux (Recommended for security testing)
+- 📦 Debian
+- 🟠 Ubuntu
+- ⚡ Arch Linux
+- 🎩 Fedora/CentOS/RHEL (Basic support)
 
 ## Installation
 
