@@ -291,6 +291,18 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
         
         # Apply port specification mapping to convert common specs to naabu-compatible formats
         mapped_ports = get_port_specification(ports_to_scan)
+        
+        # Display port scanning information
+        if mapped_ports is None:
+            print(f"Port range: Top 1000 most common ports (naabu default)")
+        elif ports_to_scan == "top-100":
+            print(f"Port range: Top 100 most common ports")
+        elif ports_to_scan == "all":
+            print(f"Port range: All ports (1-65535)")
+        else:
+            print(f"Port range: {ports_to_scan}")
+        
+        print(f"Target: {target}")
 
         naabu_args = ["-v"]
 
@@ -298,7 +310,7 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
         temp_output = None
         if args.save_output:
             temp_output = os.path.join(output_dir, "temp_naabu_output.txt")
-            naabu_args.extend(["-o", temp_output])
+            # Don't add -o here, let run_naabu handle it
 
         if args.stealth:
             naabu_args.extend([
@@ -335,7 +347,6 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
                     os.remove(temp_output)  # Clean up temp file
                 
                 append_to_comprehensive_report(comprehensive_report, "NAABU", naabu_content, True)
-                
                 if naabu_content.strip():
                     print(f"Port scan results added to comprehensive report")
                 else:
@@ -632,43 +643,36 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
     
     args = parser.parse_args()
-    
-    # Validate JSON output flag
+      # Validate JSON output flag
     if args.json_output and not args.save_output:
         print("Warning: --json-output requires --save-output flag. JSON output will be ignored.")
         args.json_output = False
     
     # Check network connectivity
-    print(" Checking network connectivity...")
+    print("Checking network connectivity...")
     if not check_network_connectivity():
-        print(" Network connectivity check failed.")
-        print(" Some features may not work without internet access.")
-        response = input("Continue anyway? [y/N]: ")
-
-        # Fix: Handle empty response (default to 'n' if no input)
-        if response.strip().lower() not in ['y', 'yes']:
-            print(" Scan cancelled.")
-            sys.exit(1)
+        print("Network connectivity check failed.")
+        print("Security scanning requires internet access for tool updates and threat intelligence.")
+        print("Scan terminated due to lack of network connectivity.")
+        sys.exit(1)
     
     # Handle template updates
     if args.update_templates:
-        print(" Updating nuclei templates...")
+        print("Updating nuclei templates...")
         try:
             result = subprocess.run(['nuclei', '-update-templates'], check=True)
-            print(" Templates updated successfully.")
+            print("Templates updated successfully.")
         except Exception as e:
-            print(f" Template update failed: {e}")
+            print(f"Template update failed: {e}")
             if not args.force_tools:
                 sys.exit(1)
-    
-    # Determine target
+      # Determine target
     target = args.host or args.target
     if not target:
-        print(" No target specified. Use -host argument or provide target as positional argument.")
+        print("No target specified. Use -host argument or provide target as positional argument.")
         print("Example: python workflow.py -naabu -host example.com")
         sys.exit(1)
-    
-    # Check tool availability
+      # Check tool availability
     tools_to_check = []
     if args.naabu:
         tools_to_check.append('naabu')
@@ -677,10 +681,10 @@ def main():
     elif args.nuclei:
         tools_to_check.append('nuclei')
     else:
-        print(" No tool selected. Use -naabu, -httpx, or -nuclei flag.")
+        print("No tool selected. Use -naabu, -httpx, or -nuclei flag.")
         sys.exit(1)
     
-    print(" Checking tool availability...")
+    print("Checking tool availability...")
     tool_paths = {}
     missing_tools = []
     
@@ -688,14 +692,14 @@ def main():
         available, path = check_tool_availability(tool)
         if available:
             tool_paths[tool] = path
-            print(f" {tool}: Available at {path}")
+            print(f"{tool}: Available at {path}")
         else:
             missing_tools.append(tool)
-            print(f" {tool}: Not found")
+            print(f"{tool}: Not found")
     
     if missing_tools and not args.force_tools:
-        print(f" Missing tools: {', '.join(missing_tools)}")
-        print(" Install missing tools or use --force-tools to continue anyway.")
+        print(f"Missing tools: {', '.join(missing_tools)}")
+        print("Install missing tools or use --force-tools to continue anyway.")
         sys.exit(1)
     
     # Create output directory if saving output
