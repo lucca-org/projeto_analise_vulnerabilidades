@@ -75,6 +75,185 @@ except ImportError:
     def get_tool_specific_config(tool: str) -> Dict[str, Any]:
         return {}
 
+# Enhanced Real-time Output Functions
+def print_status_header(tool_name: str, target: str, action: str = "scan"):
+    """Print a formatted status header for tool execution."""
+    print("\n" + "═" * 80)
+    print(f"{tool_name.upper()} {action.upper()}")
+    print("═" * 80)
+    print(f"Target: {target}")
+    print(f"Started: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print("─" * 80)
+    sys.stdout.flush()
+
+def print_progress_indicator(message: str, symbol: str = "*"):
+    """Print a progress indicator with timestamp."""
+    timestamp = datetime.datetime.now().strftime('%H:%M:%S')
+    print(f"[{timestamp}] {symbol} {message}")
+    sys.stdout.flush()
+
+def run_with_realtime_output(cmd: List[str], output_file: Optional[str] = None, 
+                           tool_name: str = "Tool") -> Tuple[bool, str]:
+    """
+    Execute a command with enhanced real-time output streaming.
+    
+    Args:
+        cmd: Command and arguments to execute
+        output_file: Optional file to save output to
+        tool_name: Name of the tool for display purposes
+        
+    Returns:
+        Tuple of (success, captured_output)
+    """
+    captured_output = []
+    process = None
+    
+    try:
+        print_progress_indicator(f"Executing: {' '.join(cmd[:3])}...")
+        
+        # Start the process
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+            bufsize=1
+        )
+        
+        # Stream output line by line
+        line_count = 0
+        while True:
+            if process.stdout is None:
+                break
+            output = process.stdout.readline()
+            if output == '' and process.poll() is not None:
+                break
+            if output:
+                line = output.strip()
+                if line:  # Only process non-empty lines
+                    line_count += 1
+                      # Add colored prefixes for better visibility
+                    if any(keyword in line.lower() for keyword in ['error', 'failed', 'timeout']):
+                        formatted_line = f"[ERROR] {line}"
+                    elif any(keyword in line.lower() for keyword in ['found', 'detected', 'open']):
+                        formatted_line = f"[FOUND] {line}"
+                    elif any(keyword in line.lower() for keyword in ['scanning', 'probing', 'testing']):
+                        formatted_line = f"[SCAN] {line}"
+                    else:
+                        formatted_line = f"[INFO] {line}"
+                    
+                    print(formatted_line)
+                    sys.stdout.flush()
+                    
+                    # Capture for file output
+                    captured_output.append(line)
+                    
+                    # Show progress every 50 lines
+                    if line_count % 50 == 0:
+                        print_progress_indicator(f"Processed {line_count} lines...")
+        
+        # Wait for process to complete
+        return_code = process.wait()
+        
+        # Final status
+        if return_code == 0:
+            print_progress_indicator(f"{tool_name} completed successfully", "SUCCESS")
+        else:
+            print_progress_indicator(f"{tool_name} completed with exit code {return_code}", "WARNING")
+        
+        # Save to file if requested
+        if output_file and captured_output:
+            try:
+                with open(output_file, 'w') as f:
+                    f.write('\n'.join(captured_output))
+                print_progress_indicator(f"Output saved to: {output_file}", "SAVED")
+            except Exception as e:
+                print_progress_indicator(f"Failed to save output: {e}", "ERROR")
+        
+        return return_code == 0, '\n'.join(captured_output)
+        
+    except subprocess.TimeoutExpired:
+        print_progress_indicator("Command timed out", "TIMEOUT")
+        if process:
+            process.kill()
+        return False, '\n'.join(captured_output)
+    except KeyboardInterrupt:
+        print_progress_indicator("Interrupted by user", "STOP")
+        if process:
+            process.terminate()
+        return False, '\n'.join(captured_output)
+    except Exception as e:
+        print_progress_indicator(f"Execution error: {e}", "ERROR")
+        return False, '\n'.join(captured_output)
+
+def stream_command_output(cmd: List[str], output_file: Optional[str] = None) -> Tuple[bool, str]:
+    """
+    Stream command output in real-time with improved formatting.
+    
+    Args:
+        cmd: Command to execute
+        output_file: Optional file to save output
+        
+    Returns:
+        Tuple of (success, output_content)
+    """
+    output_lines = []
+    
+    try:
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+            bufsize=1
+        )
+        
+        start_time = time.time()
+        last_update = start_time
+        
+        if process.stdout is not None:
+            for line in iter(process.stdout.readline, ''):
+                if process.stdout is None:
+                    break
+                current_time = time.time()
+                line = line.rstrip()
+                
+                if line:
+                    # Add timestamp prefix for verbose output
+                    elapsed = current_time - start_time
+                    time_prefix = f"[{elapsed:6.1f}s]"
+                      # Color code based on content
+                    if 'error' in line.lower() or 'failed' in line.lower():
+                        display_line = f"{time_prefix} [ERROR] {line}"
+                    elif 'found' in line.lower() or 'detected' in line.lower():
+                        display_line = f"{time_prefix} [FOUND] {line}"
+                    elif any(word in line.lower() for word in ['scanning', 'probing', 'testing', 'checking']):
+                        display_line = f"{time_prefix} [SCAN] {line}"
+                    else:
+                        display_line = f"{time_prefix} [INFO] {line}"
+                    
+                    print(display_line)
+                    sys.stdout.flush()
+                    output_lines.append(line)
+                    
+                    # Progress indicator every 10 seconds
+                    if current_time - last_update >= 10:
+                        print_progress_indicator(f"Still running... ({len(output_lines)} lines processed)")
+                        last_update = current_time
+        
+        return_code = process.wait()
+        
+        # Save output if requested
+        if output_file and output_lines:
+            with open(output_file, 'w') as f:
+                f.write('\n'.join(output_lines))
+        
+        return return_code == 0, '\n'.join(output_lines)
+                
+    except Exception as e:
+        print(f"[ERROR] Error executing command: {e}")
+        return False, '\n'.join(output_lines)
+
 def create_output_directory(target_name: str) -> Optional[str]:
     """Create a timestamped output directory."""
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -310,29 +489,36 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
         temp_output = None
         if args.save_output:
             temp_output = os.path.join(output_dir, "temp_naabu_output.txt")
-            # Don't add -o here, let run_naabu handle it
-
-        if args.stealth:
+            # Don't add -o here, let run_naabu handle it        if args.stealth:
             naabu_args.extend([
                 "-rate", "10",
                 "-c", "25",
                 "-scan-type", "syn",
-                "-retries", "1"
+                "-retries", "1",
+                "-timeout", "0"  # Disable timeout
             ])
         else:
             naabu_args.extend([
                 "-rate", "1000",
-                "-c", "50"
+                "-c", "50",
+                "-timeout", "0"  # Disable timeout
             ])
 
-        naabu_success = naabu.run_naabu(
-            target=target,
-            ports=mapped_ports,
+        print_status_header("naabu", target, "port scan")
+          # Build command with proper None handling
+        naabu_cmd = ["naabu", "-host", target]
+        if mapped_ports:
+            naabu_cmd.extend(["-p", mapped_ports])
+        if args.json_output:
+            naabu_cmd.append("-json")
+        elif temp_output:
+            naabu_cmd.extend(["-o", temp_output])
+        naabu_cmd.extend(naabu_args)
+        
+        naabu_success, naabu_output = run_with_enhanced_realtime_output(
+            cmd=naabu_cmd,
             output_file=temp_output,
-            json_output=False,  # Use text for comprehensive report
-            save_output=args.save_output,
-            tool_silent=False,
-            additional_args=naabu_args
+            tool_name="Naabu"
         )
 
         print(f"\nNaabu scan completed!")
@@ -367,9 +553,7 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
         httpx_input = target
         print(f"Target: {httpx_input}")
 
-        httpx_args = ["-v"]
-
-        # For comprehensive report, always capture output
+        httpx_args = ["-v"]        # For comprehensive report, always capture output
         temp_output = None
         if args.save_output:
             temp_output = os.path.join(output_dir, "temp_httpx_output.txt")
@@ -388,17 +572,30 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
                 "-timeout", "5"
             ])
 
-        httpx_success = httpx.run_httpx(
-            target_list=httpx_input,
+        print_status_header("httpx", target, "service detection")
+        
+        # Build command with proper handling of conditionals
+        httpx_cmd = [
+            "httpx",
+            "-u", httpx_input,
+            "-title",
+            "-status-code",
+            "-follow-redirects"
+        ]
+        
+        if not args.stealth:
+            httpx_cmd.extend(["-tech-detect", "-web-server"])
+        
+        if args.json_output:
+            httpx_cmd.append("-json")
+        elif temp_output:
+            httpx_cmd.extend(["-o", temp_output])
+            
+        httpx_cmd.extend(httpx_args)        
+        httpx_success, httpx_output = run_with_enhanced_realtime_output(
+            cmd=httpx_cmd,
             output_file=temp_output,
-            title=True,
-            status_code=True,
-            tech_detect=not args.stealth,
-            web_server=not args.stealth,
-            follow_redirects=True,
-            save_output=args.save_output,
-            tool_silent=False,
-            additional_args=httpx_args
+            tool_name="HTTPX"
         )
 
         print(f"\nHTTPX scan completed!")
@@ -483,33 +680,35 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
                 "-timeout", "10"
             ])
 
-        # Use the new nuclei.run_nuclei function with proper parameters
+        print_status_header("nuclei", target, "vulnerability scan")
+        
+        # Build nuclei command properly
         if os.path.isfile(nuclei_input):
-            nuclei_success = nuclei.run_nuclei(
-                target_list=nuclei_input,
-                templates=args.templates,
-                tags=args.tags,
-                severity=args.severity,
-                output_file=temp_output,
-                jsonl=False,  # Use text for comprehensive report
-                save_output=args.save_output,
-                tool_silent=False,
-                store_resp=bool(args.save_output),
-                additional_args=nuclei_args
-            )
+            nuclei_cmd = ["nuclei", "-l", nuclei_input]
         else:
-            nuclei_success = nuclei.run_nuclei(
-                target=nuclei_input,
-                templates=args.templates,
-                tags=args.tags,
-                severity=args.severity,
-                output_file=temp_output,
-                jsonl=False,  # Use text for comprehensive report
-                save_output=args.save_output,
-                tool_silent=False,
-                store_resp=bool(args.save_output),
-                additional_args=nuclei_args
-            )
+            nuclei_cmd = ["nuclei", "-u", nuclei_input]
+        
+        # Add template specification
+        if args.templates:
+            nuclei_cmd.extend(["-t", args.templates])
+            
+        # Add tags and severity
+        nuclei_cmd.extend(["-tags", args.tags])
+        nuclei_cmd.extend(["-severity", args.severity])
+        
+        # Add output options
+        if args.json_output:
+            nuclei_cmd.append("-jsonl")
+        elif temp_output:
+            nuclei_cmd.extend(["-o", temp_output])
+            
+        # Add additional arguments
+        nuclei_cmd.extend(nuclei_args)        
+        nuclei_success, nuclei_output = run_with_enhanced_realtime_output(
+            cmd=nuclei_cmd,
+            output_file=temp_output,
+            tool_name="Nuclei"
+        )
 
         print(f"\n Nuclei scan completed!")
 
@@ -543,14 +742,255 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
 
     return success
 
-def check_network_connectivity():
-    """Check if network connection is available, with bypass option."""
-    # Check for network override flag - Fix: Use correct path relative to workflow.py
-    override_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'network_override')
-    if os.path.exists(override_path):
-        print("WARNING: Network connectivity check bypassed (override flag detected)")
-        return True
+def analyze_tool_output(line: str, tool_name: str) -> dict:
+    """
+    Analyze tool output line and extract relevant information.
+    
+    Args:
+        line: Output line from the tool
+        tool_name: Name of the tool (naabu, httpx, nuclei)
         
+    Returns:
+        Dictionary with analysis results
+    """
+    analysis = {
+        'line_type': 'info',
+        'severity': 'low',
+        'contains_finding': False,
+        'keywords': []
+    }
+    
+    line_lower = line.lower()
+    
+    if tool_name.lower() == 'naabu':
+        if 'open' in line_lower:
+            analysis['line_type'] = 'finding'
+            analysis['contains_finding'] = True
+            analysis['severity'] = 'medium'
+            analysis['keywords'] = ['port', 'open']
+        elif 'error' in line_lower or 'timeout' in line_lower:
+            analysis['line_type'] = 'error'
+            analysis['severity'] = 'high'
+        elif 'scanning' in line_lower or 'probing' in line_lower:
+            analysis['line_type'] = 'progress'
+    
+    elif tool_name.lower() == 'httpx':
+        if any(code in line for code in ['200', '201', '301', '302', '403', '404']):
+            analysis['line_type'] = 'finding'
+            analysis['contains_finding'] = True
+            analysis['severity'] = 'medium'
+            analysis['keywords'] = ['http', 'response']
+        elif 'error' in line_lower or 'failed' in line_lower:
+            analysis['line_type'] = 'error'
+            analysis['severity'] = 'high'
+        elif 'title:' in line_lower or 'server:' in line_lower:
+            analysis['line_type'] = 'info'
+            analysis['contains_finding'] = True
+            analysis['keywords'] = ['metadata']
+    
+    elif tool_name.lower() == 'nuclei':
+        if any(sev in line_lower for sev in ['critical', 'high', 'medium', 'low']):
+            analysis['line_type'] = 'vulnerability'
+            analysis['contains_finding'] = True
+            if 'critical' in line_lower:
+                analysis['severity'] = 'critical'
+            elif 'high' in line_lower:
+                analysis['severity'] = 'high'
+            elif 'medium' in line_lower:
+                analysis['severity'] = 'medium'
+            analysis['keywords'] = ['vulnerability', 'security']
+        elif 'error' in line_lower or 'failed' in line_lower:
+            analysis['line_type'] = 'error'
+            analysis['severity'] = 'high'
+        elif 'templates loaded' in line_lower or 'scanning' in line_lower:
+            analysis['line_type'] = 'progress'
+    
+    return analysis
+
+def format_output_with_analytics(line: str, tool_name: str, line_count: int) -> str:
+    """
+    Format output line with enhanced analytics and visual indicators.
+    
+    Args:
+        line: Raw output line
+        tool_name: Name of the tool
+        line_count: Current line number
+        
+    Returns:
+        Formatted line with visual indicators
+    """
+    analysis = analyze_tool_output(line, tool_name)
+      # Choose emoji and color based on analysis
+    if analysis['line_type'] == 'vulnerability':
+        if analysis['severity'] == 'critical':
+            prefix = "[CRITICAL]"
+        elif analysis['severity'] == 'high':
+            prefix = "[HIGH]"
+        elif analysis['severity'] == 'medium':
+            prefix = "[MEDIUM]"
+        else:
+            prefix = "[LOW]"
+    elif analysis['line_type'] == 'finding':
+        prefix = "[FOUND]"
+    elif analysis['line_type'] == 'error':
+        prefix = "[ERROR]"
+    elif analysis['line_type'] == 'progress':
+        prefix = "[PROGRESS]"
+    else:
+        prefix = "[INFO]"
+    
+    # Add line number for easy reference
+    line_num_str = f"[{line_count:04d}]"
+    
+    return f"{prefix} {line_num_str} {line}"
+
+def display_live_statistics(stats: dict, tool_name: str):
+    """
+    Display live statistics during scan execution.
+    
+    Args:
+        stats: Dictionary containing scan statistics
+        tool_name: Name of the current tool
+    """
+    print(f"\nLive Statistics for {tool_name.upper()}:")
+    print(f"   Lines processed: {stats.get('total_lines', 0)}")
+    print(f"   Findings: {stats.get('findings', 0)}")
+    print(f"   Errors: {stats.get('errors', 0)}")
+    if tool_name.lower() == 'nuclei':
+        print(f"   Vulnerabilities: {stats.get('vulnerabilities', 0)}")
+        print(f"   Critical: {stats.get('critical', 0)} | High: {stats.get('high', 0)} | Medium: {stats.get('medium', 0)}")
+    print("─" * 50)
+    sys.stdout.flush()
+
+def run_with_enhanced_realtime_output(cmd: List[str], output_file: Optional[str] = None, 
+                                    tool_name: str = "Tool") -> Tuple[bool, str]:
+    """
+    Execute a command with enhanced real-time output streaming and analytics.
+    
+    Args:
+        cmd: Command and arguments to execute
+        output_file: Optional file to save output to
+        tool_name: Name of the tool for display purposes
+        
+    Returns:
+        Tuple of (success, captured_output)
+    """
+    captured_output = []
+    process = None
+    stats = {
+        'total_lines': 0,
+        'findings': 0,
+        'errors': 0,
+        'vulnerabilities': 0,
+        'critical': 0,
+        'high': 0,
+        'medium': 0,
+        'low': 0
+    }
+    
+    try:
+        print_progress_indicator(f"Executing: {' '.join(cmd[:3])}...")
+        
+        # Start the process
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+            bufsize=1
+        )
+        
+        # Stream output line by line with enhanced analytics
+        last_stats_update = time.time()
+        while True:
+            if process.stdout is None:
+                break
+            output = process.stdout.readline()
+            if output == '' and process.poll() is not None:
+                break
+            if output:
+                line = output.strip()
+                if line:  # Only process non-empty lines
+                    stats['total_lines'] += 1
+                    
+                    # Analyze the line
+                    analysis = analyze_tool_output(line, tool_name)
+                    
+                    # Update statistics
+                    if analysis['contains_finding']:
+                        stats['findings'] += 1
+                    if analysis['line_type'] == 'error':
+                        stats['errors'] += 1
+                    if analysis['line_type'] == 'vulnerability':
+                        stats['vulnerabilities'] += 1
+                        stats[analysis['severity']] += 1
+                    
+                    # Format and display the line
+                    formatted_line = format_output_with_analytics(line, tool_name, stats['total_lines'])
+                    print(formatted_line)
+                    sys.stdout.flush()
+                    
+                    # Capture for file output
+                    captured_output.append(line)
+                    
+                    # Show progress and statistics every 30 lines or 15 seconds
+                    current_time = time.time()
+                    if (stats['total_lines'] % 30 == 0) or (current_time - last_stats_update >= 15):
+                        display_live_statistics(stats, tool_name)
+                        last_stats_update = current_time
+        
+        # Wait for process to complete
+        return_code = process.wait()
+          # Final status and statistics
+        print("\n" + "═" * 60)
+        if return_code == 0:
+            print_progress_indicator(f"{tool_name} completed successfully", "SUCCESS")
+        else:
+            print_progress_indicator(f"{tool_name} completed with exit code {return_code}", "WARNING")
+        
+        # Show final statistics
+        print(f"\nFinal {tool_name.upper()} Statistics:")
+        print(f"   Total lines processed: {stats['total_lines']}")
+        print(f"   Total findings: {stats['findings']}")
+        print(f"   Total errors: {stats['errors']}")
+        if tool_name.lower() == 'nuclei' and stats['vulnerabilities'] > 0:
+            print(f"   Vulnerabilities found: {stats['vulnerabilities']}")
+            print(f"   Severity breakdown:")
+            print(f"     Critical: {stats['critical']}")
+            print(f"     High: {stats['high']}")
+            print(f"     Medium: {stats['medium']}")
+            print(f"     Low: {stats['low']}")
+        print("═" * 60)
+        
+        # Save to file if requested
+        if output_file and captured_output:
+            try:
+                with open(output_file, 'w') as f:
+                    f.write('\n'.join(captured_output))
+                print_progress_indicator(f"Output saved to: {output_file}", "SAVED")
+            except Exception as e:
+                print_progress_indicator(f"Failed to save output: {e}", "ERROR")
+        
+        return return_code == 0, '\n'.join(captured_output)
+    
+    except subprocess.TimeoutExpired:
+        print_progress_indicator("Command timed out", "TIMEOUT")
+        if process:
+            process.kill()
+        return False, '\n'.join(captured_output)
+    except KeyboardInterrupt:
+        print_progress_indicator("Interrupted by user", "STOP")
+        print(f"\nPartial Statistics:")
+        display_live_statistics(stats, tool_name)
+        if process:
+            process.terminate()
+        return False, '\n'.join(captured_output)
+    except Exception as e:
+        print_progress_indicator(f"Execution error: {e}", "ERROR")
+        return False, '\n'.join(captured_output)
+
+def check_network_connectivity():
+    """Check if network connection is available - required for all scans."""
     try:
         # Try multiple connectivity checks
         
@@ -584,7 +1024,7 @@ def check_network_connectivity():
             
         # All checks failed
         print("No network connection detected. Please check your internet connection.")
-        print("To bypass this check, create file: touch network_override")
+        print("Network connectivity is required for security scanning operations.")
         return False
     except Exception as e:
         print(f"Error checking network: {e}")
