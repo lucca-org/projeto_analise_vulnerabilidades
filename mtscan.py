@@ -269,7 +269,11 @@ def get_scan_options():
     return options
 
 def run_scan(scan_type, target, **kwargs):
-    """Run a scan with the specified parameters."""
+    """Run a scan with enhanced real-time output and detailed progress information."""
+    import datetime
+    import threading
+    import time
+    
     cmd = ["python3", "src/workflow.py"]
     
     # Add tool-specific flag
@@ -298,46 +302,162 @@ def run_scan(scan_type, target, **kwargs):
     if kwargs.get('json_output') and kwargs.get('save_output'):
         cmd.append("--json-output")
     
-    print(f"\nStarting {scan_type} scan on {target}...")
-    print(f"Real-time output: ENABLED")
-    print(f"Save to files: {'YES' if kwargs.get('save_output') else 'NO'}")
+    # Enhanced pre-scan information
+    print(f"\n{'='*80}")
+    print(f"STARTING {scan_type.upper()} SCAN")
+    print(f"{'='*80}")
+    print(f"Target: {target}")
+    print(f"Tool: {scan_type}")
+    print(f"Timestamp: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    
+    # Show scan configuration
+    print(f"\nSCAN CONFIGURATION:")
+    print(f"  Real-time output: ENABLED")
+    print(f"  Save to files: {'YES' if kwargs.get('save_output') else 'NO'}")
     if kwargs.get('save_output'):
-        print(f"JSON format: {'YES' if kwargs.get('json_output') else 'NO'}")
-    print(f"Command: {' '.join(cmd)}")
-    print("=" * 60)
+        print(f"  JSON format: {'YES' if kwargs.get('json_output') else 'NO'}")
+    print(f"  Stealth mode: {'YES' if kwargs.get('stealth') else 'NO'}")
+    if kwargs.get('ports'):
+        print(f"  Port range: {kwargs['ports']}")
+    
+    # Show tool-specific information
+    if scan_type == "naabu":
+        print(f"\nNAABU PORT SCAN DETAILS:")
+        print(f"  Purpose: Discover open ports on target")
+        print(f"  Output: Port numbers and services")
+        if kwargs.get('stealth'):
+            print(f"  Mode: Stealth (slower, more discreet)")
+        else:
+            print(f"  Mode: Standard (faster scanning)")
+    elif scan_type == "httpx":
+        print(f"\nHTTPX SERVICE DETECTION DETAILS:")
+        print(f"  Purpose: Discover HTTP/HTTPS services")
+        print(f"  Output: URLs, status codes, titles, technologies")
+        print(f"  Features: Title extraction, technology detection")
+    elif scan_type == "nuclei":
+        print(f"\nNUCLEI VULNERABILITY SCAN DETAILS:")
+        print(f"  Purpose: Detect security vulnerabilities")
+        print(f"  Templates: Built-in vulnerability templates")
+        print(f"  Output: Vulnerability findings with details")
+    
+    print(f"\nEXECUTING COMMAND:")
+    print(f"  {' '.join(cmd)}")
+    print(f"\n{'='*80}")
+    print(f"REAL-TIME SCAN OUTPUT:")
+    print(f"{'='*80}")
+    
+    # Variables to track scan progress
+    start_time = time.time()
+    output_lines = []
+    last_activity = time.time()
+    process = None  # Initialize process variable
+    
+    def show_progress():
+        """Show periodic progress updates during scan."""
+        while process and process.poll() is None:
+            elapsed = time.time() - start_time
+            print(f"\n[PROGRESS] Scan running for {elapsed:.1f} seconds...")
+            time.sleep(30)  # Update every 30 seconds
     
     try:
-        # Run the scan from root directory
-        result = subprocess.run(cmd, cwd=os.getcwd())
+        # Start the scan process with real-time output streaming
+        process = subprocess.Popen(
+            cmd, 
+            cwd=os.getcwd(),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            universal_newlines=True,
+            bufsize=1
+        )
         
-        print("\n" + "=" * 60)
-        if result.returncode == 0:
-            print("Scan completed successfully!")
-        elif result.returncode == 2:
-            print("Scan completed with some issues.")
+        # Start progress thread
+        progress_thread = threading.Thread(target=show_progress, daemon=True)
+        progress_thread.start()
+        
+        # Stream output in real-time (check if stdout is not None)
+        if process.stdout:
+            for line in process.stdout:
+                line = line.rstrip()
+                if line:
+                    print(line)
+                    output_lines.append(line)
+                    last_activity = time.time()
+                    
+                    # Highlight important findings
+                    if any(keyword in line.lower() for keyword in ['open', 'found', 'vulnerable', 'critical', 'high']):
+                        print(f">>> FINDING: {line}")
+        
+        # Wait for process to complete
+        return_code = process.wait()
+        
+        # Final scan summary
+        elapsed_total = time.time() - start_time
+        print(f"\n{'='*80}")
+        print(f"SCAN COMPLETION SUMMARY")
+        print(f"{'='*80}")
+        print(f"Tool: {scan_type.upper()}")
+        print(f"Target: {target}")
+        print(f"Total duration: {elapsed_total:.1f} seconds")
+        print(f"Return code: {return_code}")
+        print(f"Output lines: {len(output_lines)}")
+        
+        if return_code == 0:
+            print(f"Status: SCAN COMPLETED SUCCESSFULLY!")
+        elif return_code == 2:
+            print(f"Status: SCAN COMPLETED WITH SOME ISSUES")
         else:
-            print("Scan failed.")
+            print(f"Status: SCAN FAILED")
+        
+        # Show findings summary
+        findings = [line for line in output_lines if any(keyword in line.lower() for keyword in ['open', 'found', 'vulnerable'])]
+        if findings:
+            print(f"\nKEY FINDINGS SUMMARY:")
+            print(f"  Total findings: {len(findings)}")
+            for i, finding in enumerate(findings[:5], 1):
+                print(f"  {i}. {finding[:100]}{'...' if len(finding) > 100 else ''}")
+            if len(findings) > 5:
+                print(f"  ... and {len(findings) - 5} more findings")
         
         if kwargs.get('save_output'):
-            print("\nResults have been saved to the results directory.")
+            print(f"\nFILE OUTPUT INFORMATION:")
+            print(f"Results have been saved to the results directory.")
             # Find and display the results directory
             try:
                 result_dirs = [item for item in os.listdir('.') if os.path.isdir(item) and item.startswith('results_')]
                 if result_dirs:
                     latest_dir = max(result_dirs, key=lambda x: os.path.getmtime(x))
                     print(f"Latest results directory: {latest_dir}")
+                    comprehensive_report = os.path.join(latest_dir, "comprehensive_scan_report.txt")
+                    if os.path.exists(comprehensive_report):
+                        file_size = os.path.getsize(comprehensive_report)
+                        print(f"Comprehensive report: {comprehensive_report} ({file_size} bytes)")
+                        print(f"Use option [4] to view previous results.")
             except OSError as e:
                 print(f"Could not list results directories: {e}")
         else:
-            print("\nOutput was displayed in real-time only (not saved to files).")
+            print(f"\nOutput was displayed in real-time only (not saved to files).")
         
+        print(f"{'='*80}")
         input("\nPress Enter to continue...")
         
     except KeyboardInterrupt:
-        print("\n\nScan interrupted by user.")
+        print(f"\n\n{'='*80}")
+        print(f"SCAN INTERRUPTED BY USER")
+        print(f"{'='*80}")
+        if process:
+            try:
+                process.terminate()
+                process.wait(timeout=5)
+            except:
+                process.kill()
+        print(f"Scan was stopped after {time.time() - start_time:.1f} seconds")
         input("Press Enter to continue...")
     except Exception as e:
-        print(f"\nError running scan: {e}")
+        print(f"\n{'='*80}")
+        print(f"SCAN ERROR")
+        print(f"{'='*80}")
+        print(f"Error running scan: {e}")
+        print(f"Command: {' '.join(cmd)}")
         input("Press Enter to continue...")
 
 def view_results():
@@ -392,23 +512,30 @@ def view_result_details(result_dir):
     print(f"SCAN RESULTS: {result_dir}")
     print("=" * 60)
     
-    # Show directory contents
+    # Look for the comprehensive report file
+    comprehensive_report = os.path.join(result_dir, "comprehensive_scan_report.txt")
+    
     try:
-        files = os.listdir(result_dir)
-        for file in sorted(files):
-            file_path = os.path.join(result_dir, file)
-            if os.path.isfile(file_path):
-                size = os.path.getsize(file_path)
-                print(f"    {file} ({size} bytes)")
-            elif os.path.isdir(file_path):
-                print(f"    {file}/")
-        
-        # Show summary if available
-        summary_path = os.path.join(result_dir, "summary.txt")
-        if os.path.exists(summary_path):
-            print(f"\nSummary:")
-            with open(summary_path, 'r') as f:
-                print(f.read())
+        if os.path.exists(comprehensive_report):
+            print("COMPREHENSIVE SCAN REPORT:")
+            print("-" * 40)
+            with open(comprehensive_report, 'r') as f:
+                content = f.read()
+                print(content)
+        else:
+            # Fallback: show directory contents if comprehensive report not found
+            print("Directory contents:")
+            files = os.listdir(result_dir)
+            for file in sorted(files):
+                file_path = os.path.join(result_dir, file)
+                if os.path.isfile(file_path):
+                    size = os.path.getsize(file_path)
+                    print(f"    {file} ({size} bytes)")
+                elif os.path.isdir(file_path):
+                    print(f"    {file}/")
+            
+            print("\nNote: No comprehensive_scan_report.txt found.")
+            print("This might be an older scan result or incomplete scan.")
         
     except Exception as e:
         print(f"Error reading results: {e}")

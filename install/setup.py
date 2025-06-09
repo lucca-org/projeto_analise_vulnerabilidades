@@ -88,7 +88,7 @@ SUPPORTED_DISTROS = {
 def print_header():
     """Print installation header."""
     print(f"{Colors.CYAN}{'='*80}{Colors.END}")
-    print(f"{Colors.BOLD}{Colors.WHITE}🔥 Linux Vulnerability Analysis Toolkit - Master Installer 🔥{Colors.END}")
+    print(f"{Colors.BOLD}{Colors.WHITE}Linux Vulnerability Analysis Toolkit - Master Installer{Colors.END}")
     print(f"{Colors.CYAN}{'='*80}{Colors.END}")
     print(f"{Colors.YELLOW}Single-point installer for complete toolkit setup{Colors.END}")
     print(f"{Colors.YELLOW}Platform: Linux-Only | Requires: Root/Sudo access{Colors.END}")
@@ -1241,7 +1241,7 @@ alias vat-update="nuclei -update-templates"
 def final_verification() -> bool:
     """Comprehensive final verification."""
     try:
-        print(f"\n{Colors.BLUE}🔍 Phase 5: Final Verification{Colors.END}")
+        print(f"\n{Colors.BLUE} Phase 5: Final Verification{Colors.END}")
         
         tools_to_check = ['naabu', 'httpx', 'nuclei', 'go']
         all_good = True
@@ -1360,7 +1360,7 @@ def final_verification() -> bool:
 def print_success_message():
     """Print successful installation message."""
     print(f"\n{Colors.GREEN}{'='*80}{Colors.END}")
-    print(f"{Colors.BOLD}{Colors.GREEN}🎉 INSTALLATION COMPLETED SUCCESSFULLY! 🎉{Colors.END}")
+    print(f"{Colors.BOLD}{Colors.GREEN}INSTALLATION COMPLETED SUCCESSFULLY!{Colors.END}")
     print(f"{Colors.GREEN}{'='*80}{Colors.END}")
     print(f"{Colors.WHITE} Your Linux Vulnerability Analysis Toolkit is ready!{Colors.END}")
     print(f"\n{Colors.CYAN}CRITICAL - Add Go tools to PATH (Required):{Colors.END}")
@@ -1422,7 +1422,7 @@ def main():
         # Print header
         print_header()
           # Phase 0: System validation and environment checks
-        print(f"{Colors.BLUE}🔍 Phase 0: System Validation & Environment Checks{Colors.END}")
+        print(f"{Colors.BLUE} Phase 0: System Validation & Environment Checks{Colors.END}")
         
         # Check root permissions first
         if not check_root_permissions():
