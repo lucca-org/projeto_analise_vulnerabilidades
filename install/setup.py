@@ -257,13 +257,13 @@ def run_with_timeout(cmd: List[str], timeout_seconds: int = 300, description: st
                             
                             # Provide specific guidance for common Go installation errors
                             if 'no such file or directory' in error_msg.lower():
-                                print(f"{Colors.YELLOW}  💡 GOBIN directory may not exist or be in PATH{Colors.END}")
+                                print(f"{Colors.YELLOW}   GOBIN directory may not exist or be in PATH{Colors.END}")
                             elif 'permission denied' in error_msg.lower():
-                                print(f"{Colors.YELLOW}  💡 Check GOPATH/bin directory permissions{Colors.END}")
+                                print(f"{Colors.YELLOW}   Check GOPATH/bin directory permissions{Colors.END}")
                             elif 'connection refused' in error_msg.lower() or 'timeout' in error_msg.lower():
-                                print(f"{Colors.YELLOW}  💡 Network connectivity issue - check internet connection{Colors.END}")
+                                print(f"{Colors.YELLOW}   Network connectivity issue - check internet connection{Colors.END}")
                             elif 'pcap.h' in error_msg.lower():
-                                print(f"{Colors.YELLOW}  💡 Missing libpcap-dev package for naabu compilation{Colors.END}")
+                                print(f"{Colors.YELLOW}   Missing libpcap-dev package for naabu compilation{Colors.END}")
                     return False
                 elif allow_warnings:
                     # For package operations, warnings may be acceptable
@@ -458,7 +458,7 @@ def install_libpcap_alternative() -> bool:
 def install_system_packages(distro_config: Dict) -> bool:
     """Install system packages based on distribution with anti-hang protection."""
     try:
-        print(f"\n{Colors.BLUE}📦 Phase 1: System Package Installation (Anti-Hang Protected){Colors.END}")
+        print(f"\n{Colors.BLUE} Phase 1: System Package Installation (Anti-Hang Protected){Colors.END}")
 
         # Phase 1a: Fix package locks (especially important for VMs)
         fix_package_locks()
@@ -543,7 +543,7 @@ def install_system_packages(distro_config: Dict) -> bool:
 def setup_go_environment_complete() -> bool:
     """Complete Go environment setup with proper directory creation and validation."""
     try:
-        print(f"\n{Colors.BLUE}🔧 Phase 2: Go Environment Setup{Colors.END}")
+        print(f"\n{Colors.BLUE} Phase 2: Go Environment Setup{Colors.END}")
         
         # Check if Go is already properly installed
         go_installed = False
@@ -710,7 +710,7 @@ def setup_go_environment_complete() -> bool:
 def check_system_dependencies(distro: str) -> bool:
     """Check and install required system dependencies before Go tools installation."""
     try:
-        print(f"\n{Colors.BLUE}🔍 Pre-installation: Dependency Verification{Colors.END}")
+        print(f"\n{Colors.BLUE} Pre-installation: Dependency Verification{Colors.END}")
         
         if distro not in SUPPORTED_DISTROS:
             print(f"{Colors.RED} Unsupported distribution for dependency checking{Colors.END}")
@@ -849,7 +849,7 @@ def verify_go_tools_prerequisites() -> bool:
             
             if not pcap_found:
                 print(f"{Colors.RED}   Could not install or locate pcap.h{Colors.END}")
-                print(f"{Colors.YELLOW}  💡 naabu compilation may fail without pcap headers{Colors.END}")
+                print(f"{Colors.YELLOW}   naabu compilation may fail without pcap headers{Colors.END}")
                 # Don't fail completely - let Go tools try anyway
                 return True  # Changed from False to True to allow continuation
         
@@ -870,7 +870,7 @@ def verify_go_tools_prerequisites() -> bool:
 def attempt_dependency_recovery(distro: str) -> bool:
     """Attempt to recover from dependency installation failures."""
     try:
-        print(f"\n{Colors.YELLOW}🔧 Attempting dependency recovery...{Colors.END}")
+        print(f"\n{Colors.YELLOW} Attempting dependency recovery...{Colors.END}")
         
         distro_config = SUPPORTED_DISTROS[distro]
         
@@ -961,8 +961,8 @@ def install_nuclei_with_retries(repo, max_retries=3):
 def install_security_tools_complete(distro: str) -> bool:
     """Install all security tools with enhanced dependency checking and error handling."""
     try:
-        print(f"\n{Colors.BLUE}🛡️  Phase 3: Security Tools Installation{Colors.END}")
-        
+        print(f"\n{Colors.BLUE} Phase 3: Security Tools Installation{Colors.END}")
+
         # Pre-installation dependency check with recovery
         if not check_system_dependencies(distro):
             print(f"{Colors.YELLOW}  Initial dependency check failed, attempting recovery...{Colors.END}")
@@ -1037,14 +1037,14 @@ def install_security_tools_complete(distro: str) -> bool:
                 print(f"{Colors.GREEN} Nuclei templates updated successfully{Colors.END}")
             except subprocess.TimeoutExpired:
                 print(f"{Colors.YELLOW}  Template update timed out (5min) - continuing anyway{Colors.END}")
-                print(f"{Colors.YELLOW}  💡 Templates can be updated later: nuclei -update-templates{Colors.END}")
+                print(f"{Colors.YELLOW}   Templates can be updated later: nuclei -update-templates{Colors.END}")
             except subprocess.CalledProcessError as e:
                 print(f"{Colors.YELLOW}  Template update failed - continuing anyway{Colors.END}")
                 if e.stderr:
                     error_msg = e.stderr.decode().strip()
                     if error_msg:
                         print(f"{Colors.YELLOW}  Error: {error_msg}{Colors.END}")
-                print(f"{Colors.YELLOW}  💡 Templates can be updated later: nuclei -update-templates{Colors.END}")
+                print(f"{Colors.YELLOW}   Templates can be updated later: nuclei -update-templates{Colors.END}")
           # Evaluate installation success - nuclei is critical for vulnerability analysis
         if success_count >= 2:  # At least 2 out of 3 tools must be installed
             # Check if nuclei specifically was installed (critical for vulnerability scanning)
@@ -1100,7 +1100,7 @@ def install_python_dependencies() -> bool:
 def setup_python_environment() -> bool:
     """Setup Python environment, handling externally-managed environments like Kali Linux."""
     try:
-        print(f"\n{Colors.BLUE}🐍 Setting up Python environment{Colors.END}")
+        print(f"\n{Colors.BLUE} Setting up Python environment{Colors.END}")
         
         # Check if we're in an externally-managed environment (Kali Linux)
         try:
@@ -1163,7 +1163,7 @@ def setup_python_environment() -> bool:
 def create_configuration_files() -> bool:
     """Create optimized configuration files."""
     try:
-        print(f"\n{Colors.BLUE}⚙️  Phase 4: Configuration Optimization{Colors.END}")
+        print(f"\n{Colors.BLUE}  Phase 4: Configuration Optimization{Colors.END}")
         
         script_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         config_dir = os.path.join(script_dir, 'config')
@@ -1230,7 +1230,7 @@ alias vat-update="nuclei -update-templates"
         os.chmod(aliases_file, 0o755)
         
         print(f"{Colors.GREEN} Aliases created: {aliases_file}{Colors.END}")
-        print(f"{Colors.YELLOW}💡 To use aliases: source {aliases_file}{Colors.END}")
+        print(f"{Colors.YELLOW} To use aliases: source {aliases_file}{Colors.END}")
         
         return True
         
@@ -1347,7 +1347,7 @@ def final_verification() -> bool:
         if tools_found >= 2:  # At least 2 out of 3 tools found
             print(f"{Colors.GREEN} Verification passed: {tools_found}/3 tools found{Colors.END}")
             if tools_found < 3:
-                print(f"{Colors.YELLOW}💡 Add Go tools to PATH: export PATH=$PATH:~/go/bin{Colors.END}")
+                print(f"{Colors.YELLOW} Add Go tools to PATH: export PATH=$PATH:~/go/bin{Colors.END}")
             return True
         else:
             print(f"{Colors.RED} Insufficient tools found: {tools_found}/3{Colors.END}")
@@ -1362,12 +1362,12 @@ def print_success_message():
     print(f"\n{Colors.GREEN}{'='*80}{Colors.END}")
     print(f"{Colors.BOLD}{Colors.GREEN}🎉 INSTALLATION COMPLETED SUCCESSFULLY! 🎉{Colors.END}")
     print(f"{Colors.GREEN}{'='*80}{Colors.END}")
-    print(f"{Colors.WHITE}🚀 Your Linux Vulnerability Analysis Toolkit is ready!{Colors.END}")
+    print(f"{Colors.WHITE} Your Linux Vulnerability Analysis Toolkit is ready!{Colors.END}")
     print(f"\n{Colors.CYAN}CRITICAL - Add Go tools to PATH (Required):{Colors.END}")
     print(f"{Colors.WHITE}  export PATH=$PATH:~/go/bin{Colors.END}")
     print(f"{Colors.WHITE}  # For permanent access, add to ~/.bashrc:{Colors.END}")
     print(f"{Colors.WHITE}  echo 'export PATH=$PATH:~/go/bin' >> ~/.bashrc{Colors.END}")
-    print(f"{Colors.YELLOW}  💡 Without this, naabu and nuclei won't be found!{Colors.END}")
+    print(f"{Colors.YELLOW}   Without this, naabu and nuclei won't be found!{Colors.END}")
     print(f"\n{Colors.CYAN}Next Steps:{Colors.END}")
     print(f"{Colors.WHITE}1. Run: export PATH=$PATH:~/go/bin{Colors.END}")
     print(f"{Colors.WHITE}2. Navigate to the project directory{Colors.END}")
@@ -1395,7 +1395,7 @@ def check_disk_space(min_gb: float = 2.0) -> bool:
                     total_kb = int(fields[1])
                     total_gb = total_kb / (1024 * 1024)
                     
-                    print(f"{Colors.WHITE}💾 Disk Space Status:{Colors.END}")
+                    print(f"{Colors.WHITE} Disk Space Status:{Colors.END}")
                     print(f"   Total: {total_gb:.1f} GB")
                     print(f"   Used: {used_gb:.1f} GB")
                     print(f"   Available: {available_gb:.1f} GB")
@@ -1403,7 +1403,7 @@ def check_disk_space(min_gb: float = 2.0) -> bool:
                     if available_gb < min_gb:
                         print(f"{Colors.RED} CRITICAL: Less than {min_gb:.1f}GB disk space available!{Colors.END}")
                         print(f"{Colors.YELLOW} Installation may fail due to insufficient disk space.{Colors.END}")
-                        print(f"{Colors.WHITE}💡 Recommendations:{Colors.END}")
+                        print(f"{Colors.WHITE} Recommendations:{Colors.END}")
                         print(f"   - Free up disk space by removing unused files")
                         print(f"   - Use 'sudo apt clean' to clear package cache")
                         print(f"   - Use 'sudo apt autoremove' to remove unused packages")
@@ -1464,9 +1464,9 @@ def main():
         
         # Auto-launch MTScan menu
         try:
-            response = input("🎯 Launch MTScan interactive menu now? [Y/n]: ").strip().lower()
+            response = input(" Launch MTScan interactive menu now? [Y/n]: ").strip().lower()
             if response in ['', 'y', 'yes']:
-                print("\n🚀 Launching MTScan...")
+                print("\n Launching MTScan...")
                 print("=" * 40)
                 print(f"{Colors.YELLOW}Note: If tools show as 'Not installed', run: export PATH=$PATH:~/go/bin{Colors.END}")
                 # Change to the parent directory and launch mtscan from root
@@ -1477,10 +1477,10 @@ def main():
                 else:
                     print(" Could not find mtscan.py. Please run it manually.")
             else:
-                print("\n✨ Setup complete! Run 'python mtscan.py' when ready.")
+                print("\n Setup complete! Run 'python mtscan.py' when ready.")
                 print(f"{Colors.YELLOW}Remember: export PATH=$PATH:~/go/bin{Colors.END}")
         except KeyboardInterrupt:
-            print("\n\n✨ Setup complete! Run 'python mtscan.py' when ready.")
+            print("\n\n Setup complete! Run 'python mtscan.py' when ready.")
             print(f"{Colors.YELLOW}Remember: export PATH=$PATH:~/go/bin{Colors.END}")
         
         return True
