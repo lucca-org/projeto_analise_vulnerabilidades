@@ -65,17 +65,18 @@ def run_nuclei(target=None, target_list=None, templates=None, tags=None, severit
     Returns:
         bool: True if nuclei executed successfully, False otherwise.
     """
-      # Get nuclei executable path
+    
+    # Get nuclei executable path
     nuclei_path = get_executable_path("nuclei")
     
     if not nuclei_path:
         if auto_install:
-            print("[*] Nuclei not found. Installing...")
+            print("🔧 Nuclei not found. Installing...")
             if install_nuclei():
                 nuclei_path = get_executable_path("nuclei")
             
         if not nuclei_path:
-            print("[-] Error: Nuclei is not installed or not found in PATH")
+            print("❌ Error: Nuclei is not installed or not found in PATH")
             print("Please install nuclei manually or run the setup script.")
             return False
     
@@ -94,10 +95,10 @@ def run_nuclei(target=None, target_list=None, templates=None, tags=None, severit
             if os.path.exists(target_list):
                 cmd.extend(["-l", target_list])
             else:
-                print(f"[-] Error: Target list file not found: {target_list}")
+                print(f"❌ Error: Target list file not found: {target_list}")
                 return False
     else:
-        print("[-] Error: Either target or target_list must be specified")
+        print("❌ Error: Either target or target_list must be specified")
         return False
     
     # Add template parameters
@@ -114,11 +115,12 @@ def run_nuclei(target=None, target_list=None, templates=None, tags=None, severit
     if severity:
         cmd.extend(["-severity", severity])
     
-    # Output configuration - ALWAYS show real-time, optionally save to file    if save_output and output_file:
+    # Output configuration - ALWAYS show real-time, optionally save to file
+    if save_output and output_file:
         cmd.extend(["-o", output_file])
         if jsonl:
             cmd.append("-jsonl")
-        print(f"[*] Output will be saved to: {output_file}")
+        print(f"💾 Output will be saved to: {output_file}")
     
     # Tool behavior options
     if tool_silent:
@@ -143,9 +145,10 @@ def run_nuclei(target=None, target_list=None, templates=None, tags=None, severit
     # Add additional arguments
     if additional_args:
         cmd.extend(additional_args)
-      # Execute nuclei with real-time output
-    print(f"[*] Running: {' '.join(cmd)}")
-    print("[*] Real-time output: ENABLED")
+    
+    # Execute nuclei with real-time output
+    print(f"🚀 Running: {' '.join(cmd)}")
+    print("📺 Real-time output: ENABLED")
     print("=" * 60)
     
     try:
@@ -154,15 +157,15 @@ def run_nuclei(target=None, target_list=None, templates=None, tags=None, severit
         
         print("=" * 60)
         if result:
-            print("[+] Nuclei scan completed successfully!")
+            print("✅ Nuclei scan completed successfully!")
             if save_output and output_file:
-                print(f"[*] Results saved to: {output_file}")
+                print(f"💾 Results saved to: {output_file}")
         else:
-            print("[-] Nuclei scan failed or encountered issues.")
+            print("❌ Nuclei scan failed or encountered issues.")
         
         return result
     except Exception as e:
-        print(f"[-] Error running nuclei: {e}")
+        print(f"❌ Error running nuclei: {e}")
         return False
 
 def install_nuclei():
@@ -173,18 +176,18 @@ def install_nuclei():
         bool: True if installation was successful, False otherwise.
     """
     try:
-        print("[*] Installing nuclei...")
+        print("📦 Installing nuclei...")
         install_cmd = ["go", "install", "-v", "github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest"]
         
         result = run_cmd(install_cmd, timeout=300)
         if result:
-            print("[+] Nuclei installed successfully!")
+            print("✅ Nuclei installed successfully!")
             return True
         else:
-            print("[-] Failed to install nuclei using go install")
+            print("❌ Failed to install nuclei using go install")
             return False
     except Exception as e:
-        print(f"[-] Error installing nuclei: {e}")
+        print(f"❌ Error installing nuclei: {e}")
         return False
 
 def nuclei_update_templates():
@@ -197,7 +200,7 @@ def nuclei_update_templates():
     nuclei_path = get_executable_path("nuclei")
     
     if not nuclei_path:
-        print("[-] Error: Nuclei is not installed")
+        print("❌ Error: Nuclei is not installed")
         return False
     
     try:
