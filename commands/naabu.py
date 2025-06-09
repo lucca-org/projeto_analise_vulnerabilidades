@@ -60,8 +60,7 @@ def run_naabu(target=None, target_list=None, ports=None, exclude_ports=None,
         auto_install (bool): Automatically install naabu if not found.
           Returns:
         bool: True if execution was successful, False otherwise.
-    """
-      # Check if naabu is available, install if needed
+    """    # Check if naabu is available, install if needed
     if not check_naabu():
         if auto_install:
             print(" Naabu not found. Attempting automatic installation...")
@@ -72,6 +71,14 @@ def run_naabu(target=None, target_list=None, ports=None, exclude_ports=None,
             print(" Naabu is not installed. Please install it first or set auto_install=True.")
             return False
     
+    # Get the actual path to naabu
+    naabu_path = get_executable_path("naabu")
+    if not naabu_path:
+        print(" Naabu not found in PATH or in ~/go/bin.")
+        return False
+    
+    print(f"Naabu is available:")
+    
     if not target and not target_list:
         print("Error: Either target or target_list must be specified.")
         return False
@@ -80,7 +87,7 @@ def run_naabu(target=None, target_list=None, ports=None, exclude_ports=None,
         print(f"Error: Target list file '{target_list}' not found.")
         return False
     
-    cmd = ["naabu"]
+    cmd = [naabu_path]
     
     if target:
         cmd.extend(["-host", target])
