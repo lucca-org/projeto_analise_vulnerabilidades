@@ -260,8 +260,8 @@ def verify_linux_platform() -> bool:
     """Verify that the script is running on a Linux platform."""
     import platform
     if platform.system().lower() != "linux":
-        print("❌ This toolkit is designed EXCLUSIVELY for Linux systems.")
-        print("✅ Supported: Debian, Kali Linux, Ubuntu, Arch Linux")
-        print("❌ NOT Supported: Windows, macOS, WSL")
+        print("This toolkit is designed EXCLUSIVELY for Linux systems.")
+        print("Supported: Debian, Kali Linux, Ubuntu, Arch Linux")
+        print("NOT Supported: Windows, macOS, WSL")
         return False
     return True

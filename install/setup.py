@@ -135,17 +135,17 @@ def detect_linux_distro() -> Optional[str]:
 def ensure_linux_only() -> bool:
     """Ensure the system is Linux-only and reject other platforms."""
     if platform.system().lower() != "linux":
-        print(f"\n{Colors.RED}╔═══════════════════════════════════════════════════════════════╗{Colors.END}")
-        print(f"{Colors.RED}║                          ❌ ERROR ❌                           ║{Colors.END}")
-        print(f"{Colors.RED}║                                                               ║{Colors.END}")
-        print(f"{Colors.RED}║     This toolkit is designed EXCLUSIVELY for Linux systems   ║{Colors.END}")
-        print(f"{Colors.RED}║                                                               ║{Colors.END}")
-        print(f"{Colors.RED}║     ✅ Supported: Debian, Kali, Ubuntu, Arch Linux          ║{Colors.END}")
-        print(f"{Colors.RED}║     ❌ NOT Supported: Windows, macOS, WSL (limited)          ║{Colors.END}")
-        print(f"{Colors.RED}║                                                               ║{Colors.END}")
-        print(f"{Colors.RED}║     Please use a native Linux environment for optimal        ║{Colors.END}")
-        print(f"{Colors.RED}║     security tool performance and compatibility.             ║{Colors.END}")
-        print(f"{Colors.RED}╚═══════════════════════════════════════════════════════════════╝{Colors.END}")
+        print(f"{Colors.RED}╔═════════════════════════════════════════════════════════════════╗{Colors.END}")
+        print(f"{Colors.RED}║                               ERROR                             ║{Colors.END}")
+        print(f"{Colors.RED}║                                                                 ║{Colors.END}")
+        print(f"{Colors.RED}║     This toolkit is designed EXCLUSIVELY for Linux systems      ║{Colors.END}")
+        print(f"{Colors.RED}║                                                                 ║{Colors.END}")
+        print(f"{Colors.RED}║           Supported: Debian, Kali, Ubuntu, Arch Linux           ║{Colors.END}")
+        print(f"{Colors.RED}║           NOT Supported: Windows, macOS, WSL (limited)          ║{Colors.END}")
+        print(f"{Colors.RED}║                                                                 ║{Colors.END}")
+        print(f"{Colors.RED}║          Please use a native Linux environment for optimal      ║{Colors.END}")
+        print(f"{Colors.RED}║             security tool performance and compatibility.        ║{Colors.END}")
+        print(f"{Colors.RED}╚═════════════════════════════════════════════════════════════════╝{Colors.END}")
         return False
     return True
 
@@ -158,33 +158,33 @@ def check_root_permissions() -> bool:
             if platform.system().lower() == "linux":
                 euid = ctypes.CDLL(None).geteuid()
                 if euid == 0:
-                    print(f"{Colors.GREEN}✅ Running with root privileges{Colors.END}")
+                    print(f"{Colors.GREEN} Running with root privileges{Colors.END}")
                     return True
             else:
-                print(f"{Colors.YELLOW}⚠️  Not on Linux - skipping root user ID check{Colors.END}")
+                print(f"{Colors.YELLOW}  Not on Linux - skipping root user ID check{Colors.END}")
         except (OSError, AttributeError) as e:
             # Not on a Unix-like system or geteuid not available
-            print(f"{Colors.YELLOW}⚠️  Cannot check effective user ID: {e}{Colors.END}")
+            print(f"{Colors.YELLOW}  Cannot check effective user ID: {e}{Colors.END}")
         
         # Method 2: Check sudo access
-        print(f"{Colors.YELLOW}⚠️  Not running as root. Checking sudo access...{Colors.END}")
+        print(f"{Colors.YELLOW}  Not running as root. Checking sudo access...{Colors.END}")
         try:
             result = subprocess.run(['sudo', '-n', 'true'], 
                                   capture_output=True, check=False)
             if result.returncode == 0:
-                print(f"{Colors.GREEN}✅ Sudo access confirmed{Colors.END}")
+                print(f"{Colors.GREEN} Sudo access confirmed{Colors.END}")
                 return True
             else:
-                print(f"{Colors.RED}❌ This script requires root privileges or sudo access{Colors.END}")
+                print(f"{Colors.RED} This script requires root privileges or sudo access{Colors.END}")
                 print(f"{Colors.WHITE}Please run: sudo python3 install/setup.py{Colors.END}")
                 return False
         except FileNotFoundError:
-            print(f"{Colors.RED}❌ 'sudo' command not found. This script requires sudo access on Linux{Colors.END}")
+            print(f"{Colors.RED} 'sudo' command not found. This script requires sudo access on Linux{Colors.END}")
             print(f"{Colors.WHITE}Please ensure you're running on a Linux system with sudo installed{Colors.END}")
             return False
             
     except Exception as e:
-        print(f"{Colors.RED}❌ Error checking permissions: {e}{Colors.END}")
+        print(f"{Colors.RED} Error checking permissions: {e}{Colors.END}")
         print(f"{Colors.WHITE}Please ensure you have root/sudo access{Colors.END}")
         return False
 
@@ -198,25 +198,25 @@ def validate_system_requirements() -> Tuple[bool, Optional[str]]:
     # Detect distribution
     distro = detect_linux_distro()
     if not distro or distro not in SUPPORTED_DISTROS:
-        print(f"{Colors.RED}❌ Could not detect supported Linux distribution{Colors.END}")
+        print(f"{Colors.RED} Could not detect supported Linux distribution{Colors.END}")
         print(f"{Colors.WHITE}Supported: Debian, Ubuntu, Kali Linux, Arch Linux{Colors.END}")
         return False, None
     
-    print(f"{Colors.GREEN}✅ Detected: {SUPPORTED_DISTROS[distro]['name']}{Colors.END}")
+    print(f"{Colors.GREEN} Detected: {SUPPORTED_DISTROS[distro]['name']}{Colors.END}")
     
     # Check Python version
     if sys.version_info < (3, 6):
-        print(f"{Colors.RED}❌ Python 3.6+ required. Current: {sys.version}{Colors.END}")
+        print(f"{Colors.RED} Python 3.6+ required. Current: {sys.version}{Colors.END}")
         return False, None
     
-    print(f"{Colors.GREEN}✅ Python version: {sys.version.split()[0]}{Colors.END}")
+    print(f"{Colors.GREEN} Python version: {sys.version.split()[0]}{Colors.END}")
     
     # Check internet connectivity
     try:
         urllib.request.urlopen('https://google.com', timeout=5)
-        print(f"{Colors.GREEN}✅ Internet connectivity verified{Colors.END}")
+        print(f"{Colors.GREEN} Internet connectivity verified{Colors.END}")
     except:
-        print(f"{Colors.YELLOW}⚠️  Internet connectivity check failed{Colors.END}")
+        print(f"{Colors.YELLOW}  Internet connectivity check failed{Colors.END}")
         print(f"{Colors.WHITE}Installation may fail without internet access{Colors.END}")
     
     return True, distro
@@ -243,13 +243,13 @@ def run_with_timeout(cmd: List[str], timeout_seconds: int = 300, description: st
             stdout, stderr = process.communicate(timeout=timeout_seconds)
             
             if process.returncode == 0:
-                print(f"{Colors.GREEN}✅ {description} completed successfully{Colors.END}")
+                print(f"{Colors.GREEN} {description} completed successfully{Colors.END}")
                 return True
             else:
                 # Enhanced error handling for Go tool installations
                 if 'go install' in ' '.join(cmd) or any('github.com' in arg for arg in cmd):
                     # For Go installations, any non-zero exit code is a failure
-                    print(f"{Colors.RED}❌ {description} failed (exit code: {process.returncode}){Colors.END}")
+                    print(f"{Colors.RED} {description} failed (exit code: {process.returncode}){Colors.END}")
                     if stderr:
                         error_msg = stderr.decode().strip()
                         if error_msg:
@@ -267,14 +267,14 @@ def run_with_timeout(cmd: List[str], timeout_seconds: int = 300, description: st
                     return False
                 elif allow_warnings:
                     # For package operations, warnings may be acceptable
-                    print(f"{Colors.YELLOW}⚠️ {description} completed with warnings (exit code: {process.returncode}){Colors.END}")
+                    print(f"{Colors.YELLOW} {description} completed with warnings (exit code: {process.returncode}){Colors.END}")
                     if stderr:
                         error_msg = stderr.decode().strip()
                         if error_msg and "error" in error_msg.lower():
                             print(f"{Colors.YELLOW}  Warning: {error_msg[:200]}{Colors.END}")
                     return True  # Continue on warnings for most package operations
                 else:
-                    print(f"{Colors.RED}❌ {description} failed (exit code: {process.returncode}){Colors.END}")
+                    print(f"{Colors.RED} {description} failed (exit code: {process.returncode}){Colors.END}")
                     if stderr:
                         error_msg = stderr.decode().strip()
                         if error_msg:
@@ -282,7 +282,7 @@ def run_with_timeout(cmd: List[str], timeout_seconds: int = 300, description: st
                     return False
                 
         except subprocess.TimeoutExpired:
-            print(f"{Colors.YELLOW}⚠️ {description} timed out after {timeout_seconds}s{Colors.END}")
+            print(f"{Colors.YELLOW} {description} timed out after {timeout_seconds}s{Colors.END}")
             # More aggressive process termination for Linux
             try:
                 process.terminate()
@@ -293,7 +293,7 @@ def run_with_timeout(cmd: List[str], timeout_seconds: int = 300, description: st
             return False
             
     except Exception as e:
-        print(f"{Colors.RED}❌ {description} failed: {e}{Colors.END}")
+        print(f"{Colors.RED} {description} failed: {e}{Colors.END}")
         return False
 
 def fix_package_locks() -> bool:
@@ -328,7 +328,7 @@ def fix_package_locks() -> bool:
                 pass
     
     if locks_removed > 0:
-        print(f"{Colors.GREEN}✅ Removed {locks_removed} package locks{Colors.END}")
+        print(f"{Colors.GREEN} Removed {locks_removed} package locks{Colors.END}")
         # Fix broken packages with extended timeouts
         run_with_timeout(['dpkg', '--configure', '-a'], 240, "Configuring packages (extended timeout)")
         run_with_timeout(['apt', '--fix-broken', 'install', '-y'], 360, "Fixing broken packages (extended timeout)")
@@ -358,7 +358,7 @@ deb http://kali.download/kali kali-rolling main non-free contrib
         with open('/etc/apt/sources.list', 'w') as f:
             f.write(kali_sources)
         
-        print(f"{Colors.GREEN}✅ Updated Kali repositories with reliable mirrors{Colors.END}")
+        print(f"{Colors.GREEN} Updated Kali repositories with reliable mirrors{Colors.END}")
         
         # Update package lists with new repositories
         if run_with_timeout(['apt', 'update'], 300, "Updating with fixed repositories"):
@@ -370,7 +370,7 @@ deb http://kali.download/kali kali-rolling main non-free contrib
             return False
             
     except Exception as e:
-        print(f"{Colors.YELLOW}⚠️ Repository fix failed: {e}{Colors.END}")
+        print(f"{Colors.YELLOW} Repository fix failed: {e}{Colors.END}")
         return False
 
 def install_libpcap_alternative() -> bool:
@@ -414,7 +414,7 @@ def install_libpcap_alternative() -> bool:
                     continue
                     
         except Exception as e:
-            print(f"{Colors.YELLOW}⚠️ Manual download failed: {e}{Colors.END}")
+            print(f"{Colors.YELLOW} Manual download failed: {e}{Colors.END}")
         
         # Method 4: Try installing from universe repository (for Ubuntu/Debian derivatives)
         print(f"{Colors.WHITE}Trying alternative repository sources...{Colors.END}")
@@ -444,15 +444,15 @@ def install_libpcap_alternative() -> bool:
                     subprocess.run(['make'], cwd=libpcap_dir, check=True)
                     subprocess.run(['make', 'install'], cwd=libpcap_dir, check=True)
                     subprocess.run(['ldconfig'], check=True)  # Update library cache
-                    print(f"{Colors.GREEN}✅ libpcap built and installed from source{Colors.END}")
+                    print(f"{Colors.GREEN} libpcap built and installed from source{Colors.END}")
                     return True
         except Exception as e:
-            print(f"{Colors.YELLOW}⚠️ Source build failed: {e}{Colors.END}")
+            print(f"{Colors.YELLOW} Source build failed: {e}{Colors.END}")
         
         return False
         
     except Exception as e:
-        print(f"{Colors.RED}❌ Alternative libpcap installation failed: {e}{Colors.END}")
+        print(f"{Colors.RED} Alternative libpcap installation failed: {e}{Colors.END}")
         return False
 
 def install_system_packages(distro_config: Dict) -> bool:
@@ -466,21 +466,21 @@ def install_system_packages(distro_config: Dict) -> bool:
         # Phase 1b: Repository update with timeout protection
         print(f"{Colors.WHITE}Updating package repository (timeout: 300s)...{Colors.END}")
         if not run_with_timeout(distro_config['update_cmd'], 300, "Repository update"):
-            print(f"{Colors.YELLOW}⚠️ Repository update failed, trying recovery...{Colors.END}")
+            print(f"{Colors.YELLOW} Repository update failed, trying recovery...{Colors.END}")
 
             # Try Kali-specific repository fixes
             if 'kali' in str(distro_config.get('name', '')).lower():
                 if fix_kali_repositories():
-                    print(f"{Colors.GREEN}✅ Kali repositories fixed{Colors.END}")
+                    print(f"{Colors.GREEN} Kali repositories fixed{Colors.END}")
                 else:
-                    print(f"{Colors.YELLOW}⚠️ Kali repository fix failed, continuing...{Colors.END}")
+                    print(f"{Colors.YELLOW} Kali repository fix failed, continuing...{Colors.END}")
             
             # Try alternative update methods for Kali/Debian
             if not run_with_timeout(['apt', 'clean'], 60, "Cleaning apt cache"):
                 print(f"{Colors.YELLOW}Cache cleaning failed, continuing anyway...{Colors.END}")
             else:
                 if not run_with_timeout(['apt', 'update', '--allow-unauthenticated'], 180, "Alternative repository update"):
-                    print(f"{Colors.YELLOW}⚠️ Repository update issues detected, continuing with package installation...{Colors.END}")
+                    print(f"{Colors.YELLOW} Repository update issues detected, continuing with package installation...{Colors.END}")
         
         # Phase 1c: Check disk space before installation
         disk_usage = subprocess.run(['df', '/'], capture_output=True, text=True)
@@ -494,8 +494,8 @@ def install_system_packages(distro_config: Dict) -> bool:
                     print(f"{Colors.WHITE}Available disk space: {available_gb:.1f} GB{Colors.END}")
                     
                     if available_gb < 2.0:
-                        print(f"{Colors.RED}❌ CRITICAL: Less than 2GB disk space available! Installation may fail.{Colors.END}")
-                        print(f"{Colors.YELLOW}⚠️ Consider freeing up disk space before continuing.{Colors.END}")        # Phase 1c: Install only ESSENTIAL packages (minimal footprint to prevent disk space issues)
+                        print(f"{Colors.RED} CRITICAL: Less than 2GB disk space available! Installation may fail.{Colors.END}")
+                        print(f"{Colors.YELLOW} Consider freeing up disk space before continuing.{Colors.END}")        # Phase 1c: Install only ESSENTIAL packages (minimal footprint to prevent disk space issues)
         print(f"{Colors.WHITE}Installing minimal essential packages (timeout per package: 180s)...{Colors.END}")
         
         # DRASTICALLY REDUCED package list to prevent disk space exhaustion
@@ -513,31 +513,31 @@ def install_system_packages(distro_config: Dict) -> bool:
                 if run_with_timeout(['env', 'DEBIAN_FRONTEND=noninteractive', 'apt', 'install', package, '-y'], 180, f"Installing {package}"):
                     success_count += 1
                 else:
-                    print(f"{Colors.YELLOW}⚠️ {package} standard installation failed, trying alternatives...{Colors.END}")
+                    print(f"{Colors.YELLOW} {package} standard installation failed, trying alternatives...{Colors.END}")
                     if install_libpcap_alternative():
                         success_count += 1
-                        print(f"{Colors.GREEN}✅ {package} installed via alternative method{Colors.END}")
+                        print(f"{Colors.GREEN} {package} installed via alternative method{Colors.END}")
                     else:
-                        print(f"{Colors.RED}❌ {package} installation failed completely{Colors.END}")
+                        print(f"{Colors.RED} {package} installation failed completely{Colors.END}")
             else:
                 if run_with_timeout(['env', 'DEBIAN_FRONTEND=noninteractive', 'apt', 'install', package, '-y'], 180, f"Installing {package}"):
                     success_count += 1
                 else:
-                    print(f"{Colors.YELLOW}⚠️ {package} failed, but continuing...{Colors.END}")
+                    print(f"{Colors.YELLOW} {package} failed, but continuing...{Colors.END}")
 
         # Skip development and final packages to save disk space
         print(f"{Colors.WHITE}Skipping development and final packages to conserve disk space...{Colors.END}")        # Evaluate success
         success_rate = (success_count / total_packages) * 100 if total_packages > 0 else 0
-        print(f"{Colors.GREEN}✅ Minimal package installation completed: {success_count}/{total_packages} packages ({success_rate:.1f}%){Colors.END}")
+        print(f"{Colors.GREEN} Minimal package installation completed: {success_count}/{total_packages} packages ({success_rate:.1f}%){Colors.END}")
 
         if success_count >= 3:  # At least curl, golang-go, and libpcap-dev must be installed
             return True
         else:
-            print(f"{Colors.RED}❌ Critical packages missing. Need at least curl, golang-go, and libpcap-dev.{Colors.END}")
+            print(f"{Colors.RED} Critical packages missing. Need at least curl, golang-go, and libpcap-dev.{Colors.END}")
             return False
 
     except Exception as e:
-        print(f"{Colors.RED}❌ Package installation failed: {e}{Colors.END}")
+        print(f"{Colors.RED} Package installation failed: {e}{Colors.END}")
         return False
 
 def setup_go_environment_complete() -> bool:
@@ -551,11 +551,11 @@ def setup_go_environment_complete() -> bool:
             result = subprocess.run(['go', 'version'], 
                                   capture_output=True, text=True, check=True)
             version = result.stdout.strip()
-            print(f"{Colors.GREEN}✅ Go already installed: {version}{Colors.END}")
+            print(f"{Colors.GREEN} Go already installed: {version}{Colors.END}")
             go_installed = True
             
         except (subprocess.CalledProcessError, FileNotFoundError):
-            print(f"{Colors.YELLOW}⚠️  Go not found or improperly configured{Colors.END}")
+            print(f"{Colors.YELLOW}  Go not found or improperly configured{Colors.END}")
         
         # Install/configure Go manually if needed
         if not go_installed:
@@ -579,16 +579,16 @@ def setup_go_environment_complete() -> bool:
                 current_path = os.environ.get('PATH', '')
                 if go_bin not in current_path:
                     os.environ['PATH'] = f"{go_bin}:{current_path}"
-                    print(f"{Colors.GREEN}✅ Added {go_bin} to PATH{Colors.END}")
+                    print(f"{Colors.GREEN} Added {go_bin} to PATH{Colors.END}")
                 
                 # Verify Go installation worked
                 result = subprocess.run(['go', 'version'], 
                                       capture_output=True, text=True, check=True)
                 version = result.stdout.strip()
-                print(f"{Colors.GREEN}✅ Go installed successfully: {version}{Colors.END}")
+                print(f"{Colors.GREEN} Go installed successfully: {version}{Colors.END}")
                 
             except subprocess.CalledProcessError as e:
-                print(f"{Colors.RED}❌ Failed to install Go: {e}{Colors.END}")
+                print(f"{Colors.RED} Failed to install Go: {e}{Colors.END}")
                 return False
         
         # Now set up GOPATH and GOBIN properly
@@ -608,21 +608,21 @@ def setup_go_environment_complete() -> bool:
             # Ensure GOPATH directory exists
             if not os.path.exists(gopath):
                 os.makedirs(gopath, exist_ok=True)
-                print(f"{Colors.GREEN}✅ Created GOPATH directory: {gopath}{Colors.END}")
+                print(f"{Colors.GREEN} Created GOPATH directory: {gopath}{Colors.END}")
             
             # Ensure GOPATH/bin directory exists (CRITICAL FIX)
             gobin = os.path.join(gopath, 'bin')
             if not os.path.exists(gobin):
                 os.makedirs(gobin, exist_ok=True)
-                print(f"{Colors.GREEN}✅ Created GOBIN directory: {gobin}{Colors.END}")
+                print(f"{Colors.GREEN} Created GOBIN directory: {gobin}{Colors.END}")
             else:
-                print(f"{Colors.GREEN}✅ GOBIN directory exists: {gobin}{Colors.END}")
+                print(f"{Colors.GREEN} GOBIN directory exists: {gobin}{Colors.END}")
             
             # Ensure GOPATH/src directory exists (for older Go versions)
             gosrc = os.path.join(gopath, 'src')
             if not os.path.exists(gosrc):
                 os.makedirs(gosrc, exist_ok=True)
-                print(f"{Colors.GREEN}✅ Created GOSRC directory: {gosrc}{Colors.END}")
+                print(f"{Colors.GREEN} Created GOSRC directory: {gosrc}{Colors.END}")
             
             # Set proper permissions on Go directories
             import stat
@@ -634,9 +634,9 @@ def setup_go_environment_complete() -> bool:
             current_path = os.environ.get('PATH', '')
             if gobin not in current_path:
                 os.environ['PATH'] = f"{gobin}:{current_path}"
-                print(f"{Colors.GREEN}✅ Added {gobin} to current session PATH{Colors.END}")
+                print(f"{Colors.GREEN} Added {gobin} to current session PATH{Colors.END}")
             else:
-                print(f"{Colors.GREEN}✅ {gobin} already in PATH{Colors.END}")
+                print(f"{Colors.GREEN} {gobin} already in PATH{Colors.END}")
             
             # Set Go environment variables for current session
             os.environ['GOPATH'] = gopath
@@ -662,27 +662,27 @@ def setup_go_environment_complete() -> bool:
                             f.write('\n# Go environment\n')
                             for line in profile_lines:
                                 f.write(f'{line}\n')
-                        print(f"{Colors.GREEN}✅ Added Go environment to {profile}{Colors.END}")
+                        print(f"{Colors.GREEN} Added Go environment to {profile}{Colors.END}")
             
             # Final validation
             print(f"{Colors.WHITE}Validating Go environment...{Colors.END}")
             
             # Test Go command
             subprocess.run(['go', 'version'], check=True, capture_output=True)
-            print(f"{Colors.GREEN}  ✅ Go command working{Colors.END}")
+            print(f"{Colors.GREEN}   Go command working{Colors.END}")
             
             # Test GOPATH
             if os.path.exists(gopath) and os.path.isdir(gopath):
-                print(f"{Colors.GREEN}  ✅ GOPATH directory accessible{Colors.END}")
+                print(f"{Colors.GREEN}   GOPATH directory accessible{Colors.END}")
             else:
-                print(f"{Colors.RED}  ❌ GOPATH directory issue{Colors.END}")
+                print(f"{Colors.RED}   GOPATH directory issue{Colors.END}")
                 return False
             
             # Test GOBIN
             if os.path.exists(gobin) and os.path.isdir(gobin):
-                print(f"{Colors.GREEN}  ✅ GOBIN directory accessible{Colors.END}")
+                print(f"{Colors.GREEN}   GOBIN directory accessible{Colors.END}")
             else:
-                print(f"{Colors.RED}  ❌ GOBIN directory issue{Colors.END}")
+                print(f"{Colors.RED}   GOBIN directory issue{Colors.END}")
                 return False
             
             # Test write permissions
@@ -691,20 +691,20 @@ def setup_go_environment_complete() -> bool:
                 with open(test_file, 'w') as f:
                     f.write('test')
                 os.remove(test_file)
-                print(f"{Colors.GREEN}  ✅ GOBIN directory writable{Colors.END}")
+                print(f"{Colors.GREEN}   GOBIN directory writable{Colors.END}")
             except Exception as e:
-                print(f"{Colors.RED}  ❌ GOBIN directory not writable: {e}{Colors.END}")
+                print(f"{Colors.RED}   GOBIN directory not writable: {e}{Colors.END}")
                 return False
             
-            print(f"{Colors.GREEN}✅ Go environment configured and validated successfully{Colors.END}")
+            print(f"{Colors.GREEN} Go environment configured and validated successfully{Colors.END}")
             return True
             
         except subprocess.CalledProcessError as e:
-            print(f"{Colors.RED}❌ Go environment configuration failed: {e}{Colors.END}")
+            print(f"{Colors.RED} Go environment configuration failed: {e}{Colors.END}")
             return False
         
     except Exception as e:
-        print(f"{Colors.RED}❌ Go environment setup failed: {e}{Colors.END}")
+        print(f"{Colors.RED} Go environment setup failed: {e}{Colors.END}")
         return False
 
 def check_system_dependencies(distro: str) -> bool:
@@ -713,7 +713,7 @@ def check_system_dependencies(distro: str) -> bool:
         print(f"\n{Colors.BLUE}🔍 Pre-installation: Dependency Verification{Colors.END}")
         
         if distro not in SUPPORTED_DISTROS:
-            print(f"{Colors.RED}❌ Unsupported distribution for dependency checking{Colors.END}")
+            print(f"{Colors.RED} Unsupported distribution for dependency checking{Colors.END}")
             return False
             
         distro_config = SUPPORTED_DISTROS[distro]
@@ -737,9 +737,9 @@ def check_system_dependencies(distro: str) -> bool:
                 try:
                     result = subprocess.run(['pacman', '-Q', dep], 
                                           capture_output=True, check=True)
-                    print(f"{Colors.GREEN}  ✅ {dep} is installed{Colors.END}")
+                    print(f"{Colors.GREEN}   {dep} is installed{Colors.END}")
                 except subprocess.CalledProcessError:
-                    print(f"{Colors.RED}  ❌ {dep} is missing{Colors.END}")
+                    print(f"{Colors.RED}   {dep} is missing{Colors.END}")
                     missing_deps.append(dep)
             else:
                 # Use dpkg for Debian-based systems
@@ -747,12 +747,12 @@ def check_system_dependencies(distro: str) -> bool:
                     result = subprocess.run(['dpkg', '-l', dep], 
                                           capture_output=True, check=True)
                     if result.returncode == 0:
-                        print(f"{Colors.GREEN}  ✅ {dep} is installed{Colors.END}")
+                        print(f"{Colors.GREEN}   {dep} is installed{Colors.END}")
                     else:
-                        print(f"{Colors.RED}  ❌ {dep} is missing{Colors.END}")
+                        print(f"{Colors.RED}   {dep} is missing{Colors.END}")
                         missing_deps.append(dep)
                 except subprocess.CalledProcessError:
-                    print(f"{Colors.RED}  ❌ {dep} is missing{Colors.END}")
+                    print(f"{Colors.RED}   {dep} is missing{Colors.END}")
                     missing_deps.append(dep)
         
         # Install missing dependencies automatically
@@ -770,10 +770,10 @@ def check_system_dependencies(distro: str) -> bool:
                              stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
                 
                 for dep in missing_deps:
-                    print(f"{Colors.GREEN}  ✅ {dep} installed successfully{Colors.END}")
+                    print(f"{Colors.GREEN}   {dep} installed successfully{Colors.END}")
                     
             except subprocess.CalledProcessError as e:
-                print(f"{Colors.RED}❌ Failed to install dependencies: {e}{Colors.END}")
+                print(f"{Colors.RED} Failed to install dependencies: {e}{Colors.END}")
                 print(f"{Colors.YELLOW}Please install manually: {' '.join(missing_deps)}{Colors.END}")
                 return False
         
@@ -783,7 +783,7 @@ def check_system_dependencies(distro: str) -> bool:
         return True
         
     except Exception as e:
-        print(f"{Colors.RED}❌ Dependency verification failed: {e}{Colors.END}")
+        print(f"{Colors.RED} Dependency verification failed: {e}{Colors.END}")
         return False
 
 def verify_go_tools_prerequisites() -> bool:
@@ -807,16 +807,16 @@ def verify_go_tools_prerequisites() -> bool:
                 import glob
                 matches = glob.glob(header)
                 if matches:
-                    print(f"{Colors.GREEN}  ✅ pcap.h found at {matches[0]}{Colors.END}")
+                    print(f"{Colors.GREEN}   pcap.h found at {matches[0]}{Colors.END}")
                     pcap_found = True
                     break
             elif os.path.exists(header):
-                print(f"{Colors.GREEN}  ✅ pcap.h found at {header}{Colors.END}")
+                print(f"{Colors.GREEN}   pcap.h found at {header}{Colors.END}")
                 pcap_found = True
                 break
         
         if not pcap_found:
-            print(f"{Colors.YELLOW}  ⚠️ pcap.h header not found in standard locations{Colors.END}")
+            print(f"{Colors.YELLOW}   pcap.h header not found in standard locations{Colors.END}")
             
             # Try to install missing libpcap packages
             print(f"{Colors.WHITE}  Attempting to install missing libpcap packages...{Colors.END}")
@@ -837,18 +837,18 @@ def verify_go_tools_prerequisites() -> bool:
                             import glob
                             matches = glob.glob(header)
                             if matches:
-                                print(f"{Colors.GREEN}  ✅ pcap.h now found at {matches[0]}{Colors.END}")
+                                print(f"{Colors.GREEN}   pcap.h now found at {matches[0]}{Colors.END}")
                                 pcap_found = True
                                 break
                         elif os.path.exists(header):
-                            print(f"{Colors.GREEN}  ✅ pcap.h now found at {header}{Colors.END}")
+                            print(f"{Colors.GREEN}   pcap.h now found at {header}{Colors.END}")
                             pcap_found = True
                             break
                     if pcap_found:
                         break
             
             if not pcap_found:
-                print(f"{Colors.RED}  ❌ Could not install or locate pcap.h{Colors.END}")
+                print(f"{Colors.RED}   Could not install or locate pcap.h{Colors.END}")
                 print(f"{Colors.YELLOW}  💡 naabu compilation may fail without pcap headers{Colors.END}")
                 # Don't fail completely - let Go tools try anyway
                 return True  # Changed from False to True to allow continuation
@@ -857,14 +857,14 @@ def verify_go_tools_prerequisites() -> bool:
         try:
             result = subprocess.run(['pkg-config', '--exists', 'libpcap'], 
                                   check=True, capture_output=True)
-            print(f"{Colors.GREEN}  ✅ libpcap pkg-config found{Colors.END}")
+            print(f"{Colors.GREEN}   libpcap pkg-config found{Colors.END}")
         except (subprocess.CalledProcessError, FileNotFoundError):
-            print(f"{Colors.YELLOW}  ⚠️ libpcap pkg-config not found, but continuing{Colors.END}")
+            print(f"{Colors.YELLOW}   libpcap pkg-config not found, but continuing{Colors.END}")
         
         return True
         
     except Exception as e:
-        print(f"{Colors.YELLOW}⚠️ Prerequisites verification failed: {e}{Colors.END}")
+        print(f"{Colors.YELLOW} Prerequisites verification failed: {e}{Colors.END}")
         return True  # Allow continuation even if verification fails
 
 def attempt_dependency_recovery(distro: str) -> bool:
@@ -899,7 +899,7 @@ def attempt_dependency_recovery(distro: str) -> bool:
         return check_system_dependencies(distro)
         
     except Exception as e:
-        print(f"{Colors.RED}❌ Recovery attempt failed: {e}{Colors.END}")
+        print(f"{Colors.RED} Recovery attempt failed: {e}{Colors.END}")
         return False
 
 def clean_go_mod_cache():
@@ -907,9 +907,9 @@ def clean_go_mod_cache():
     try:
         print(f"{Colors.YELLOW}Cleaning Go module cache...{Colors.END}")
         subprocess.run(['go', 'clean', '-modcache'], check=True)
-        print(f"{Colors.GREEN}  ✅ Go module cache cleaned{Colors.END}")
+        print(f"{Colors.GREEN}   Go module cache cleaned{Colors.END}")
     except Exception as e:
-        print(f"{Colors.YELLOW}  ⚠️ Could not clean Go module cache: {e}{Colors.END}")
+        print(f"{Colors.YELLOW}   Could not clean Go module cache: {e}{Colors.END}")
 
 def install_nuclei_with_retries(repo, max_retries=3):
     """Try to install nuclei with retries, cleaning cache and switching proxy if needed."""
@@ -945,15 +945,15 @@ def install_nuclei_with_retries(repo, max_retries=3):
                                capture_output=True, text=True, env=env, timeout=timeout_seconds)
         
         if result.returncode == 0:
-            print(f"{Colors.GREEN}  ✅ nuclei v{specific_version} installed successfully (reduced dependencies){Colors.END}")
+            print(f"{Colors.GREEN}   nuclei v{specific_version} installed successfully (reduced dependencies){Colors.END}")
             return True
         else:
-            print(f"{Colors.RED}  ❌ nuclei install failed (exit {result.returncode}){Colors.END}")
+            print(f"{Colors.RED}   nuclei install failed (exit {result.returncode}){Colors.END}")
             print(f"{Colors.YELLOW}  --- go install output ---{Colors.END}")
             print(result.stdout[-1000:])
             print(result.stderr[-1000:])
             if attempt == max_retries:
-                print(f"{Colors.RED}  ❌ nuclei installation failed after {max_retries} attempts{Colors.END}")
+                print(f"{Colors.RED}   nuclei installation failed after {max_retries} attempts{Colors.END}")
                 return False
             print(f"{Colors.YELLOW}  Retrying nuclei installation...{Colors.END}")
     return False
@@ -965,15 +965,15 @@ def install_security_tools_complete(distro: str) -> bool:
         
         # Pre-installation dependency check with recovery
         if not check_system_dependencies(distro):
-            print(f"{Colors.YELLOW}⚠️  Initial dependency check failed, attempting recovery...{Colors.END}")
+            print(f"{Colors.YELLOW}  Initial dependency check failed, attempting recovery...{Colors.END}")
             if not attempt_dependency_recovery(distro):
-                print(f"{Colors.RED}❌ System dependencies check failed after recovery attempt{Colors.END}")
+                print(f"{Colors.RED} System dependencies check failed after recovery attempt{Colors.END}")
                 print(f"{Colors.WHITE}Manual intervention may be required{Colors.END}")
                 return False
         
         # Verify Go tools prerequisites (libpcap-dev now guaranteed from Stage 1)
         if not verify_go_tools_prerequisites():
-            print(f"{Colors.RED}❌ Go tools prerequisites not met{Colors.END}")
+            print(f"{Colors.RED} Go tools prerequisites not met{Colors.END}")
             return False
         
         tools = {
@@ -989,13 +989,13 @@ def install_security_tools_complete(distro: str) -> bool:
                 if install_nuclei_with_retries(repo, max_retries=3):
                     success_count += 1
                 else:
-                    print(f"{Colors.RED}  ❌ nuclei installation failed after multiple attempts{Colors.END}")
+                    print(f"{Colors.RED}   nuclei installation failed after multiple attempts{Colors.END}")
                     continue
             else:
                 try:
                     print(f"{Colors.WHITE}Installing {tool}...{Colors.END}")
                     if shutil.which(tool):
-                        print(f"{Colors.GREEN}  ✅ {tool} already installed{Colors.END}")
+                        print(f"{Colors.GREEN}   {tool} already installed{Colors.END}")
                         success_count += 1
                         continue
                     env = os.environ.copy()
@@ -1010,14 +1010,14 @@ def install_security_tools_complete(distro: str) -> bool:
                         tool_path = os.path.join(gobin, tool)
                         print(f"{Colors.WHITE}  Verifying {tool} installation at {tool_path}...{Colors.END}")
                         if os.path.exists(tool_path) and os.access(tool_path, os.X_OK):
-                            print(f"{Colors.GREEN}  ✅ {tool} installed and verified at {tool_path}{Colors.END}")
+                            print(f"{Colors.GREEN}   {tool} installed and verified at {tool_path}{Colors.END}")
                             success_count += 1
                         else:
-                            print(f"{Colors.RED}  ❌ {tool} installation reported success but binary not found at {tool_path}{Colors.END}")
+                            print(f"{Colors.RED}   {tool} installation reported success but binary not found at {tool_path}{Colors.END}")
                     else:
-                        print(f"{Colors.RED}  ❌ {tool} installation failed via go install{Colors.END}")
+                        print(f"{Colors.RED}   {tool} installation failed via go install{Colors.END}")
                 except Exception as e:
-                    print(f"{Colors.RED}  ❌ Failed to install {tool}: {e}{Colors.END}")
+                    print(f"{Colors.RED}   Failed to install {tool}: {e}{Colors.END}")
           # Update nuclei templates if nuclei was installed (with optimization)
         if shutil.which('nuclei'):
             print(f"{Colors.WHITE}Updating nuclei templates (optimized)...{Colors.END}")
@@ -1034,12 +1034,12 @@ def install_security_tools_complete(distro: str) -> bool:
                                       stderr=subprocess.PIPE,
                                       timeout=300,  # Extended to 5 minutes
                                       env=env)
-                print(f"{Colors.GREEN}✅ Nuclei templates updated successfully{Colors.END}")
+                print(f"{Colors.GREEN} Nuclei templates updated successfully{Colors.END}")
             except subprocess.TimeoutExpired:
-                print(f"{Colors.YELLOW}⚠️  Template update timed out (5min) - continuing anyway{Colors.END}")
+                print(f"{Colors.YELLOW}  Template update timed out (5min) - continuing anyway{Colors.END}")
                 print(f"{Colors.YELLOW}  💡 Templates can be updated later: nuclei -update-templates{Colors.END}")
             except subprocess.CalledProcessError as e:
-                print(f"{Colors.YELLOW}⚠️  Template update failed - continuing anyway{Colors.END}")
+                print(f"{Colors.YELLOW}  Template update failed - continuing anyway{Colors.END}")
                 if e.stderr:
                     error_msg = e.stderr.decode().strip()
                     if error_msg:
@@ -1049,20 +1049,20 @@ def install_security_tools_complete(distro: str) -> bool:
         if success_count >= 2:  # At least 2 out of 3 tools must be installed
             # Check if nuclei specifically was installed (critical for vulnerability scanning)
             if shutil.which('nuclei'):
-                print(f"{Colors.GREEN}✅ Security tools installation completed ({success_count}/3 tools) - nuclei available{Colors.END}")
+                print(f"{Colors.GREEN} Security tools installation completed ({success_count}/3 tools) - nuclei available{Colors.END}")
                 return True
             else:
-                print(f"{Colors.YELLOW}⚠️  {success_count}/3 tools installed but nuclei is missing{Colors.END}")
-                print(f"{Colors.RED}❌ Nuclei is critical for vulnerability analysis - installation incomplete{Colors.END}")
+                print(f"{Colors.YELLOW}  {success_count}/3 tools installed but nuclei is missing{Colors.END}")
+                print(f"{Colors.RED} Nuclei is critical for vulnerability analysis - installation incomplete{Colors.END}")
                 print(f"{Colors.WHITE}The setup requires nuclei to be installed via 'go install' for proper operation{Colors.END}")
                 return False
         else:
-            print(f"{Colors.RED}❌ Insufficient tools installed ({success_count}/3){Colors.END}")
+            print(f"{Colors.RED} Insufficient tools installed ({success_count}/3){Colors.END}")
             print(f"{Colors.WHITE}Minimum 2 tools required for operation{Colors.END}")
             return False
         
     except Exception as e:
-        print(f"{Colors.RED}❌ Security tools installation failed: {e}{Colors.END}")
+        print(f"{Colors.RED} Security tools installation failed: {e}{Colors.END}")
         return False
 
 def install_python_dependencies() -> bool:
@@ -1075,7 +1075,7 @@ def install_python_dependencies() -> bool:
             print(f"{Colors.WHITE}Installing Python dependencies from requirements.txt...{Colors.END}")
             subprocess.run(['pip3', 'install', '-r', requirements_file], check=True, 
                           stdout=subprocess.DEVNULL)
-            print(f"{Colors.GREEN}✅ Python dependencies installed{Colors.END}")
+            print(f"{Colors.GREEN} Python dependencies installed{Colors.END}")
         else:
             # Fallback essential packages
             print(f"{Colors.WHITE}Installing essential Python packages...{Colors.END}")
@@ -1090,11 +1090,11 @@ def install_python_dependencies() -> bool:
             for package in essential_packages:
                 subprocess.run(['pip3', 'install', package], check=True, 
                               stdout=subprocess.DEVNULL)
-                print(f"{Colors.GREEN}  ✅ {package}{Colors.END}")
+                print(f"{Colors.GREEN}   {package}{Colors.END}")
             
         return True
     except Exception as e:
-        print(f"{Colors.RED}❌ Python dependencies installation failed: {e}{Colors.END}")
+        print(f"{Colors.RED} Python dependencies installation failed: {e}{Colors.END}")
         return False
 
 def setup_python_environment() -> bool:
@@ -1106,14 +1106,14 @@ def setup_python_environment() -> bool:
         try:
             result = subprocess.run(['pip', '--version'], capture_output=True, text=True)
             if result.returncode != 0 or 'externally-managed' in result.stderr.lower():
-                print(f"{Colors.YELLOW}⚠️ Detected externally-managed Python environment (likely Kali Linux){Colors.END}")
+                print(f"{Colors.YELLOW} Detected externally-managed Python environment (likely Kali Linux){Colors.END}")
                 
                 # Check if python3-venv is available
                 venv_check = subprocess.run(['python3', '-m', 'venv', '--help'], capture_output=True, text=True)
                 if venv_check.returncode != 0:
                     print(f"{Colors.WHITE}Installing python3-venv...{Colors.END}")
                     if not run_with_timeout(['env', 'DEBIAN_FRONTEND=noninteractive', 'apt', 'install', 'python3-venv', '-y'], 180, "Installing python3-venv"):
-                        print(f"{Colors.RED}❌ Failed to install python3-venv{Colors.END}")
+                        print(f"{Colors.RED} Failed to install python3-venv{Colors.END}")
                         return False
                 
                 # Create virtual environment in user directory
@@ -1121,7 +1121,7 @@ def setup_python_environment() -> bool:
                 if not os.path.exists(venv_path):
                     print(f"{Colors.WHITE}Creating virtual environment at {venv_path}...{Colors.END}")
                     if not run_with_timeout(['python3', '-m', 'venv', venv_path], 120, "Creating virtual environment"):
-                        print(f"{Colors.RED}❌ Failed to create virtual environment{Colors.END}")
+                        print(f"{Colors.RED} Failed to create virtual environment{Colors.END}")
                         return False
                 
                 # Activate virtual environment by setting environment variables
@@ -1129,7 +1129,7 @@ def setup_python_environment() -> bool:
                 os.environ['VIRTUAL_ENV'] = venv_path
                 os.environ['PATH'] = f"{venv_bin}:{os.environ.get('PATH', '')}"
                 
-                print(f"{Colors.GREEN}✅ Virtual environment created and activated{Colors.END}")
+                print(f"{Colors.GREEN} Virtual environment created and activated{Colors.END}")
                 print(f"{Colors.WHITE}Virtual environment path: {venv_path}{Colors.END}")
                 
                 # Add activation instructions to shell profiles
@@ -1149,15 +1149,15 @@ def setup_python_environment() -> bool:
                 
                 return True
             else:
-                print(f"{Colors.GREEN}✅ Standard Python environment detected{Colors.END}")
+                print(f"{Colors.GREEN} Standard Python environment detected{Colors.END}")
                 return True
                 
         except Exception as e:
-            print(f"{Colors.YELLOW}⚠️ Python environment check failed: {e}{Colors.END}")
+            print(f"{Colors.YELLOW} Python environment check failed: {e}{Colors.END}")
             return True  # Continue anyway
             
     except Exception as e:
-        print(f"{Colors.RED}❌ Python environment setup failed: {e}{Colors.END}")
+        print(f"{Colors.RED} Python environment setup failed: {e}{Colors.END}")
         return False
 
 def create_configuration_files() -> bool:
@@ -1212,7 +1212,7 @@ def create_configuration_files() -> bool:
         with open(config_file, 'w') as f:
             json.dump(config, f, indent=2)
         
-        print(f"{Colors.GREEN}✅ Configuration file created: {config_file}{Colors.END}")
+        print(f"{Colors.GREEN} Configuration file created: {config_file}{Colors.END}")
         
         # Create bash aliases for easy access
         aliases_content = '''#!/bin/bash
@@ -1229,13 +1229,13 @@ alias vat-update="nuclei -update-templates"
             f.write(aliases_content)
         os.chmod(aliases_file, 0o755)
         
-        print(f"{Colors.GREEN}✅ Aliases created: {aliases_file}{Colors.END}")
+        print(f"{Colors.GREEN} Aliases created: {aliases_file}{Colors.END}")
         print(f"{Colors.YELLOW}💡 To use aliases: source {aliases_file}{Colors.END}")
         
         return True
         
     except Exception as e:
-        print(f"{Colors.RED}❌ Configuration creation failed: {e}{Colors.END}")
+        print(f"{Colors.RED} Configuration creation failed: {e}{Colors.END}")
         return False
 
 def final_verification() -> bool:
@@ -1272,9 +1272,9 @@ def final_verification() -> bool:
                         break
             
             if tool_found:
-                print(f"{Colors.GREEN}  ✅ {tool}: Available at {tool_path}{Colors.END}")
+                print(f"{Colors.GREEN}   {tool}: Available at {tool_path}{Colors.END}")
             else:
-                print(f"{Colors.RED}  ❌ {tool}: Not found{Colors.END}")
+                print(f"{Colors.RED}   {tool}: Not found{Colors.END}")
                 all_good = False
           
         # Test basic functionality with enhanced path detection
@@ -1306,11 +1306,11 @@ def final_verification() -> bool:
                 result = subprocess.run([nuclei_path, '-version'], 
                                       capture_output=True, text=True, 
                                       timeout=10, check=True)
-                print(f"{Colors.GREEN}  ✅ nuclei: {result.stdout.strip()}{Colors.END}")
+                print(f"{Colors.GREEN}   nuclei: {result.stdout.strip()}{Colors.END}")
             except:
-                print(f"{Colors.YELLOW}  ⚠️  nuclei: Version check failed{Colors.END}")
+                print(f"{Colors.YELLOW}    nuclei: Version check failed{Colors.END}")
         else:
-            print(f"{Colors.YELLOW}  ⚠️  nuclei: Not found for testing{Colors.END}")
+            print(f"{Colors.YELLOW}    nuclei: Not found for testing{Colors.END}")
         
         # Test naabu
         naabu_path = find_tool_path('naabu')
@@ -1319,11 +1319,11 @@ def final_verification() -> bool:
                 result = subprocess.run([naabu_path, '-version'], 
                                       capture_output=True, text=True, 
                                       timeout=10, check=True)
-                print(f"{Colors.GREEN}  ✅ naabu: Working{Colors.END}")
+                print(f"{Colors.GREEN}   naabu: Working{Colors.END}")
             except:
-                print(f"{Colors.YELLOW}  ⚠️  naabu: Version check failed{Colors.END}")
+                print(f"{Colors.YELLOW}    naabu: Version check failed{Colors.END}")
         else:
-            print(f"{Colors.YELLOW}  ⚠️  naabu: Not found for testing{Colors.END}")
+            print(f"{Colors.YELLOW}    naabu: Not found for testing{Colors.END}")
         
         # Test httpx
         httpx_path = find_tool_path('httpx')
@@ -1332,11 +1332,11 @@ def final_verification() -> bool:
                 result = subprocess.run([httpx_path, '-version'], 
                                       capture_output=True, text=True, 
                                       timeout=10, check=True)
-                print(f"{Colors.GREEN}  ✅ httpx: Working{Colors.END}")
+                print(f"{Colors.GREEN}   httpx: Working{Colors.END}")
             except:
-                print(f"{Colors.YELLOW}  ⚠️  httpx: Version check failed{Colors.END}")
+                print(f"{Colors.YELLOW}    httpx: Version check failed{Colors.END}")
         else:
-            print(f"{Colors.YELLOW}  ⚠️  httpx: Not found for testing{Colors.END}")
+            print(f"{Colors.YELLOW}    httpx: Not found for testing{Colors.END}")
         
         # Enhanced success criteria - if tools are found even if not in PATH, consider it success
         tools_found = 0
@@ -1345,16 +1345,16 @@ def final_verification() -> bool:
                 tools_found += 1
         
         if tools_found >= 2:  # At least 2 out of 3 tools found
-            print(f"{Colors.GREEN}✅ Verification passed: {tools_found}/3 tools found{Colors.END}")
+            print(f"{Colors.GREEN} Verification passed: {tools_found}/3 tools found{Colors.END}")
             if tools_found < 3:
                 print(f"{Colors.YELLOW}💡 Add Go tools to PATH: export PATH=$PATH:~/go/bin{Colors.END}")
             return True
         else:
-            print(f"{Colors.RED}❌ Insufficient tools found: {tools_found}/3{Colors.END}")
+            print(f"{Colors.RED} Insufficient tools found: {tools_found}/3{Colors.END}")
             return False
         
     except Exception as e:
-        print(f"{Colors.RED}❌ Verification failed: {e}{Colors.END}")
+        print(f"{Colors.RED} Verification failed: {e}{Colors.END}")
         return False
 
 def print_success_message():
@@ -1401,19 +1401,19 @@ def check_disk_space(min_gb: float = 2.0) -> bool:
                     print(f"   Available: {available_gb:.1f} GB")
                     
                     if available_gb < min_gb:
-                        print(f"{Colors.RED}❌ CRITICAL: Less than {min_gb:.1f}GB disk space available!{Colors.END}")
-                        print(f"{Colors.YELLOW}⚠️ Installation may fail due to insufficient disk space.{Colors.END}")
+                        print(f"{Colors.RED} CRITICAL: Less than {min_gb:.1f}GB disk space available!{Colors.END}")
+                        print(f"{Colors.YELLOW} Installation may fail due to insufficient disk space.{Colors.END}")
                         print(f"{Colors.WHITE}💡 Recommendations:{Colors.END}")
                         print(f"   - Free up disk space by removing unused files")
                         print(f"   - Use 'sudo apt clean' to clear package cache")
                         print(f"   - Use 'sudo apt autoremove' to remove unused packages")
                         return False
                     else:
-                        print(f"{Colors.GREEN}✅ Sufficient disk space available{Colors.END}")
+                        print(f"{Colors.GREEN} Sufficient disk space available{Colors.END}")
                         return True
         return True  # If we can't check, assume it's okay
     except Exception as e:
-        print(f"{Colors.YELLOW}⚠️ Could not check disk space: {e}{Colors.END}")
+        print(f"{Colors.YELLOW} Could not check disk space: {e}{Colors.END}")
         return True  # Continue anyway
 
 def main():
@@ -1432,7 +1432,7 @@ def main():
         if not check_disk_space(min_gb=2.0):
             response = input(f"{Colors.YELLOW}Continue anyway? (y/N): {Colors.END}")
             if response.lower() != 'y':
-                print(f"{Colors.RED}❌ Installation cancelled due to insufficient disk space{Colors.END}")
+                print(f"{Colors.RED} Installation cancelled due to insufficient disk space{Colors.END}")
                 return False
         
         # Validate system requirements
@@ -1441,7 +1441,7 @@ def main():
             return False
         
         distro_config = SUPPORTED_DISTROS[distro]
-        print(f"{Colors.GREEN}✅ System validation passed{Colors.END}")
+        print(f"{Colors.GREEN} System validation passed{Colors.END}")
         
         # Installation phases with optimized order
         phases = [
@@ -1455,7 +1455,7 @@ def main():
         
         for phase_name, phase_func in phases:
             if not phase_func():
-                print(f"\n{Colors.RED}❌ Installation failed at: {phase_name}{Colors.END}")
+                print(f"\n{Colors.RED} Installation failed at: {phase_name}{Colors.END}")
                 print(f"{Colors.WHITE}Please check the error messages above and try again{Colors.END}")
                 return False
         
@@ -1475,7 +1475,7 @@ def main():
                 if os.path.exists(mtscan_path):
                     subprocess.run(["python", mtscan_path], cwd=parent_dir)
                 else:
-                    print("❌ Could not find mtscan.py. Please run it manually.")
+                    print(" Could not find mtscan.py. Please run it manually.")
             else:
                 print("\n✨ Setup complete! Run 'python mtscan.py' when ready.")
                 print(f"{Colors.YELLOW}Remember: export PATH=$PATH:~/go/bin{Colors.END}")
@@ -1486,10 +1486,10 @@ def main():
         return True
         
     except KeyboardInterrupt:
-        print(f"\n{Colors.RED}❌ Installation cancelled by user{Colors.END}")
+        print(f"\n{Colors.RED} Installation cancelled by user{Colors.END}")
         return False
     except Exception as e:
-        print(f"\n{Colors.RED}❌ Unexpected error during installation: {e}{Colors.END}")
+        print(f"\n{Colors.RED} Unexpected error during installation: {e}{Colors.END}")
         return False
 
 if __name__ == "__main__":
@@ -1497,8 +1497,8 @@ if __name__ == "__main__":
         success = main()
         sys.exit(0 if success else 1)
     except KeyboardInterrupt:
-        print(f"\n{Colors.RED}❌ Installation cancelled by user{Colors.END}")
+        print(f"\n{Colors.RED} Installation cancelled by user{Colors.END}")
         sys.exit(1)
     except Exception as e:
-        print(f"\n{Colors.RED}❌ Unexpected error: {e}{Colors.END}")
+        print(f"\n{Colors.RED} Unexpected error: {e}{Colors.END}")
         sys.exit(1)

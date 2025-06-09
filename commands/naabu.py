@@ -64,12 +64,12 @@ def run_naabu(target=None, target_list=None, ports=None, exclude_ports=None,
       # Check if naabu is available, install if needed
     if not check_naabu():
         if auto_install:
-            print("[*] Naabu not found. Attempting automatic installation...")
+            print(" Naabu not found. Attempting automatic installation...")
             if not auto_install_naabu():
-                print("[-] Failed to install Naabu automatically.")
+                print(" Failed to install Naabu automatically.")
                 return False
         else:
-            print("[-] Naabu is not installed. Please install it first or set auto_install=True.")
+            print(" Naabu is not installed. Please install it first or set auto_install=True.")
             return False
     
     if not target and not target_list:
@@ -116,18 +116,18 @@ def run_naabu(target=None, target_list=None, ports=None, exclude_ports=None,
                 cmd.append("-scan-type")
                 cmd.append("connect")
                 print("Using connect scan mode for better cross-platform compatibility")    # Always show real-time output to user
-    print(f"[*] Running Naabu: {' '.join(cmd)}")
+    print(f" Running Naabu: {' '.join(cmd)}")
 
     # Run with retry for better resilience - real-time output always shown
     success = run_cmd(cmd, retry=1, silent=False)
     
     if success:
         if save_output and output_file:
-            print(f"[+] Naabu scan completed! Output saved to: {output_file}")
+            print(f" Naabu scan completed! Output saved to: {output_file}")
         else:
-            print("[+] Naabu scan completed!")
+            print(" Naabu scan completed!")
     else:
-        print("[-] Failed to execute Naabu. Please check the parameters and try again.")
+        print(" Failed to execute Naabu. Please check the parameters and try again.")
         return False
     
     return True
@@ -263,51 +263,51 @@ def auto_install_naabu():
     Returns:
         bool: True if installation was successful, False otherwise.
     """
-    print("[*] Starting automatic installation of Naabu...")
+    print(" Starting automatic installation of Naabu...")
     
     # Check if already installed and working
     if check_naabu():
-        print("[+] Naabu is already installed and working!")
+        print(" Naabu is already installed and working!")
         return True
     
     # Check if Go is installed
     if not shutil.which("go"):
-        print("[-] Go is not installed. Please install Go first.")
+        print(" Go is not installed. Please install Go first.")
         print("   You can use the scripts/autoinstall.py script to install Go automatically.")
         return False
     
     try:
-        print("[*] Installing Naabu using Go...")
+        print(" Installing Naabu using Go...")
         
         # Install naabu using go install
         cmd = ["go", "install", "-v", "github.com/projectdiscovery/naabu/v2/cmd/naabu@latest"]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         
         if result.returncode != 0:
-            print(f"[-] Failed to install Naabu: {result.stderr}")
+            print(f" Failed to install Naabu: {result.stderr}")
             return False
         
-        print("[+] Naabu installed successfully!")
+        print(" Naabu installed successfully!")
         
         # Verify installation
         if check_naabu():
-            print("[+] Naabu installation verified and working!")
+            print(" Naabu installation verified and working!")
             
             # Add ~/go/bin to PATH if not already there
             go_bin_path = os.path.expanduser("~/go/bin")
             current_path = os.environ.get("PATH", "")
             if go_bin_path not in current_path:
                 os.environ["PATH"] = f"{go_bin_path}:{current_path}"
-                print(f"[*] Added {go_bin_path} to PATH for this session")
+                print(f" Added {go_bin_path} to PATH for this session")
             
             return True
         else:
-            print("[-] Naabu installation completed but verification failed")
+            print(" Naabu installation completed but verification failed")
             return False
             
     except subprocess.TimeoutExpired:
-        print("[-] Installation timed out. Please check your internet connection.")
+        print(" Installation timed out. Please check your internet connection.")
         return False
     except Exception as e:
-        print(f"[-] Error during installation: {e}")
+        print(f" Error during installation: {e}")
         return False

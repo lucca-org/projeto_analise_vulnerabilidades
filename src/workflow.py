@@ -89,7 +89,7 @@ def create_output_directory(target_name: str) -> Optional[str]:
 
 def signal_handler(sig, frame):
     """Handle CTRL+C gracefully."""
-    print("\n[!] Scan interrupted by user. Partial results may be available.")
+    print("\nWARNING: Scan interrupted by user. Partial results may be available.")
     sys.exit(130)
 
 def generate_basic_summary_report(output_dir: str, target: str) -> bool:
@@ -118,7 +118,7 @@ def generate_basic_summary_report(output_dir: str, target: str) -> bool:
                         if line.strip():
                             port_count += 1
             except Exception as e:
-                print(f"[!] Warning: Could not parse ports JSON: {e}")
+                print(f"WARNING: Could not parse ports JSON: {e}")
         
         # Count HTTP services
         if os.path.exists(http_json):
@@ -128,7 +128,7 @@ def generate_basic_summary_report(output_dir: str, target: str) -> bool:
                         if line.strip():
                             http_count += 1
             except Exception as e:
-                print(f"[!] Warning: Could not parse HTTP services JSON: {e}")
+                print(f"WARNING: Could not parse HTTP services JSON: {e}")
         
         # Count vulnerabilities by severity
         if os.path.exists(vuln_json):
@@ -151,7 +151,7 @@ def generate_basic_summary_report(output_dir: str, target: str) -> bool:
                             except json.JSONDecodeError:
                                 pass
             except Exception as e:
-                print(f"[!] Warning: Could not parse vulnerabilities JSONL: {e}")
+                print(f"WARNING: Could not parse vulnerabilities JSONL: {e}")
 
         # Write the summary report
         with open(summary_file, 'w') as f:
@@ -184,10 +184,10 @@ def generate_basic_summary_report(output_dir: str, target: str) -> bool:
             f.write("=" * 60 + "\n")
             f.write("End of Summary Report\n")
         
-        print(f"[+] Summary report generated: {summary_file}")
+        print(f"Summary report generated: {summary_file}")
         return True
     except Exception as e:
-        print(f"[-] Error generating summary report: {e}")
+        print(f"Error generating summary report: {e}")
         return False
 
 def check_tool_availability(tool_name, common_paths=None):
@@ -249,31 +249,29 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
     target = args.host or args.target
 
     if not target:
-        print("[-] No target specified. Use -host or provide target as positional argument.")
+        print("No target specified. Use -host or provide target as positional argument.")
         return False
 
     # Only allow one tool at a time
     tools_selected = sum([args.naabu, args.httpx, args.nuclei])
     if tools_selected == 0:
-        print("[-] No tool selected. Use -naabu, -httpx, or -nuclei flag.")
+        print("No tool selected. Use -naabu, -httpx, or -nuclei flag.")
         return False
     elif tools_selected > 1:
-        print("[-] Only one tool can be run at a time. Please select either -naabu, -httpx, or -nuclei.")
+        print("Only one tool can be run at a time. Please select either -naabu, -httpx, or -nuclei.")
         return False
 
-    print(f"[+] Running selected tool on target: {target}")
-    print(f"[+] Real-time output: ENABLED")
-    print(f"[+] Save to files: {'YES' if args.save_output else 'NO'}")
+    print(f"Running selected tool on target: {target}")
+    print(f"Real-time output: ENABLED")
+    print(f"Save to files: {'YES' if args.save_output else 'NO'}")
     if args.save_output:
-        print(f"[+] Results will be saved to: {output_dir}")
+        print(f"Results will be saved to: {output_dir}")
         if args.json_output:
-            print(f"[+] JSON format: ENABLED")
+            print(f"JSON format: ENABLED")
     else:
-        print(f"[+] Output will be displayed in real-time only (not saved)")
-
-    # NAABU
+        print(f"Output will be displayed in real-time only (not saved)")    # NAABU
     if args.naabu:
-        print(f"\n[+] Starting naabu port scan...")
+        print(f"\nStarting naabu port scan...")
 
         if args.save_output:
             ports_output = os.path.join(output_dir, "ports.txt")
@@ -313,11 +311,10 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
             output_file=ports_output if not args.json_output else ports_json,
             json_output=bool(args.save_output and args.json_output),
             save_output=args.save_output,
-            tool_silent=False,
-            additional_args=naabu_args
+            tool_silent=False,            additional_args=naabu_args
         )
 
-        print(f"\n[+] Naabu scan completed!")
+        print(f"\nNaabu scan completed!")
 
         if naabu_success:
             if args.save_output:
@@ -325,22 +322,22 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
                 if output_file and os.path.exists(output_file):
                     file_size = os.path.getsize(output_file)
                     if file_size > 0:
-                        print(f"[+] Results saved to {output_file} ({file_size} bytes)")
+                        print(f"Results saved to {output_file} ({file_size} bytes)")
                     else:
-                        print("[!] No open ports found")
+                        print("No open ports found")
                 else:
-                    print("[!] Output file was not created")
+                    print("Output file was not created")
                     success = False
             else:
-                print("[+] Real-time scan output was displayed above")
-                print("[+] Results were not saved to files (as requested)")
+                print("Real-time scan output was displayed above")
+                print("Results were not saved to files (as requested)")
         else:
-            print("[-] Naabu scan failed.")
+            print("Naabu scan failed.")
             success = False
 
     # HTTPX
     elif args.httpx:
-        print(f"\n[+] Starting httpx service detection...")
+        print(f"\nStarting httpx service detection...")
 
         if args.save_output:
             http_output = os.path.join(output_dir, "http_services.txt")
@@ -350,7 +347,7 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
             http_json = None
 
         httpx_input = target
-        print(f"[+] Target: {httpx_input}")
+        print(f"Target: {httpx_input}")
 
         httpx_args = ["-v"]
 
@@ -368,7 +365,8 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
                 "-delay", "5s"
             ])
         else:
-            httpx_args.extend([                "-rate-limit", "150",
+            httpx_args.extend([                
+                "-rate-limit", "150",
                 "-timeout", "5"
             ])
 
@@ -382,10 +380,9 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
             follow_redirects=True,
             save_output=args.save_output,
             tool_silent=False,
-            additional_args=httpx_args
-        )
+            additional_args=httpx_args        )
 
-        print(f"\n[+] HTTPX scan completed!")
+        print(f"\nHTTPX scan completed!")
 
         if httpx_success:
             if args.save_output:
@@ -393,20 +390,22 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
                 if output_file and os.path.exists(output_file):
                     file_size = os.path.getsize(output_file)
                     if file_size > 0:
-                        print(f"[+] Results saved to {output_file} ({file_size} bytes)")
+                        print(f"Results saved to {output_file} ({file_size} bytes)")
                     else:
-                        print("[!] No HTTP services found")
+                        print("No HTTP services found")
                 else:
-                    print("[!] Output file was not created")
+                    print("Output file was not created")
                     success = False
             else:
-                print("[+] Real-time scan output was displayed above")
-                print("[+] Results were not saved to files (as requested)")
+                print("Real-time scan output was displayed above")
+                print("Results were not saved to files (as requested)")
         else:
-            print("[-] HTTPX scan failed.")
-            success = False    # NUCLEI
+            print("HTTPX scan failed.")
+            success = False
+
+    # NUCLEI
     elif args.nuclei:
-        print(f"\n[+] Starting nuclei vulnerability scan...")
+        print(f"\nStarting nuclei vulnerability scan...")
 
         if args.save_output:
             vuln_output = os.path.join(output_dir, "vulnerabilities.txt")
@@ -417,7 +416,7 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
 
         # Handle target input for nuclei
         if not target.startswith(('http://', 'https://')):
-            print(f"[+] Target doesn't specify protocol. Testing both HTTP and HTTPS...")
+            print(f"Target doesn't specify protocol. Testing both HTTP and HTTPS...")
             nuclei_targets = [f"http://{target}", f"https://{target}"]
             
             if args.save_output:
@@ -426,15 +425,15 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
                     for t in nuclei_targets:
                         f.write(f"{t}\n")
                 nuclei_input = target_file
-                print(f"[+] Created target file: {target_file}")
+                print(f"Created target file: {target_file}")
             else:
                 # For real-time only, use the first URL  
                 nuclei_input = nuclei_targets[0]
             
-            print(f"[+] Testing URLs: {', '.join(nuclei_targets)}")
+            print(f"Testing URLs: {', '.join(nuclei_targets)}")
         else:
             nuclei_input = target
-            print(f"[+] Target: {nuclei_input}")
+            print(f"Target: {nuclei_input}")
 
         # Prepare nuclei arguments
         nuclei_args = ["-v", "-stats"]
@@ -490,7 +489,7 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
                 additional_args=nuclei_args
             )
 
-        print(f"\n[+] Nuclei scan completed!")
+        print(f"\n Nuclei scan completed!")
 
         if nuclei_success:
             if args.save_output:
@@ -498,17 +497,17 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
                 if output_file and os.path.exists(output_file):
                     file_size = os.path.getsize(output_file)
                     if file_size > 0:
-                        print(f"[+] Results saved to {output_file} ({file_size} bytes)")
+                        print(f" Results saved to {output_file} ({file_size} bytes)")
                     else:
-                        print("[!] No vulnerabilities found")
+                        print("WARNING: No vulnerabilities found")
                 else:
-                    print("[!] Output file was not created")
+                    print("WARNING: Output file was not created")
                     success = False
             else:
-                print("[+] Real-time scan output was displayed above")
-                print("[+] Results were not saved to files (as requested)")
+                print(" Real-time scan output was displayed above")
+                print(" Results were not saved to files (as requested)")
         else:
-            print("[-] Nuclei scan failed.")
+            print(" Nuclei scan failed.")
             success = False
 
     return success
@@ -518,7 +517,7 @@ def check_network_connectivity():
     # Check for network override flag - Fix: Use correct path relative to workflow.py
     override_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'network_override')
     if os.path.exists(override_path):
-        print("[!] Network connectivity check bypassed (override flag detected)")
+        print("WARNING: Network connectivity check bypassed (override flag detected)")
         return True
         
     try:
@@ -620,32 +619,32 @@ def main():
         args.json_output = False
     
     # Check network connectivity
-    print("[+] Checking network connectivity...")
+    print(" Checking network connectivity...")
     if not check_network_connectivity():
-        print("[-] Network connectivity check failed.")
-        print("[-] Some features may not work without internet access.")
+        print(" Network connectivity check failed.")
+        print(" Some features may not work without internet access.")
         response = input("Continue anyway? [y/N]: ")
 
         # Fix: Handle empty response (default to 'n' if no input)
         if response.strip().lower() not in ['y', 'yes']:
-            print("[-] Scan cancelled.")
+            print(" Scan cancelled.")
             sys.exit(1)
     
     # Handle template updates
     if args.update_templates:
-        print("[+] Updating nuclei templates...")
+        print(" Updating nuclei templates...")
         try:
             result = subprocess.run(['nuclei', '-update-templates'], check=True)
-            print("[+] Templates updated successfully.")
+            print(" Templates updated successfully.")
         except Exception as e:
-            print(f"[-] Template update failed: {e}")
+            print(f" Template update failed: {e}")
             if not args.force_tools:
                 sys.exit(1)
     
     # Determine target
     target = args.host or args.target
     if not target:
-        print("[-] No target specified. Use -host argument or provide target as positional argument.")
+        print(" No target specified. Use -host argument or provide target as positional argument.")
         print("Example: python workflow.py -naabu -host example.com")
         sys.exit(1)
     
@@ -658,10 +657,10 @@ def main():
     elif args.nuclei:
         tools_to_check.append('nuclei')
     else:
-        print("[-] No tool selected. Use -naabu, -httpx, or -nuclei flag.")
+        print(" No tool selected. Use -naabu, -httpx, or -nuclei flag.")
         sys.exit(1)
     
-    print("[+] Checking tool availability...")
+    print(" Checking tool availability...")
     tool_paths = {}
     missing_tools = []
     
@@ -669,14 +668,14 @@ def main():
         available, path = check_tool_availability(tool)
         if available:
             tool_paths[tool] = path
-            print(f"[+] {tool}: Available at {path}")
+            print(f" {tool}: Available at {path}")
         else:
             missing_tools.append(tool)
-            print(f"[-] {tool}: Not found")
+            print(f" {tool}: Not found")
     
     if missing_tools and not args.force_tools:
-        print(f"[-] Missing tools: {', '.join(missing_tools)}")
-        print("[-] Install missing tools or use --force-tools to continue anyway.")
+        print(f" Missing tools: {', '.join(missing_tools)}")
+        print(" Install missing tools or use --force-tools to continue anyway.")
         sys.exit(1)
     
     # Create output directory if saving output
@@ -688,38 +687,38 @@ def main():
             target_name = target.replace('/', '_').replace(':', '_')
             output_dir = create_output_directory(target_name)
             if not output_dir:
-                print("[-] Failed to create output directory.")
+                print(" Failed to create output directory.")
                 sys.exit(1)
     else:
         output_dir = os.getcwd()  # Use current directory for temporary files
     
     # Run the selected tool
-    print(f"\n[+] Starting scan of {target}")
-    print(f"[+] Scan start time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"\n Starting scan of {target}")
+    print(f" Scan start time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
     start_time = time.time()
     
     try:
         success = run_individual_tools(args, tool_paths, output_dir)
     except KeyboardInterrupt:
-        print("\n[!] Scan interrupted by user.")
+        print("\nWARNING: Scan interrupted by user.")
         success = False
     except Exception as e:
-        print(f"\n[!] Unexpected error: {e}")
+        print(f"\nWARNING: Unexpected error: {e}")
         success = False
     
     elapsed_time = time.time() - start_time
-    print(f"\n[+] Scan completed in {elapsed_time:.2f} seconds")
+    print(f"\n Scan completed in {elapsed_time:.2f} seconds")
     
     # Generate summary if saving output and scan was successful
     if args.save_output and success:
-        print("[+] Generating summary report...")
+        print(" Generating summary report...")
         generate_basic_summary_report(output_dir, target)
     
     if success:
-        print("[+] Scan completed successfully!")
+        print(" Scan completed successfully!")
     else:
-        print("[!] Scan completed with issues.")
+        print("WARNING: Scan completed with issues.")
     
     sys.exit(0 if success else 1)
 
