@@ -87,108 +87,87 @@ def create_output_directory(target_name: str) -> Optional[str]:
         print(f"Error creating output directory: {e}")
         return None
 
+def create_comprehensive_report_file(output_dir: str, target: str) -> str:
+    """Create a comprehensive report file and return its path."""
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    report_file = os.path.join(output_dir, "comprehensive_scan_report.txt")
+    
+    # Initialize the comprehensive report file
+    with open(report_file, 'w') as f:
+        f.write("=" * 80 + "\n")
+        f.write("COMPREHENSIVE VULNERABILITY SCAN REPORT\n")
+        f.write("=" * 80 + "\n")
+        f.write(f"Target: {target}\n")
+        f.write(f"Scan Start Time: {timestamp}\n")
+        f.write("=" * 80 + "\n\n")
+    
+    return report_file
+
+def append_to_comprehensive_report(report_file: str, tool_name: str, content: str, success: bool):
+    """Append tool results to the comprehensive report file."""
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    with open(report_file, 'a') as f:
+        f.write("-" * 60 + "\n")
+        f.write(f"{tool_name.upper()} SCAN RESULTS\n")
+        f.write(f"Completion Time: {timestamp}\n")
+        f.write(f"Status: {'SUCCESS' if success else 'FAILED'}\n")
+        f.write("-" * 60 + "\n")
+        
+        if content.strip():
+            f.write(content)
+            f.write("\n")
+        else:
+            f.write("No results found or scan failed.\n")
+        
+        f.write("\n" + "-" * 60 + "\n\n")
+
+def finalize_comprehensive_report(report_file: str, target: str, overall_success: bool):
+    """Finalize the comprehensive report with summary statistics."""
+    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Read the report to analyze results
+    with open(report_file, 'r') as f:
+        content = f.read()
+    
+    # Simple result counting from the report content
+    port_count = content.count("open") if "NAABU SCAN RESULTS" in content else 0
+    http_count = content.count("http") + content.count("https") if "HTTPX SCAN RESULTS" in content else 0
+    vuln_count = content.count("[") if "NUCLEI SCAN RESULTS" in content else 0  # Simple vulnerability indicator count
+    
+    # Append final summary
+    with open(report_file, 'a') as f:
+        f.write("=" * 80 + "\n")
+        f.write("SCAN SUMMARY\n")
+        f.write("=" * 80 + "\n")
+        f.write(f"Target: {target}\n")
+        f.write(f"Scan Completion Time: {timestamp}\n")
+        f.write(f"Overall Status: {'SUCCESS' if overall_success else 'COMPLETED WITH ISSUES'}\n\n")
+        
+        f.write("ESTIMATED FINDINGS:\n")
+        if "NAABU SCAN RESULTS" in content:
+            f.write(f"- Open ports detected: ~{port_count}\n")
+        if "HTTPX SCAN RESULTS" in content:
+            f.write(f"- HTTP services detected: ~{http_count}\n")
+        if "NUCLEI SCAN RESULTS" in content:
+            f.write(f"- Potential vulnerabilities found: ~{vuln_count}\n")
+        
+        f.write("\nNOTE: These are estimated counts from text analysis.\n")
+        f.write("Review the detailed results above for accurate information.\n\n")
+        
+        if vuln_count > 0:
+            f.write("RECOMMENDATIONS:\n")
+            f.write("Potential vulnerabilities detected! Please review the detailed findings above\n")
+            f.write("and take appropriate remediation steps.\n\n")
+        
+        f.write("=" * 80 + "\n")
+        f.write("End of Comprehensive Scan Report\n")
+        f.write("=" * 80 + "\n")
+
 def signal_handler(sig, frame):
     """Handle CTRL+C gracefully."""
     print("\nWARNING: Scan interrupted by user. Partial results may be available.")
     sys.exit(130)
-
-def generate_basic_summary_report(output_dir: str, target: str) -> bool:
-    """Generate a basic summary report of all findings."""
-    summary_file = os.path.join(output_dir, "summary.txt")
-    
-    try:
-        # Gather statistics
-        ports_json = os.path.join(output_dir, "ports.json")
-        http_json = os.path.join(output_dir, "http_services.json")
-        vuln_json = os.path.join(output_dir, "vulnerabilities.jsonl")
-        
-        port_count = 0
-        http_count = 0
-        vuln_count = 0
-        critical_count = 0
-        high_count = 0
-        medium_count = 0
-        low_count = 0
-        
-        # Count open ports
-        if os.path.exists(ports_json):
-            try:
-                with open(ports_json, 'r') as f:
-                    for line in f:
-                        if line.strip():
-                            port_count += 1
-            except Exception as e:
-                print(f"WARNING: Could not parse ports JSON: {e}")
-        
-        # Count HTTP services
-        if os.path.exists(http_json):
-            try:
-                with open(http_json, 'r') as f:
-                    for line in f:
-                        if line.strip():
-                            http_count += 1
-            except Exception as e:
-                print(f"WARNING: Could not parse HTTP services JSON: {e}")
-        
-        # Count vulnerabilities by severity
-        if os.path.exists(vuln_json):
-            try:
-                with open(vuln_json, 'r') as f:
-                    for line in f:
-                        if line.strip():
-                            vuln_count += 1
-                            try:
-                                data = json.loads(line)
-                                severity = data.get("info", {}).get("severity", "").lower()
-                                if severity == "critical":
-                                    critical_count += 1
-                                elif severity == "high":
-                                    high_count += 1
-                                elif severity == "medium":
-                                    medium_count += 1
-                                elif severity == "low":
-                                    low_count += 1
-                            except json.JSONDecodeError:
-                                pass
-            except Exception as e:
-                print(f"WARNING: Could not parse vulnerabilities JSONL: {e}")
-
-        # Write the summary report
-        with open(summary_file, 'w') as f:
-            f.write("=" * 60 + "\n")
-            f.write(f"VULNERABILITY SCAN SUMMARY FOR {target}\n")
-            f.write(f"Scan Date: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
-            f.write("=" * 60 + "\n\n")
-            
-            f.write("FINDINGS SUMMARY:\n")
-            f.write(f"Open ports detected: {port_count}\n")
-            f.write(f"HTTP services detected: {http_count}\n")
-            f.write(f"Total vulnerabilities found: {vuln_count}\n")
-            f.write(f"  - Critical severity: {critical_count}\n")
-            f.write(f"  - High severity: {high_count}\n")
-            f.write(f"  - Medium severity: {medium_count}\n")
-            f.write(f"  - Low severity: {low_count}\n\n")
-            
-            # Add recommendation based on findings
-            if critical_count > 0 or high_count > 0:
-                f.write("RECOMMENDATIONS:\n")
-                f.write("The scan detected critical/high severity vulnerabilities that require immediate attention!\n")
-                f.write("Please review the detailed findings in the 'vulnerabilities.txt' file and take appropriate remediation steps.\n\n")
-            
-            f.write("FILES OVERVIEW:\n")
-            f.write("- ports.txt: List of open ports\n")
-            f.write("- http_services.txt: Detected HTTP services\n")
-            f.write("- vulnerabilities.txt: Detailed vulnerability findings\n")
-            f.write("- nuclei_responses/: Directory containing HTTP requests/responses for detected vulnerabilities\n\n")
-            
-            f.write("=" * 60 + "\n")
-            f.write("End of Summary Report\n")
-        
-        print(f"Summary report generated: {summary_file}")
-        return True
-    except Exception as e:
-        print(f"Error generating summary report: {e}")
-        return False
 
 def check_tool_availability(tool_name, common_paths=None):
     """Check if a tool is available in any of the common installation paths."""
@@ -292,16 +271,19 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
         if args.json_output:
             print(f"JSON format: ENABLED")
     else:
-        print(f"Output will be displayed in real-time only (not saved)")    # NAABU
+        print(f"Output will be displayed in real-time only (not saved)")
+
+    # Create comprehensive report file if saving output
+    comprehensive_report = None
+    if args.save_output:
+        comprehensive_report = create_comprehensive_report_file(output_dir, target)
+        print(f"Comprehensive report will be saved to: {comprehensive_report}")
+
+    # NAABU
     if args.naabu:
         print(f"\nStarting naabu port scan...")
 
-        if args.save_output:
-            ports_output = os.path.join(output_dir, "ports.txt")
-            ports_json = os.path.join(output_dir, "ports.json") if args.json_output else None
-        else:
-            ports_output = None
-            ports_json = None        # Always apply port specification mapping, whether from args or default
+        # Always apply port specification mapping, whether from args or default
         if args.ports:
             ports_to_scan = args.ports
         else:
@@ -312,11 +294,11 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
 
         naabu_args = ["-v"]
 
-        # Fix: Proper JSON output handling for naabu
-        if args.save_output and args.json_output and ports_json:
-            naabu_args.extend(["-json", "-o", ports_json])
-        elif args.save_output and ports_output:
-            naabu_args.extend(["-o", ports_output])
+        # For comprehensive report, always capture output
+        temp_output = None
+        if args.save_output:
+            temp_output = os.path.join(output_dir, "temp_naabu_output.txt")
+            naabu_args.extend(["-o", temp_output])
 
         if args.stealth:
             naabu_args.extend([
@@ -325,7 +307,8 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
                 "-scan-type", "syn",
                 "-retries", "1"
             ])
-        else:            naabu_args.extend([
+        else:
+            naabu_args.extend([
                 "-rate", "1000",
                 "-c", "50"
             ])
@@ -333,54 +316,53 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
         naabu_success = naabu.run_naabu(
             target=target,
             ports=mapped_ports,
-            output_file=ports_output if not args.json_output else ports_json,
-            json_output=bool(args.save_output and args.json_output),
+            output_file=temp_output,
+            json_output=False,  # Use text for comprehensive report
             save_output=args.save_output,
-            tool_silent=False,            additional_args=naabu_args
+            tool_silent=False,
+            additional_args=naabu_args
         )
 
         print(f"\nNaabu scan completed!")
 
         if naabu_success:
-            if args.save_output:
-                output_file = ports_json if args.json_output else ports_output
-                if output_file and os.path.exists(output_file):
-                    file_size = os.path.getsize(output_file)
-                    if file_size > 0:
-                        print(f"Results saved to {output_file} ({file_size} bytes)")
-                    else:
-                        print("No open ports found")
+            if args.save_output and comprehensive_report:
+                # Read temporary output and append to comprehensive report
+                naabu_content = ""
+                if temp_output and os.path.exists(temp_output):
+                    with open(temp_output, 'r') as f:
+                        naabu_content = f.read()
+                    os.remove(temp_output)  # Clean up temp file
+                
+                append_to_comprehensive_report(comprehensive_report, "NAABU", naabu_content, True)
+                
+                if naabu_content.strip():
+                    print(f"Port scan results added to comprehensive report")
                 else:
-                    print("Output file was not created")
-                    success = False
+                    print("No open ports found")
             else:
                 print("Real-time scan output was displayed above")
                 print("Results were not saved to files (as requested)")
         else:
             print("Naabu scan failed.")
+            if args.save_output and comprehensive_report:
+                append_to_comprehensive_report(comprehensive_report, "NAABU", "Scan failed", False)
             success = False
 
     # HTTPX
     elif args.httpx:
         print(f"\nStarting httpx service detection...")
 
-        if args.save_output:
-            http_output = os.path.join(output_dir, "http_services.txt")
-            http_json = os.path.join(output_dir, "http_services.json") if args.json_output else None
-        else:
-            http_output = None
-            http_json = None
-
         httpx_input = target
         print(f"Target: {httpx_input}")
 
         httpx_args = ["-v"]
 
-        # Fix: Proper JSON output handling for httpx
-        if args.save_output and args.json_output and http_json:
-            httpx_args.extend(["-json", "-o", http_json])
-        elif args.save_output and http_output:
-            httpx_args.extend(["-o", http_output])
+        # For comprehensive report, always capture output
+        temp_output = None
+        if args.save_output:
+            temp_output = os.path.join(output_dir, "temp_httpx_output.txt")
+            httpx_args.extend(["-o", temp_output])
 
         if args.stealth:
             httpx_args.extend([
@@ -397,7 +379,7 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
 
         httpx_success = httpx.run_httpx(
             target_list=httpx_input,
-            output_file=http_json if args.json_output else http_output,
+            output_file=temp_output,
             title=True,
             status_code=True,
             tech_detect=not args.stealth,
@@ -405,39 +387,38 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
             follow_redirects=True,
             save_output=args.save_output,
             tool_silent=False,
-            additional_args=httpx_args        )
+            additional_args=httpx_args
+        )
 
         print(f"\nHTTPX scan completed!")
 
         if httpx_success:
-            if args.save_output:
-                output_file = http_json if args.json_output else http_output
-                if output_file and os.path.exists(output_file):
-                    file_size = os.path.getsize(output_file)
-                    if file_size > 0:
-                        print(f"Results saved to {output_file} ({file_size} bytes)")
-                    else:
-                        print("No HTTP services found")
+            if args.save_output and comprehensive_report:
+                # Read temporary output and append to comprehensive report
+                httpx_content = ""
+                if temp_output and os.path.exists(temp_output):
+                    with open(temp_output, 'r') as f:
+                        httpx_content = f.read()
+                    os.remove(temp_output)  # Clean up temp file
+                
+                append_to_comprehensive_report(comprehensive_report, "HTTPX", httpx_content, True)
+                
+                if httpx_content.strip():
+                    print(f"HTTP service detection results added to comprehensive report")
                 else:
-                    print("Output file was not created")
-                    success = False
+                    print("No HTTP services found")
             else:
                 print("Real-time scan output was displayed above")
                 print("Results were not saved to files (as requested)")
         else:
             print("HTTPX scan failed.")
+            if args.save_output and comprehensive_report:
+                append_to_comprehensive_report(comprehensive_report, "HTTPX", "Scan failed", False)
             success = False
 
     # NUCLEI
     elif args.nuclei:
         print(f"\nStarting nuclei vulnerability scan...")
-
-        if args.save_output:
-            vuln_output = os.path.join(output_dir, "vulnerabilities.txt")
-            vuln_json = os.path.join(output_dir, "vulnerabilities.jsonl") if args.json_output else None
-        else:
-            vuln_output = None
-            vuln_json = None
 
         # Handle target input for nuclei
         if not target.startswith(('http://', 'https://')):
@@ -463,7 +444,12 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
         # Prepare nuclei arguments
         nuclei_args = ["-v", "-stats"]
         
+        # For comprehensive report, always capture output
+        temp_output = None
         if args.save_output:
+            temp_output = os.path.join(output_dir, "temp_nuclei_output.txt")
+            nuclei_args.extend(["-o", temp_output])
+            
             nuclei_resp_dir = os.path.join(output_dir, "nuclei_responses")
             create_directory_if_not_exists(nuclei_resp_dir)
             nuclei_args.extend(["-store-resp", "-store-resp-dir", nuclei_resp_dir])
@@ -493,8 +479,8 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
                 templates=args.templates,
                 tags=args.tags,
                 severity=args.severity,
-                output_file=vuln_json if args.json_output else vuln_output,
-                jsonl=bool(args.json_output),
+                output_file=temp_output,
+                jsonl=False,  # Use text for comprehensive report
                 save_output=args.save_output,
                 tool_silent=False,
                 store_resp=bool(args.save_output),
@@ -506,8 +492,8 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
                 templates=args.templates,
                 tags=args.tags,
                 severity=args.severity,
-                output_file=vuln_json if args.json_output else vuln_output,
-                jsonl=bool(args.json_output),
+                output_file=temp_output,
+                jsonl=False,  # Use text for comprehensive report
                 save_output=args.save_output,
                 tool_silent=False,
                 store_resp=bool(args.save_output),
@@ -517,23 +503,32 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
         print(f"\n Nuclei scan completed!")
 
         if nuclei_success:
-            if args.save_output:
-                output_file = vuln_json if args.json_output else vuln_output
-                if output_file and os.path.exists(output_file):
-                    file_size = os.path.getsize(output_file)
-                    if file_size > 0:
-                        print(f" Results saved to {output_file} ({file_size} bytes)")
-                    else:
-                        print("WARNING: No vulnerabilities found")
+            if args.save_output and comprehensive_report:
+                # Read temporary output and append to comprehensive report
+                nuclei_content = ""
+                if temp_output and os.path.exists(temp_output):
+                    with open(temp_output, 'r') as f:
+                        nuclei_content = f.read()
+                    os.remove(temp_output)  # Clean up temp file
+                
+                append_to_comprehensive_report(comprehensive_report, "NUCLEI", nuclei_content, True)
+                
+                if nuclei_content.strip():
+                    print(f" Vulnerability scan results added to comprehensive report")
                 else:
-                    print("WARNING: Output file was not created")
-                    success = False
+                    print("WARNING: No vulnerabilities found")
             else:
                 print(" Real-time scan output was displayed above")
                 print(" Results were not saved to files (as requested)")
         else:
             print(" Nuclei scan failed.")
+            if args.save_output and comprehensive_report:
+                append_to_comprehensive_report(comprehensive_report, "NUCLEI", "Scan failed", False)
             success = False
+
+    # Finalize comprehensive report if saving output
+    if args.save_output and comprehensive_report:
+        finalize_comprehensive_report(comprehensive_report, target, success)
 
     return success
 
@@ -716,8 +711,7 @@ def main():
                 sys.exit(1)
     else:
         output_dir = os.getcwd()  # Use current directory for temporary files
-    
-    # Run the selected tool
+      # Run the selected tool
     print(f"\n Starting scan of {target}")
     print(f" Scan start time: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     
@@ -735,10 +729,15 @@ def main():
     elapsed_time = time.time() - start_time
     print(f"\n Scan completed in {elapsed_time:.2f} seconds")
     
-    # Generate summary if saving output and scan was successful
+    # Show comprehensive report location if saving output and scan was successful
     if args.save_output and success:
-        print(" Generating summary report...")
-        generate_basic_summary_report(output_dir, target)
+        comprehensive_report_file = os.path.join(output_dir, "comprehensive_scan_report.txt")
+        if os.path.exists(comprehensive_report_file):
+            print(f" Comprehensive scan report saved to: {comprehensive_report_file}")
+            file_size = os.path.getsize(comprehensive_report_file)
+            print(f" Report size: {file_size} bytes")
+        else:
+            print(" WARNING: Comprehensive report was not created")
     
     if success:
         print(" Scan completed successfully!")
