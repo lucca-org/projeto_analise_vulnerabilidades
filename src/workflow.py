@@ -15,6 +15,7 @@ import platform
 import subprocess
 import shutil
 import socket
+import urllib.request
 from pathlib import Path
 from typing import Optional, Dict, List, Any, Union, Tuple
 
@@ -991,44 +992,76 @@ def run_with_enhanced_realtime_output(cmd: List[str], output_file: Optional[str]
 
 def check_network_connectivity():
     """Check if network connection is available - required for all scans."""
+    print("Testing network connectivity...")
+    
+    # Method 1: Try to connect to reliable DNS servers
+    dns_servers = [
+        ("8.8.8.8", 53),      # Google DNS
+        ("1.1.1.1", 53),      # Cloudflare DNS
+        ("208.67.222.222", 53) # OpenDNS
+    ]
+    
+    for dns_host, dns_port in dns_servers:
+        try:
+            print(f"  Trying to connect to {dns_host}:{dns_port}...")
+            socket.create_connection((dns_host, dns_port), timeout=5)
+            print(f"  ✓ Successfully connected to {dns_host}")
+            return True
+        except (socket.timeout, socket.error, OSError) as e:
+            print(f"  ✗ Failed to connect to {dns_host}: {e}")
+            continue
+    
+    # Method 2: Try to resolve common domains
+    test_domains = ["google.com", "github.com", "cloudflare.com"]
+    for domain in test_domains:
+        try:
+            print(f"  Trying to resolve {domain}...")
+            socket.gethostbyname(domain)
+            print(f"  ✓ Successfully resolved {domain}")
+            return True
+        except socket.gaierror as e:
+            print(f"  ✗ Failed to resolve {domain}: {e}")
+            continue
+    
+    # Method 3: Try ping with proper Linux parameters
+    ping_targets = ["8.8.8.8", "1.1.1.1", "127.0.0.1"]
+    for target in ping_targets:
+        try:
+            print(f"  Trying to ping {target}...")
+            # Use -c for count, -W for timeout in seconds (Linux standard)
+            result = subprocess.run(
+                ["ping", "-c", "1", "-W", "3", target], 
+                stdout=subprocess.DEVNULL, 
+                stderr=subprocess.DEVNULL,
+                timeout=10
+            )
+            if result.returncode == 0:
+                print(f"  ✓ Successfully pinged {target}")
+                return True
+            else:
+                print(f"  ✗ Ping to {target} failed (return code: {result.returncode})")
+        except (subprocess.TimeoutExpired, subprocess.SubprocessError, FileNotFoundError) as e:
+            print(f"  ✗ Ping command failed for {target}: {e}")
+            continue
+      # Method 4: Try HTTP connectivity test
     try:
-        # Try multiple connectivity checks
-        
-        # Method 1: Try to connect to a reliable DNS server
-        try:
-            socket.create_connection(("8.8.8.8", 53), timeout=3)
-            return True
-        except (socket.timeout, socket.error):
-            pass
-            
-        # Method 2: Try to resolve a domain
-        try:
-            socket.gethostbyname("www.google.com")
-            return True
-        except socket.gaierror:
-            pass
-            
-        # Method 3: Try to ping localhost or gateway
-        try:
-            # Try localhost first
-            if subprocess.run(["ping", "-c", "1", "-W", "1", "127.0.0.1"], 
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
-                return True
-                
-            # Try common gateway
-            if subprocess.run(["ping", "-c", "1", "-W", "1", "192.168.1.1"], 
-                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL).returncode == 0:
-                return True
-        except Exception:
-            pass
-            
-        # All checks failed
-        print("No network connection detected. Please check your internet connection.")
-        print("Network connectivity is required for security scanning operations.")
-        return False
+        print("  Trying HTTP connectivity test...")
+        urllib.request.urlopen('http://www.google.com', timeout=10)
+        print("  ✓ HTTP connectivity test successful")
+        return True
     except Exception as e:
-        print(f"Error checking network: {e}")
-        return False
+        print(f"  ✗ HTTP connectivity test failed: {e}")
+    
+    # All methods failed
+    print("\n[ERROR] All network connectivity tests failed!")
+    print("Possible issues:")
+    print("  - No internet connection")
+    print("  - Firewall blocking outbound connections")
+    print("  - DNS resolution problems")
+    print("  - Network interface not configured")
+    print("\nNetwork connectivity is required for security scanning operations.")
+    print("Please check your network configuration and try again.")
+    return False
 
 def main():
     """Main entry point for the vulnerability scanning workflow."""
