@@ -208,16 +208,11 @@ def validate_system_requirements() -> Tuple[bool, Optional[str]]:
     if sys.version_info < (3, 6):
         print(f"{Colors.RED} Python 3.6+ required. Current: {sys.version}{Colors.END}")
         return False, None
-    
     print(f"{Colors.GREEN} Python version: {sys.version.split()[0]}{Colors.END}")
     
-    # Check internet connectivity
-    try:
-        urllib.request.urlopen('https://google.com', timeout=5)
-        print(f"{Colors.GREEN} Internet connectivity verified{Colors.END}")
-    except:
-        print(f"{Colors.YELLOW}  Internet connectivity check failed{Colors.END}")
-        print(f"{Colors.WHITE}Installation may fail without internet access{Colors.END}")
+    # Check internet connectivity (disabled)
+    print(f"{Colors.YELLOW} Internet connectivity check: DISABLED{Colors.END}")
+    print(f"{Colors.WHITE}Note: Internet connectivity check has been disabled for testing purposes{Colors.END}")
     
     return True, distro
 
