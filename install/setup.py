@@ -165,8 +165,7 @@ def check_root_permissions() -> bool:
         except (OSError, AttributeError) as e:
             # Not on a Unix-like system or geteuid not available
             print(f"{Colors.YELLOW}  Cannot check effective user ID: {e}{Colors.END}")
-        
-        # Method 2: Check sudo access
+          # Method 2: Check sudo access
         print(f"{Colors.YELLOW}  Not running as root. Checking sudo access...{Colors.END}")
         try:
             result = subprocess.run(['sudo', '-n', 'true'], 
@@ -187,6 +186,78 @@ def check_root_permissions() -> bool:
         print(f"{Colors.RED} Error checking permissions: {e}{Colors.END}")
         print(f"{Colors.WHITE}Please ensure you have root/sudo access{Colors.END}")
         return False
+
+def check_internet_connectivity() -> bool:
+    """Check internet connectivity using multiple methods without emojis."""
+    import socket
+    print(f"{Colors.WHITE}Checking internet connectivity...{Colors.END}")
+    
+    # Method 1: DNS resolution test
+    dns_hosts = ["www.google.com", "github.com", "cloudflare.com"]
+    for host in dns_hosts:
+        try:
+            socket.gethostbyname(host)
+            print(f"{Colors.GREEN}   DNS resolution to {host}: SUCCESS{Colors.END}")
+            return True
+        except socket.gaierror:
+            print(f"{Colors.YELLOW}   DNS resolution to {host}: FAILED{Colors.END}")
+            continue
+    
+    # Method 2: Direct socket connection to DNS servers
+    dns_servers = [
+        ("8.8.8.8", 53),      # Google DNS
+        ("1.1.1.1", 53),      # Cloudflare DNS
+        ("9.9.9.9", 53)       # Quad9 DNS
+    ]
+    
+    for dns_host, dns_port in dns_servers:
+        try:
+            with socket.create_connection((dns_host, dns_port), timeout=5) as sock:
+                print(f"{Colors.GREEN}   Connection to {dns_host}:{dns_port}: SUCCESS{Colors.END}")
+                return True
+        except (socket.timeout, socket.error, OSError):
+            print(f"{Colors.YELLOW}   Connection to {dns_host}:{dns_port}: FAILED{Colors.END}")
+            continue
+    
+    # Method 3: Ping test
+    ping_targets = ["8.8.8.8", "1.1.1.1"]
+    for target in ping_targets:
+        try:
+            result = subprocess.run(
+                ["ping", "-c", "2", "-W", "3", "-q", target],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=10
+            )
+            if result.returncode == 0:
+                print(f"{Colors.GREEN}   Ping to {target}: SUCCESS{Colors.END}")
+                return True
+            else:
+                print(f"{Colors.YELLOW}   Ping to {target}: FAILED{Colors.END}")
+        except (subprocess.TimeoutExpired, subprocess.SubprocessError, FileNotFoundError):
+            print(f"{Colors.YELLOW}   Ping to {target}: ERROR{Colors.END}")
+            continue
+    
+    # Method 4: HTTP connectivity test
+    http_urls = ["https://www.google.com", "https://github.com"]
+    for url in http_urls:
+        try:
+            urllib.request.urlopen(url, timeout=10)
+            print(f"{Colors.GREEN}   HTTP connectivity to {url}: SUCCESS{Colors.END}")
+            return True
+        except Exception:
+            print(f"{Colors.YELLOW}   HTTP connectivity to {url}: FAILED{Colors.END}")
+            continue
+    
+    # All methods failed
+    print(f"{Colors.RED}   All connectivity tests failed{Colors.END}")
+    print(f"{Colors.WHITE}Troubleshooting suggestions:{Colors.END}")
+    print(f"{Colors.WHITE}  - Check physical network connection{Colors.END}")
+    print(f"{Colors.WHITE}  - Verify DNS settings{Colors.END}")
+    print(f"{Colors.WHITE}  - Check firewall/proxy settings{Colors.END}")
+    print(f"{Colors.WHITE}  - Test: ping 8.8.8.8{Colors.END}")
+    print(f"{Colors.WHITE}  - Test: nslookup google.com{Colors.END}")
+    return False
 
 def validate_system_requirements() -> Tuple[bool, Optional[str]]:
     """Validate all system requirements."""
@@ -209,10 +280,11 @@ def validate_system_requirements() -> Tuple[bool, Optional[str]]:
         print(f"{Colors.RED} Python 3.6+ required. Current: {sys.version}{Colors.END}")
         return False, None
     print(f"{Colors.GREEN} Python version: {sys.version.split()[0]}{Colors.END}")
-    
-    # Check internet connectivity (disabled)
-    print(f"{Colors.YELLOW} Internet connectivity check: DISABLED{Colors.END}")
-    print(f"{Colors.WHITE}Note: Internet connectivity check has been disabled for testing purposes{Colors.END}")
+      # Check internet connectivity
+    if not check_internet_connectivity():
+        print(f"{Colors.RED} Internet connectivity required for installation{Colors.END}")
+        print(f"{Colors.WHITE}Please check your network connection and try again{Colors.END}")
+        return False, None
     
     return True, distro
 
