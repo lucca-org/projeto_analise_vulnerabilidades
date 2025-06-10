@@ -495,14 +495,14 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
                 "-rate", "10",
                 "-c", "25",
                 "-scan-type", "syn",
-                "-retries", "1",
-                "-timeout", "0"  # Disable timeout
+                "-retries", "1"
+                # Remove timeout parameter as naabu doesn't accept 0
             ])
         else:
             naabu_args.extend([
                 "-rate", "1000",
-                "-c", "50",
-                "-timeout", "0"  # Disable timeout
+                "-c", "50"
+                # Remove timeout parameter as naabu doesn't accept 0
             ])
 
         print_status_header("naabu", target, "port scan")
