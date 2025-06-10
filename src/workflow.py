@@ -206,7 +206,8 @@ def stream_command_output(cmd: List[str], output_file: Optional[str] = None) -> 
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             universal_newlines=True,
-            bufsize=1        )
+            bufsize=1
+        )
         
         start_time = time.time()
         last_update = start_time
@@ -1007,20 +1008,20 @@ def run_with_enhanced_realtime_output(cmd: List[str], output_file: Optional[str]
 def check_network_connectivity():
     """Check if network connection is available - required for all scans."""
     print("Testing network connectivity...")
-    
-    # Method 1: Try to connect to reliable DNS servers
+      # Method 1: Try to connect to reliable DNS servers
     dns_servers = [
         ("8.8.8.8", 53),      # Google DNS
         ("1.1.1.1", 53),      # Cloudflare DNS
-        ("208.67.222.222", 53) # OpenDNS
+        ("208.67.222.222", 53), # OpenDNS
+        ("9.9.9.9", 53)       # Quad9 DNS
     ]
     
     for dns_host, dns_port in dns_servers:
         try:
             print(f"  Trying to connect to {dns_host}:{dns_port}...")
-            socket.create_connection((dns_host, dns_port), timeout=5)
-            print(f"  ✓ Successfully connected to {dns_host}")
-            return True
+            with socket.create_connection((dns_host, dns_port), timeout=5) as sock:
+                print(f"  ✓ Successfully connected to {dns_host}")
+                return True
         except (socket.timeout, socket.error, OSError) as e:
             print(f"  ✗ Failed to connect to {dns_host}: {e}")
             continue
@@ -1036,15 +1037,15 @@ def check_network_connectivity():
         except socket.gaierror as e:
             print(f"  ✗ Failed to resolve {domain}: {e}")
             continue
-    
-    # Method 3: Try ping with proper Linux parameters
-    ping_targets = ["8.8.8.8", "1.1.1.1", "127.0.0.1"]
+      # Method 3: Try ping with proper Linux parameters
+    ping_targets = ["8.8.8.8", "1.1.1.1"]  # Removed localhost as it doesn't test internet connectivity
     for target in ping_targets:
         try:
             print(f"  Trying to ping {target}...")
             # Use -c for count, -W for timeout in seconds (Linux standard)
+            # Added -q for quiet mode to reduce output
             result = subprocess.run(
-                ["ping", "-c", "1", "-W", "3", target], 
+                ["ping", "-c", "1", "-W", "3", "-q", target], 
                 stdout=subprocess.DEVNULL, 
                 stderr=subprocess.DEVNULL,
                 timeout=10
@@ -1058,23 +1059,43 @@ def check_network_connectivity():
             print(f"  ✗ Ping command failed for {target}: {e}")
             continue
       # Method 4: Try HTTP connectivity test
-    try:
-        print("  Trying HTTP connectivity test...")
-        urllib.request.urlopen('http://www.google.com', timeout=10)
-        print("  ✓ HTTP connectivity test successful")
-        return True
-    except Exception as e:
-        print(f"  ✗ HTTP connectivity test failed: {e}")
-    
-    # All methods failed
+    http_urls = [
+        'https://www.google.com',
+        'https://github.com', 
+        'https://1.1.1.1'
+    ]
+    for url in http_urls:
+        try:
+            print(f"  Trying HTTP connectivity test to {url}...")
+            urllib.request.urlopen(url, timeout=10)
+            print(f"  ✓ HTTP connectivity test successful to {url}")
+            return True
+        except Exception as e:
+            print(f"  ✗ HTTP connectivity test failed for {url}: {e}")
+            continue
+      # All methods failed
     print("\n[ERROR] All network connectivity tests failed!")
     print("Possible issues:")
     print("  - No internet connection")
     print("  - Firewall blocking outbound connections")
     print("  - DNS resolution problems")
     print("  - Network interface not configured")
+    print("  - Proxy configuration required")
     print("\nNetwork connectivity is required for security scanning operations.")
     print("Please check your network configuration and try again.")
+    print("\nTroubleshooting steps:")
+    print("  1. Check if you can browse the internet normally")
+    print("  2. Verify DNS settings (try: nslookup google.com)")
+    print("  3. Check for corporate firewall/proxy settings")
+    print("  4. Ensure ports 53, 80, and 443 are not blocked")
+    return False
+
+def check_network_override() -> bool:
+    """Check if network override flag exists to bypass connectivity checks."""
+    override_path = Path(__file__).parent / 'network_override'
+    if override_path.exists():
+        print("  Network override flag found - bypassing connectivity checks")
+        return True
     return False
 
 def main():
@@ -1125,19 +1146,19 @@ def main():
     if not verify_linux_platform():
         print("This toolkit is designed for Linux only. Exiting.")
         sys.exit(1)
-    
-    # Set up signal handler for graceful exit on CTRL+C
+      # Set up signal handler for graceful exit on CTRL+C
     signal.signal(signal.SIGINT, signal_handler)
     
     args = parser.parse_args()
-      # Validate JSON output flag
+    
+    # Validate JSON output flag
     if args.json_output and not args.save_output:
         print("Warning: --json-output requires --save-output flag. JSON output will be ignored.")
         args.json_output = False
     
     # Check network connectivity
     print(" Checking network connectivity...")
-    if not check_network_connectivity():
+    if not check_network_connectivity() and not check_network_override():
         print(" Network connectivity check failed.")
         print(" Some features may not work without internet access.")
         response = input("Continue anyway? [y/N]: ")
@@ -1146,8 +1167,7 @@ def main():
         if response.strip().lower() not in ['y', 'yes']:
             print(" Scan cancelled.")
             sys.exit(1)
-    
-    # Handle template updates
+      # Handle template updates
     if args.update_templates:
         print(" Updating nuclei templates...")
         try:
