@@ -87,10 +87,33 @@ def print_status_header(tool_name: str, target: str, action: str = "scan"):
     print("─" * 80)
     sys.stdout.flush()
 
-def print_progress_indicator(message: str, symbol: str = "*"):
-    """Print a progress indicator with timestamp."""
+def print_progress_indicator(message: str, symbol: str = "*", color: Optional[str] = None):
+    """Print a progress indicator with timestamp and optional color."""
     timestamp = datetime.datetime.now().strftime('%H:%M:%S')
-    print(f"[{timestamp}] {symbol} {message}")
+    
+    # Add color coding for different message types
+    if color == "green" or symbol == "SUCCESS":
+        prefix = "\033[92m[SUCCESS]\033[0m"
+    elif color == "red" or symbol == "ERROR":
+        prefix = "\033[91m[ERROR]\033[0m"
+    elif color == "yellow" or symbol == "WARNING":
+        prefix = "\033[93m[WARNING]\033[0m"
+    elif color == "blue" or symbol == "INFO":
+        prefix = "\033[94m[INFO]\033[0m"
+    elif symbol == "FOUND":
+        prefix = "\033[95m[FOUND]\033[0m"
+    elif symbol == "SCAN":
+        prefix = "\033[96m[SCAN]\033[0m"
+    elif symbol == "SAVED":
+        prefix = "\033[92m[SAVED]\033[0m"
+    elif symbol == "TIMEOUT":
+        prefix = "\033[93m[TIMEOUT]\033[0m"
+    elif symbol == "STOP":
+        prefix = "\033[91m[STOP]\033[0m"
+    else:
+        prefix = f"[{symbol}]"
+    
+    print(f"[{timestamp}] {prefix} {message}")
     sys.stdout.flush()
 
 def run_with_realtime_output(cmd: List[str], output_file: Optional[str] = None, 
@@ -133,25 +156,38 @@ def run_with_realtime_output(cmd: List[str], output_file: Optional[str] = None,
                 line = output.strip()
                 if line:  # Only process non-empty lines
                     line_count += 1
-                      # Add colored prefixes for better visibility
-                    if any(keyword in line.lower() for keyword in ['error', 'failed', 'timeout']):
-                        formatted_line = f"[ERROR] {line}"
-                    elif any(keyword in line.lower() for keyword in ['found', 'detected', 'open']):
-                        formatted_line = f"[FOUND] {line}"
-                    elif any(keyword in line.lower() for keyword in ['scanning', 'probing', 'testing']):
-                        formatted_line = f"[SCAN] {line}"
+                    
+                    # Add colored prefixes for better visibility with improved categorization
+                    line_lower = line.lower()
+                    if any(keyword in line_lower for keyword in ['error', 'failed', 'timeout', 'exception']):
+                        formatted_line = f"\033[91m[ERROR]\033[0m {line}"
+                    elif any(keyword in line_lower for keyword in ['found', 'detected', 'open', 'discovered']):
+                        formatted_line = f"\033[95m[FOUND]\033[0m {line}"
+                    elif any(keyword in line_lower for keyword in ['scanning', 'probing', 'testing', 'analyzing']):
+                        formatted_line = f"\033[96m[SCAN]\033[0m {line}"
+                    elif any(keyword in line_lower for keyword in ['vulnerable', 'critical', 'high']):
+                        formatted_line = f"\033[91m[VULN]\033[0m {line}"
+                    elif any(keyword in line_lower for keyword in ['warning', 'warn']):
+                        formatted_line = f"\033[93m[WARN]\033[0m {line}"
+                    elif any(keyword in line_lower for keyword in ['info', 'loaded', 'using', 'started']):
+                        formatted_line = f"\033[94m[INFO]\033[0m {line}"
                     else:
-                        formatted_line = f"[INFO] {line}"
+                        formatted_line = f"[DATA] {line}"
                     
                     print(formatted_line)
                     sys.stdout.flush()
                     
-                    # Capture for file output
+                    # Capture for file output (original line without formatting)
                     captured_output.append(line)
                     
-                    # Show progress every 50 lines
+                    # Show progress every 50 lines with more informative message
                     if line_count % 50 == 0:
-                        print_progress_indicator(f"Processed {line_count} lines...")
+                        print_progress_indicator(f"Processed {line_count} lines of output...")
+                    
+                    # Show periodic statistics for long-running scans
+                    if line_count % 100 == 0:
+                        findings_count = len([l for l in captured_output if any(kw in l.lower() for kw in ['found', 'open', 'vulnerable'])])
+                        print_progress_indicator(f"Status: {line_count} lines, {findings_count} potential findings detected")
         
         # Wait for process to complete
         return_code = process.wait()
@@ -236,11 +272,15 @@ def stream_command_output(cmd: List[str], output_file: Optional[str] = None) -> 
                     print(display_line)
                     sys.stdout.flush()
                     output_lines.append(line)
-                    
-                    # Progress indicator every 10 seconds
+                      # Progress indicator every 10 seconds with enhanced statistics
                     if current_time - last_update >= 10:
-                        print_progress_indicator(f"Still running... ({len(output_lines)} lines processed)")
+                        summary = create_realtime_summary(output_lines, "Command")
+                        print_progress_indicator(f"Still running... {summary}")
                         last_update = current_time
+                    
+                    # Show detailed statistics every 100 lines
+                    if len(output_lines) % 100 == 0 and len(output_lines) > 0:
+                        display_scan_statistics(output_lines, "Command")
         
         return_code = process.wait()
         
@@ -272,76 +312,194 @@ def create_comprehensive_report_file(output_dir: str, target: str) -> str:
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     report_file = os.path.join(output_dir, "comprehensive_scan_report.txt")
     
-    # Initialize the comprehensive report file
-    with open(report_file, 'w') as f:
+    # Initialize the comprehensive report file with enhanced header
+    with open(report_file, 'w', encoding='utf-8') as f:
         f.write("=" * 80 + "\n")
-        f.write("COMPREHENSIVE VULNERABILITY SCAN REPORT\n")
+        f.write("           COMPREHENSIVE VULNERABILITY SCAN REPORT\n")
         f.write("=" * 80 + "\n")
         f.write(f"Target: {target}\n")
         f.write(f"Scan Start Time: {timestamp}\n")
+        f.write(f"Generated by: MTScan Linux Vulnerability Analysis Toolkit\n")
+        f.write(f"Platform: {platform.system()} {platform.release()}\n")
         f.write("=" * 80 + "\n\n")
+        
+        f.write("SCAN OVERVIEW:\n")
+        f.write("-" * 40 + "\n")
+        f.write("This report contains results from automated security scanning tools:\n")
+        f.write("- Naabu: Port scanning and service discovery\n")
+        f.write("- Httpx: HTTP service enumeration and analysis\n")
+        f.write("- Nuclei: Vulnerability detection and security testing\n")
+        f.write("\nEach section below contains detailed results from the respective tools.\n")
+        f.write("Results are presented in chronological order of execution.\n\n")
     
     return report_file
 
 def append_to_comprehensive_report(report_file: str, tool_name: str, content: str, success: bool):
-    """Append tool results to the comprehensive report file."""
+    """Append tool results to the comprehensive report file with enhanced formatting."""
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
-    with open(report_file, 'a') as f:
-        f.write("-" * 60 + "\n")
+    with open(report_file, 'a', encoding='utf-8') as f:
+        f.write("=" * 80 + "\n")
         f.write(f"{tool_name.upper()} SCAN RESULTS\n")
+        f.write("=" * 80 + "\n")
+        f.write(f"Tool: {tool_name}\n")
         f.write(f"Completion Time: {timestamp}\n")
         f.write(f"Status: {'SUCCESS' if success else 'FAILED'}\n")
-        f.write("-" * 60 + "\n")
+        f.write(f"Output Length: {len(content.splitlines()) if content else 0} lines\n")
+        f.write("-" * 80 + "\n")
         
-        if content.strip():
+        if content and content.strip():
+            # Add some basic analysis of the content
+            lines = content.splitlines()
+            findings = []
+            errors = []
+            
+            for line in lines:
+                line_lower = line.lower()
+                if any(kw in line_lower for kw in ['open', 'found', 'vulnerable', 'detected']):
+                    findings.append(line)
+                elif any(kw in line_lower for kw in ['error', 'failed', 'timeout']):
+                    errors.append(line)
+            
+            f.write(f"SUMMARY:\n")
+            f.write(f"- Total output lines: {len(lines)}\n")
+            f.write(f"- Potential findings: {len(findings)}\n")
+            f.write(f"- Errors/warnings: {len(errors)}\n")
+            f.write("-" * 40 + "\n\n")
+            
+            if findings:
+                f.write("KEY FINDINGS:\n")
+                for i, finding in enumerate(findings[:10], 1):  # Show top 10 findings
+                    f.write(f"{i:2d}. {finding}\n")
+                if len(findings) > 10:
+                    f.write(f"    ... and {len(findings) - 10} more findings\n")
+                f.write("\n")
+            
+            f.write("DETAILED OUTPUT:\n")
+            f.write("-" * 40 + "\n")
             f.write(content)
             f.write("\n")
         else:
-            f.write("No results found or scan failed.\n")
+            f.write("NO OUTPUT: Scan completed but no results were generated.\n")
+            f.write("This could indicate:\n")
+            f.write("- No findings were discovered\n")
+            f.write("- The target was not responsive\n")
+            f.write("- The scan parameters were too restrictive\n")
         
-        f.write("\n" + "-" * 60 + "\n\n")
+        f.write("\n" + "=" * 80 + "\n\n")
 
 def finalize_comprehensive_report(report_file: str, target: str, overall_success: bool):
-    """Finalize the comprehensive report with summary statistics."""
+    """Finalize the comprehensive report with summary statistics and recommendations."""
     timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     
     # Read the report to analyze results
-    with open(report_file, 'r') as f:
+    with open(report_file, 'r', encoding='utf-8') as f:
         content = f.read()
     
-    # Simple result counting from the report content
-    port_count = content.count("open") if "NAABU SCAN RESULTS" in content else 0
-    http_count = content.count("http") + content.count("https") if "HTTPX SCAN RESULTS" in content else 0
-    vuln_count = content.count("[") if "NUCLEI SCAN RESULTS" in content else 0  # Simple vulnerability indicator count
+    # Enhanced result counting and analysis
+    naabu_executed = "NAABU SCAN RESULTS" in content
+    httpx_executed = "HTTPX SCAN RESULTS" in content
+    nuclei_executed = "NUCLEI SCAN RESULTS" in content
     
-    # Append final summary
-    with open(report_file, 'a') as f:
+    # Count various findings with better detection
+    port_findings = []
+    http_findings = []
+    vuln_findings = []
+    
+    lines = content.splitlines()
+    for line in lines:
+        line_lower = line.lower()
+        if 'open' in line_lower and any(port in line for port in [':', '/']):
+            port_findings.append(line.strip())
+        elif any(proto in line_lower for proto in ['http://', 'https://']):
+            http_findings.append(line.strip())
+        elif any(vuln in line_lower for vuln in ['critical', 'high', 'medium', 'low', 'cve-']):
+            vuln_findings.append(line.strip())
+    
+    # Remove duplicates
+    port_findings = list(set(port_findings))
+    http_findings = list(set(http_findings))
+    vuln_findings = list(set(vuln_findings))
+    
+    # Append enhanced final summary
+    with open(report_file, 'a', encoding='utf-8') as f:
         f.write("=" * 80 + "\n")
-        f.write("SCAN SUMMARY\n")
+        f.write("                      EXECUTIVE SUMMARY\n")
         f.write("=" * 80 + "\n")
-        f.write(f"Target: {target}\n")
-        f.write(f"Scan Completion Time: {timestamp}\n")
-        f.write(f"Overall Status: {'SUCCESS' if overall_success else 'COMPLETED WITH ISSUES'}\n\n")
+        f.write(f"Target Analyzed: {target}\n")
+        f.write(f"Scan Completion: {timestamp}\n")
+        f.write(f"Overall Status: {'SUCCESS' if overall_success else 'COMPLETED WITH ISSUES'}\n")
+        f.write(f"Report Generated: {os.path.basename(report_file)}\n\n")
         
-        f.write("ESTIMATED FINDINGS:\n")
-        if "NAABU SCAN RESULTS" in content:
-            f.write(f"- Open ports detected: ~{port_count}\n")
-        if "HTTPX SCAN RESULTS" in content:
-            f.write(f"- HTTP services detected: ~{http_count}\n")
-        if "NUCLEI SCAN RESULTS" in content:
-            f.write(f"- Potential vulnerabilities found: ~{vuln_count}\n")
+        f.write("TOOLS EXECUTED:\n")
+        f.write("-" * 40 + "\n")
+        f.write(f"- Naabu (Port Scanner): {'YES' if naabu_executed else 'NO'}\n")
+        f.write(f"- Httpx (HTTP Analysis): {'YES' if httpx_executed else 'NO'}\n")
+        f.write(f"- Nuclei (Vulnerability Scanner): {'YES' if nuclei_executed else 'NO'}\n\n")
         
-        f.write("\nNOTE: These are estimated counts from text analysis.\n")
-        f.write("Review the detailed results above for accurate information.\n\n")
+        f.write("FINDINGS SUMMARY:\n")
+        f.write("-" * 40 + "\n")
+        f.write(f"- Open Ports Detected: {len(port_findings)}\n")
+        f.write(f"- HTTP Services Found: {len(http_findings)}\n")
+        f.write(f"- Security Issues Identified: {len(vuln_findings)}\n\n")
         
-        if vuln_count > 0:
-            f.write("RECOMMENDATIONS:\n")
-            f.write("Potential vulnerabilities detected! Please review the detailed findings above\n")
-            f.write("and take appropriate remediation steps.\n\n")
+        if port_findings:
+            f.write("TOP OPEN PORTS:\n")
+            for i, port in enumerate(port_findings[:5], 1):
+                f.write(f"  {i}. {port}\n")
+            if len(port_findings) > 5:
+                f.write(f"  ... and {len(port_findings) - 5} more ports\n")
+            f.write("\n")
+        
+        if http_findings:
+            f.write("HTTP SERVICES:\n")
+            for i, http in enumerate(http_findings[:5], 1):
+                f.write(f"  {i}. {http}\n")
+            if len(http_findings) > 5:
+                f.write(f"  ... and {len(http_findings) - 5} more services\n")
+            f.write("\n")
+        
+        if vuln_findings:
+            f.write("SECURITY CONCERNS:\n")
+            for i, vuln in enumerate(vuln_findings[:5], 1):
+                f.write(f"  {i}. {vuln}\n")
+            if len(vuln_findings) > 5:
+                f.write(f"  ... and {len(vuln_findings) - 5} more issues\n")
+            f.write("\n")
+        
+        # Risk assessment and recommendations
+        risk_level = "LOW"
+        if len(vuln_findings) > 5:
+            risk_level = "HIGH"
+        elif len(vuln_findings) > 0 or len(port_findings) > 10:
+            risk_level = "MEDIUM"
+        
+        f.write("RISK ASSESSMENT:\n")
+        f.write("-" * 40 + "\n")
+        f.write(f"Overall Risk Level: {risk_level}\n")
+        f.write(f"Based on: {len(port_findings)} open ports, {len(http_findings)} HTTP services, {len(vuln_findings)} security issues\n\n")
+        
+        f.write("RECOMMENDATIONS:\n")
+        f.write("-" * 40 + "\n")
+        if vuln_findings:
+            f.write("1. IMMEDIATE: Review and address identified security vulnerabilities\n")
+            f.write("2. Review exposed services and close unnecessary ports\n")
+            f.write("3. Implement proper security controls and monitoring\n")
+        elif port_findings:
+            f.write("1. Review exposed services and close unnecessary ports\n")
+            f.write("2. Ensure proper access controls are in place\n")
+            f.write("3. Regular security scanning is recommended\n")
+        else:
+            f.write("1. Continue regular security assessments\n")
+            f.write("2. Monitor for new services and exposures\n")
+            f.write("3. Maintain security best practices\n")
+        
+        f.write("\n")
+        f.write("NOTE: This is an automated security assessment. Manual verification\n")
+        f.write("of findings is recommended for accurate risk evaluation.\n\n")
         
         f.write("=" * 80 + "\n")
-        f.write("End of Comprehensive Scan Report\n")
+        f.write(f"End of Comprehensive Security Report - Generated on {timestamp}\n")
         f.write("=" * 80 + "\n")
 
 def signal_handler(sig, frame):
@@ -488,9 +646,8 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
         # For comprehensive report, always capture output
         temp_output = None
         if args.save_output:
-            temp_output = os.path.join(output_dir, "temp_naabu_output.txt")
-
-        naabu_args = ["-v"]
+            temp_output = os.path.join(output_dir, "temp_naabu_output.txt")        # Initialize naabu arguments - don't use verbose mode since we'll use silent mode
+        naabu_args = []
         if args.stealth:
             naabu_args.extend([
                 "-rate", "10",
@@ -878,6 +1035,76 @@ def display_live_statistics(stats: dict, tool_name: str):
     print("─" * 50)
     sys.stdout.flush()
 
+def display_scan_statistics(output_lines: List[str], tool_name: str):
+    """Display comprehensive statistics about scan output in real-time."""
+    if not output_lines:
+        print_progress_indicator("No output data to analyze", "INFO")
+        return
+    
+    # Analyze output content
+    total_lines = len(output_lines)
+    findings = []
+    errors = []
+    warnings = []
+    info_lines = []
+    
+    for line in output_lines:
+        line_lower = line.lower()
+        if any(kw in line_lower for kw in ['found', 'open', 'vulnerable', 'detected', 'discovered']):
+            findings.append(line)
+        elif any(kw in line_lower for kw in ['error', 'failed', 'timeout', 'exception']):
+            errors.append(line)
+        elif any(kw in line_lower for kw in ['warning', 'warn']):
+            warnings.append(line)
+        else:
+            info_lines.append(line)
+    
+    # Display statistics
+    print(f"\n{'-' * 60}")
+    print(f"REAL-TIME {tool_name.upper()} STATISTICS")
+    print(f"{'-' * 60}")
+    print(f"Total Output Lines: {total_lines}")
+    print(f"Findings Detected:  {len(findings)}")
+    print(f"Errors/Failures:    {len(errors)}")
+    print(f"Warnings:           {len(warnings)}")
+    print(f"Info/Data Lines:    {len(info_lines)}")
+    
+    if findings:
+        print(f"\nRECENT FINDINGS (Last 3):")
+        for i, finding in enumerate(findings[-3:], 1):
+            print(f"  {i}. {finding[:80]}{'...' if len(finding) > 80 else ''}")
+    
+    if errors:
+        print(f"\nRECENT ERRORS (Last 2):")
+        for i, error in enumerate(errors[-2:], 1):
+            print(f"  {i}. {error[:80]}{'...' if len(error) > 80 else ''}")
+    
+    print(f"{'-' * 60}")
+
+def create_realtime_summary(captured_output: List[str], tool_name: str) -> str:
+    """Create a real-time summary of scan progress and findings."""
+    if not captured_output:
+        return "No output captured yet."
+    
+    total_lines = len(captured_output)
+    findings_count = len([line for line in captured_output if any(kw in line.lower() for kw in ['found', 'open', 'vulnerable'])])
+    errors_count = len([line for line in captured_output if any(kw in line.lower() for kw in ['error', 'failed'])])
+    
+    summary = f"Lines: {total_lines} | Findings: {findings_count} | Errors: {errors_count}"
+    
+    # Add tool-specific insights
+    if tool_name.lower() == 'naabu':
+        ports_found = len([line for line in captured_output if 'open' in line.lower()])
+        summary += f" | Open Ports: {ports_found}"
+    elif tool_name.lower() == 'httpx':
+        http_responses = len([line for line in captured_output if any(code in line for code in ['200', '301', '302', '403', '404'])])
+        summary += f" | HTTP Responses: {http_responses}"
+    elif tool_name.lower() == 'nuclei':
+        vulns = len([line for line in captured_output if any(sev in line.lower() for sev in ['critical', 'high', 'medium'])])
+        summary += f" | Vulnerabilities: {vulns}"
+    
+    return summary
+
 def run_with_enhanced_realtime_output(cmd: List[str], output_file: Optional[str] = None, 
                                     tool_name: str = "Tool") -> Tuple[bool, str]:
     """
@@ -963,27 +1190,63 @@ def run_with_enhanced_realtime_output(cmd: List[str], output_file: Optional[str]
             print_progress_indicator(f"{tool_name} completed successfully", "SUCCESS")
         else:
             print_progress_indicator(f"{tool_name} completed with exit code {return_code}", "WARNING")
+          # Show enhanced final statistics with tool-specific insights
+        print(f"\nFINAL {tool_name.upper()} SCAN RESULTS:")
+        print(f"{'=' * 60}")
+        print(f"Total Output Lines:     {stats['total_lines']}")
+        print(f"Findings Detected:      {stats['findings']}")
+        print(f"Errors Encountered:     {stats['errors']}")
         
-        # Show final statistics
-        print(f"\nFinal {tool_name.upper()} Statistics:")
-        print(f"   Total lines processed: {stats['total_lines']}")
-        print(f"   Total findings: {stats['findings']}")
-        print(f"   Total errors: {stats['errors']}")
         if tool_name.lower() == 'nuclei' and stats['vulnerabilities'] > 0:
-            print(f"   Vulnerabilities found: {stats['vulnerabilities']}")
-            print(f"   Severity breakdown:")
-            print(f"     Critical: {stats['critical']}")
-            print(f"     High: {stats['high']}")
-            print(f"     Medium: {stats['medium']}")
-            print(f"     Low: {stats['low']}")
+            print(f"Vulnerabilities Found:  {stats['vulnerabilities']}")
+            print(f"\nSeverity Breakdown:")
+            print(f"  Critical: {stats['critical']}")
+            print(f"  High:     {stats['high']}")
+            print(f"  Medium:   {stats['medium']}")
+            print(f"  Low:      {stats['low']}")
+            
+            # Risk assessment
+            if stats['critical'] > 0:
+                print(f"\nRISK LEVEL: CRITICAL - Immediate attention required!")
+            elif stats['high'] > 0:
+                print(f"\nRISK LEVEL: HIGH - Address high-severity issues promptly")
+            elif stats['medium'] > 0:
+                print(f"\nRISK LEVEL: MEDIUM - Review and remediate when possible")
+            else:
+                print(f"\nRISK LEVEL: LOW - Monitor and maintain security posture")
+        
+        elif tool_name.lower() == 'naabu':
+            ports_found = len([line for line in captured_output if 'open' in line.lower()])
+            print(f"Open Ports Found:       {ports_found}")
+            if ports_found > 0:
+                print(f"\nPort Security Notice: Review exposed services and close unnecessary ports")
+        
+        elif tool_name.lower() == 'httpx':
+            http_services = len([line for line in captured_output if any(code in line for code in ['200', '301', '302'])])
+            print(f"HTTP Services Found:    {http_services}")
+            if http_services > 0:
+                print(f"\nHTTP Security Notice: Review web services for security configurations")
+        
+        # Overall assessment
+        if stats['errors'] > stats['findings']:
+            print(f"\nSCAN STATUS: Multiple errors detected - results may be incomplete")
+        elif stats['findings'] == 0:
+            print(f"\nSCAN STATUS: No significant findings - target appears secure")
+        else:
+            print(f"\nSCAN STATUS: Scan completed with findings - review results above")
         print("═" * 60)
         
-        # Save to file if requested
+        # Save to file if requested with enhanced formatting
         if output_file and captured_output:
             try:
-                with open(output_file, 'w') as f:
-                    f.write('\n'.join(captured_output))
-                print_progress_indicator(f"Output saved to: {output_file}", "SAVED")
+                # Use enhanced output file creation for better reports
+                if create_enhanced_output_file(output_file, captured_output, tool_name, stats):
+                    print_progress_indicator(f"Enhanced output saved to: {output_file}", "SAVED")
+                else:
+                    # Fallback to simple output if enhanced fails
+                    with open(output_file, 'w', encoding='utf-8') as f:
+                        f.write('\n'.join(captured_output))
+                    print_progress_indicator(f"Output saved to: {output_file}", "SAVED")
             except Exception as e:
                 print_progress_indicator(f"Failed to save output: {e}", "ERROR")
         
@@ -1004,6 +1267,64 @@ def run_with_enhanced_realtime_output(cmd: List[str], output_file: Optional[str]
     except Exception as e:
         print_progress_indicator(f"Execution error: {e}", "ERROR")
         return False, '\n'.join(captured_output)
+
+def create_enhanced_output_file(output_file: str, captured_output: List[str], tool_name: str, stats: dict) -> bool:
+    """Create an enhanced output file with statistics and analysis."""
+    try:
+        with open(output_file, 'w', encoding='utf-8') as f:
+            # Header
+            timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            f.write("=" * 80 + "\n")
+            f.write(f"{tool_name.upper()} SCAN OUTPUT REPORT\n")
+            f.write("=" * 80 + "\n")
+            f.write(f"Generated: {timestamp}\n")
+            f.write(f"Tool: {tool_name}\n")
+            f.write(f"Total Lines: {len(captured_output)}\n")
+            f.write("=" * 80 + "\n\n")
+            
+            # Statistics Summary
+            if stats:
+                f.write("SCAN STATISTICS:\n")
+                f.write("-" * 40 + "\n")
+                f.write(f"Total Output Lines: {stats.get('total_lines', 0)}\n")
+                f.write(f"Findings: {stats.get('findings', 0)}\n")
+                f.write(f"Errors: {stats.get('errors', 0)}\n")
+                f.write(f"Vulnerabilities: {stats.get('vulnerabilities', 0)}\n")
+                f.write("-" * 40 + "\n\n")
+            
+            # Key Findings Section
+            findings = [line for line in captured_output if any(kw in line.lower() for kw in ['found', 'open', 'vulnerable', 'detected'])]
+            if findings:
+                f.write("KEY FINDINGS:\n")
+                f.write("-" * 40 + "\n")
+                for i, finding in enumerate(findings, 1):
+                    f.write(f"{i:3d}. {finding}\n")
+                f.write("-" * 40 + "\n\n")
+            
+            # Errors Section
+            errors = [line for line in captured_output if any(kw in line.lower() for kw in ['error', 'failed', 'timeout'])]
+            if errors:
+                f.write("ERRORS AND WARNINGS:\n")
+                f.write("-" * 40 + "\n")
+                for i, error in enumerate(errors, 1):
+                    f.write(f"{i:3d}. {error}\n")
+                f.write("-" * 40 + "\n\n")
+            
+            # Complete Output
+            f.write("COMPLETE OUTPUT LOG:\n")
+            f.write("=" * 80 + "\n")
+            for i, line in enumerate(captured_output, 1):
+                f.write(f"{i:4d}: {line}\n")
+            
+            # Footer
+            f.write("\n" + "=" * 80 + "\n")
+            f.write(f"End of {tool_name.upper()} Report - Generated {timestamp}\n")
+            f.write("=" * 80 + "\n")
+        
+        return True
+    except Exception as e:
+        print_progress_indicator(f"Failed to create enhanced output file: {e}", "ERROR")
+        return False
 
 def check_network_connectivity():
     """Check if network connection is available - required for all scans."""
