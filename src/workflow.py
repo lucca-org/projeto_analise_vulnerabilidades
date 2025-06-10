@@ -484,9 +484,7 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
         
         print(f"Target: {target}")
 
-        naabu_args = ["-v"]
-
-        # For comprehensive report, always capture output
+        naabu_args = ["-v"]        # For comprehensive report, always capture output
         temp_output = None
         if args.save_output:
             temp_output = os.path.join(output_dir, "temp_naabu_output.txt")
@@ -495,26 +493,38 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
                 "-rate", "10",
                 "-c", "25",
                 "-scan-type", "syn",
-                "-retries", "1"
-                # Remove timeout parameter as naabu doesn't accept 0
+                "-retries", "1",
+                "-warm-up-time", "2"  # Add warm-up time for stability
             ])
         else:
             naabu_args.extend([
                 "-rate", "1000",
-                "-c", "50"
-                # Remove timeout parameter as naabu doesn't accept 0
+                "-c", "50",
+                "-warm-up-time", "2"  # Add warm-up time for stability
             ])
 
         print_status_header("naabu", target, "port scan")
-          # Build command with proper None handling
+          # Build command with proper None handling and additional safety parameters
         naabu_cmd = ["naabu", "-host", target]
         if mapped_ports:
             naabu_cmd.extend(["-p", mapped_ports])
+        
+        # Add output options
         if args.json_output:
             naabu_cmd.append("-json")
         elif temp_output:
             naabu_cmd.extend(["-o", temp_output])
+        
+        # Add the naabu arguments
         naabu_cmd.extend(naabu_args)
+        
+        # Add additional safety parameters for better compatibility
+        naabu_cmd.extend([
+            "-silent",  # Reduce verbose output for cleaner display
+            "-no-color"  # Disable colors for better log parsing
+        ])
+        
+        print(f"Executing command: {' '.join(naabu_cmd)}")
         
         naabu_success, naabu_output = run_with_enhanced_realtime_output(
             cmd=naabu_cmd,
