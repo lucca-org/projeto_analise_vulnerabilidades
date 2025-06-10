@@ -685,15 +685,21 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
             naabu_cmd.append("-json")
         elif temp_output:
             naabu_cmd.extend(["-o", temp_output])
-        
-        # Add the naabu arguments
+          # Add the naabu arguments
         naabu_cmd.extend(naabu_args)
         
-        # Add additional safety parameters for better compatibility
-        naabu_cmd.extend([
-            "-silent",  # Reduce verbose output for cleaner display
-            "-no-color"  # Disable colors for better log parsing
-        ])
+        # Add conditional parameters based on stealth mode
+        if args.stealth:
+            # In stealth mode, reduce output and disable colors
+            naabu_cmd.extend([
+                "-silent",  # Reduce verbose output for cleaner display in stealth mode
+                "-no-color"  # Disable colors for better log parsing
+            ])
+        else:
+            # In normal mode, only disable colors for better log parsing but keep verbose output
+            naabu_cmd.extend([
+                "-no-color"  # Disable colors for better log parsing
+            ])
         
         print(f"Executing command: {' '.join(naabu_cmd)}")
         
