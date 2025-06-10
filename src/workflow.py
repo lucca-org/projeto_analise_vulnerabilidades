@@ -206,8 +206,7 @@ def stream_command_output(cmd: List[str], output_file: Optional[str] = None) -> 
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             universal_newlines=True,
-            bufsize=1
-        )
+            bufsize=1        )
         
         start_time = time.time()
         last_update = start_time
@@ -413,16 +412,14 @@ def get_port_specification(port_spec: str) -> Optional[str]:
         Optional[str]: Naabu-compatible port specification, or None to use naabu defaults
     """
     if port_spec == "top-100":
-        # Top 100 most common ports
-        return "7,9,13,21-23,25-26,37,53,79-81,88,106,110-111,113,119,135,139,143-144,179,199,389,427,443-445,465,513-515,543-544,548,554,587,631,646,873,990,993,995,1025-1029,1110,1433,1720,1723,1755,1900,2000-2001,2049,2121,2717,3000,3128,3306,3389,3986,4899,5000,5009,5051,5060,5101,5190,5357,5432,5631,5666,5800,5900,6000-6001,6646,7070,8000,8008-8009,8080-8081,8443,8888,9100,9999-10000,32768,49152-49157"
+        return "top-100"
     elif port_spec == "top-1000":
-        # Use naabu's default top 1000 ports by not specifying -p at all
+        # Return None to use naabu's default top-1000 ports
         return None
     elif port_spec == "all":
-        # All ports 1-65535
         return "1-65535"
     else:
-        # Return as-is for custom port specifications
+        # Assume it's a specific port range like "80,443,8000-9000"
         return port_spec
 
 def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> bool:
@@ -475,8 +472,7 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
         naabu_args = ["-v"]
 
         # For comprehensive report, always capture output
-        
-        # Display port scanning information
+          # Display port scanning information
         if mapped_ports is None:
             print(f"Port range: Top 1000 most common ports (naabu default)")
         elif ports_to_scan == "top-100":
@@ -488,14 +484,13 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
         
         print(f"Target: {target}")
 
-        naabu_args = ["-v"]        # For comprehensive report, always capture output
+        # For comprehensive report, always capture output
         temp_output = None
         if args.save_output:
             temp_output = os.path.join(output_dir, "temp_naabu_output.txt")
-            naabu_args.extend(["-o", temp_output])
 
+        naabu_args = ["-v"]
         if args.stealth:
-            # Don't add -o here, let run_naabu handle it        if args.stealth:
             naabu_args.extend([
                 "-rate", "10",
                 "-c", "25",
@@ -511,7 +506,8 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
             ])
 
         print_status_header("naabu", target, "port scan")
-          # Build command with proper None handling and additional safety parameters
+        
+        # Build command with proper None handling and additional safety parameters
         naabu_cmd = ["naabu", "-host", target]
         if mapped_ports:
             naabu_cmd.extend(["-p", mapped_ports])
@@ -1134,8 +1130,7 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
     
     args = parser.parse_args()
-    
-    # Validate JSON output flag
+      # Validate JSON output flag
     if args.json_output and not args.save_output:
         print("Warning: --json-output requires --save-output flag. JSON output will be ignored.")
         args.json_output = False
@@ -1147,13 +1142,10 @@ def main():
         print(" Some features may not work without internet access.")
         response = input("Continue anyway? [y/N]: ")
 
-        # Fix: Handle empty response (default to 'n' if no input)
+        # Handle empty response (default to 'n' if no input)
         if response.strip().lower() not in ['y', 'yes']:
             print(" Scan cancelled.")
             sys.exit(1)
-      # Check network connectivity (disabled)
-    print("Network connectivity check")
-    print("Note: Network connectivity check has been disabled for testing purposes.")
     
     # Handle template updates
     if args.update_templates:
