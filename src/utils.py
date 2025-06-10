@@ -213,14 +213,26 @@ def create_directory_if_not_exists(directory: str) -> bool:
 
 def get_executable_path(cmd: str) -> Optional[str]:
     """Find the path to an executable, checking PATH and common locations."""
-    # Check in PATH
+    # Check in PATH first
     cmd_path = shutil.which(cmd)
     if cmd_path:
         return cmd_path
-          # Check in ~/go/bin
-    go_bin_path = os.path.expanduser(f"~/go/bin/{cmd}")
-    if os.path.exists(go_bin_path) and os.access(go_bin_path, os.X_OK):
-        return go_bin_path
+    
+    # Common Go tool installation locations
+    possible_locations = [
+        os.path.expanduser(f"~/go/bin/{cmd}"),           # User's go/bin
+        f"/root/go/bin/{cmd}",                           # Root's go/bin (common in Kali)
+        f"/usr/local/go/bin/{cmd}",                      # System Go installation
+        f"/usr/bin/{cmd}",                               # System package manager
+        f"/usr/local/bin/{cmd}",                         # Local installation
+        f"/opt/go/bin/{cmd}",                            # Alternative Go location
+        os.path.expanduser(f"~/.local/bin/{cmd}"),       # User's local bin
+        f"/snap/bin/{cmd}",                              # Snap packages
+    ]
+    
+    for path in possible_locations:
+        if os.path.exists(path) and os.access(path, os.X_OK):
+            return path
     
     return None
 

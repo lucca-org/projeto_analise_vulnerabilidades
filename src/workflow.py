@@ -657,16 +657,26 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
                 "-warm-up-time", "2"  # Add warm-up time for stability
             ])
         else:
-            naabu_args.extend([
-                "-rate", "1000",
+            naabu_args.extend([                "-rate", "1000",
                 "-c", "50",
                 "-warm-up-time", "2"  # Add warm-up time for stability
             ])
 
         print_status_header("naabu", target, "port scan")
         
+        # Get the actual path to naabu executable
+        naabu_path = get_executable_path("naabu")
+        if not naabu_path:
+            print("ERROR: naabu not found in PATH or standard locations")
+            print("Expected locations: /usr/bin/naabu, /root/go/bin/naabu, ~/go/bin/naabu")
+            if args.save_output and comprehensive_report:
+                append_to_comprehensive_report(comprehensive_report, "NAABU", "Tool not found in expected locations", False)
+            return False
+        
+        print(f"Using naabu from: {naabu_path}")
+        
         # Build command with proper None handling and additional safety parameters
-        naabu_cmd = ["naabu", "-host", target]
+        naabu_cmd = [naabu_path, "-host", target]
         if mapped_ports:
             naabu_cmd.extend(["-p", mapped_ports])
         
@@ -746,10 +756,20 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
             ])
 
         print_status_header("httpx", target, "service detection")
+          # Get the actual path to httpx executable
+        httpx_path = get_executable_path("httpx")
+        if not httpx_path:
+            print("ERROR: httpx not found in PATH or standard locations")
+            print("Expected locations: /usr/bin/httpx, /root/go/bin/httpx, ~/go/bin/httpx")
+            if args.save_output and comprehensive_report:
+                append_to_comprehensive_report(comprehensive_report, "HTTPX", "Tool not found in expected locations", False)
+            return False
+        
+        print(f"Using httpx from: {httpx_path}")
         
         # Build command with proper handling of conditionals
         httpx_cmd = [
-            "httpx",
+            httpx_path,
             "-u", httpx_input,
             "-title",
             "-status-code",
@@ -847,19 +867,29 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
             ])
         else:
             nuclei_args.extend([
-                "-rate-limit", "50",
-                "-bulk-size", "10",
+                "-rate-limit", "50",                "-bulk-size", "10",
                 "-concurrency", "10", 
                 "-timeout", "10"
             ])
 
         print_status_header("nuclei", target, "vulnerability scan")
         
+        # Get the actual path to nuclei executable
+        nuclei_path = get_executable_path("nuclei")
+        if not nuclei_path:
+            print("ERROR: nuclei not found in PATH or standard locations")
+            print("Expected locations: /usr/bin/nuclei, /root/go/bin/nuclei, ~/go/bin/nuclei")
+            if args.save_output and comprehensive_report:
+                append_to_comprehensive_report(comprehensive_report, "NUCLEI", "Tool not found in expected locations", False)
+            return False
+        
+        print(f"Using nuclei from: {nuclei_path}")
+        
         # Build nuclei command properly
         if os.path.isfile(nuclei_input):
-            nuclei_cmd = ["nuclei", "-l", nuclei_input]
+            nuclei_cmd = [nuclei_path, "-l", nuclei_input]
         else:
-            nuclei_cmd = ["nuclei", "-u", nuclei_input]
+            nuclei_cmd = [nuclei_path, "-u", nuclei_input]
         
         # Add template specification
         if args.templates:
