@@ -646,8 +646,8 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
         # For comprehensive report, always capture output
         temp_output = None
         if args.save_output:
-            temp_output = os.path.join(output_dir, "temp_naabu_output.txt")        # Initialize naabu arguments - don't use verbose mode since we'll use silent mode
-        naabu_args = []
+            temp_output = os.path.join(output_dir, "temp_naabu_output.txt")        # Initialize naabu arguments for enhanced real-time output
+        naabu_args = ["-v"]  # Always add verbose for real-time port information
         if args.stealth:
             naabu_args.extend([
                 "-rate", "10",
@@ -657,7 +657,8 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
                 "-warm-up-time", "2"  # Add warm-up time for stability
             ])
         else:
-            naabu_args.extend([                "-rate", "1000",
+            naabu_args.extend([
+                "-rate", "1000",
                 "-c", "50",
                 "-warm-up-time", "2"  # Add warm-up time for stability
             ])
@@ -674,11 +675,14 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
             return False
         
         print(f"Using naabu from: {naabu_path}")
-        
-        # Build command with proper None handling and additional safety parameters
-        naabu_cmd = [naabu_path, "-host", target]
+          # Enhanced naabu command with better verbose output
+        naabu_cmd = [naabu_path, "-host", target, "-v"]  # Always verbose for port info
         if mapped_ports:
             naabu_cmd.extend(["-p", mapped_ports])
+        
+        # Add scan type for better output consistency
+        if not args.stealth:
+            naabu_cmd.extend(["-scan-type", "connect"])  # Connect scan shows more details
         
         # Add output options
         if args.json_output:
@@ -966,22 +970,95 @@ def analyze_tool_output(line: str, tool_name: str) -> dict:
         'line_type': 'info',
         'severity': 'low',
         'contains_finding': False,
-        'keywords': []
-    }
+        'keywords': [],
+        'port_info': None,
+        'progress_info': None    }
     
     line_lower = line.lower()
     
     if tool_name.lower() == 'naabu':
-        if 'open' in line_lower:
+        # Use enhanced naabu parsing for better port detection
+        port_details = parse_naabu_realtime_output(line)
+        
+        # Extract specific port information for enhanced real-time display
+        import re
+        port_match = re.search(r':(\d+)', line)
+        if port_match:
+            analysis['port_info'] = port_match.group(1)
+        
+        # Use the enhanced parser results
+        if port_details['port']:
+            analysis['port_info'] = port_details['port']
+        
+        # Extract port ranges being scanned
+        port_range_match = re.search(r'(\d+)-(\d+)', line)
+        if port_range_match:
+            analysis['port_range'] = f"{port_range_match.group(1)}-{port_range_match.group(2)}"
+            analysis['keywords'].append('port_range')
+        
+        # Extract single port being tested
+        single_port_match = re.search(r'port (\d+)', line_lower)
+        if single_port_match:
+            analysis['port_info'] = single_port_match.group(1)
+            analysis['keywords'].append('single_port')
+        
+        # Enhanced detection based on parser results
+        if port_details['type'] == 'progress':
+            analysis['line_type'] = 'progress'
+            analysis['progress_info'] = 'port_scan'
+            analysis['scanning_activity'] = 'active_port_scan'
+            if port_details.get('port_range'):
+                analysis['port_range'] = port_details['port_range']
+        elif port_details['type'] == 'connection':
+            analysis['line_type'] = 'progress'
+            analysis['progress_info'] = 'port_connect'
+            analysis['scanning_activity'] = 'connection_attempt'
+        elif port_details['type'] == 'result' and port_details['status'] == 'open':
             analysis['line_type'] = 'finding'
             analysis['contains_finding'] = True
             analysis['severity'] = 'medium'
             analysis['keywords'] = ['port', 'open']
+        elif port_details['type'] == 'result' and port_details['status'] in ['closed', 'filtered']:
+            analysis['line_type'] = 'info'
+            analysis['keywords'] = ['port', 'status']
+        elif port_details['type'] == 'summary':
+            analysis['line_type'] = 'progress'
+            analysis['progress_info'] = 'scan_summary'
+        # Fallback to original detection patterns
+        elif any(phrase in line_lower for phrase in ['scanning port', 'probing port', 'testing port']):
+            analysis['line_type'] = 'progress'
+            analysis['progress_info'] = 'port_scan'
+            analysis['scanning_activity'] = 'active_port_scan'
+        elif any(phrase in line_lower for phrase in ['connecting to', 'attempting connection']):
+            analysis['line_type'] = 'progress'
+            analysis['progress_info'] = 'port_connect'
+            analysis['scanning_activity'] = 'connection_attempt'
+        elif 'open' in line_lower:
+            analysis['line_type'] = 'finding'
+            analysis['contains_finding'] = True
+            analysis['severity'] = 'medium'
+            analysis['keywords'] = ['port', 'open']
+        elif 'closed' in line_lower or 'filtered' in line_lower:
+            analysis['line_type'] = 'info'
+            analysis['keywords'] = ['port', 'status']
         elif 'error' in line_lower or 'timeout' in line_lower:
             analysis['line_type'] = 'error'
             analysis['severity'] = 'high'
-        elif 'scanning' in line_lower or 'probing' in line_lower:
+        elif any(word in line_lower for word in ['scanning', 'probing', 'testing', 'connecting']):
             analysis['line_type'] = 'progress'
+            analysis['progress_info'] = 'port_scan'
+        elif 'sent' in line_lower and 'packets' in line_lower:
+            analysis['line_type'] = 'progress'
+            analysis['progress_info'] = 'sending_packets'
+        elif 'host' in line_lower and ('up' in line_lower or 'down' in line_lower):
+            analysis['line_type'] = 'info'
+            analysis['keywords'] = ['host_status']
+        elif 'starting scan' in line_lower or 'scan started' in line_lower:
+            analysis['line_type'] = 'progress'
+            analysis['progress_info'] = 'scan_start'
+        elif 'completed' in line_lower or 'finished' in line_lower:
+            analysis['line_type'] = 'progress'
+            analysis['progress_info'] = 'scan_complete'
     
     elif tool_name.lower() == 'httpx':
         if any(code in line for code in ['200', '201', '301', '302', '403', '404']):
@@ -1029,7 +1106,11 @@ def format_output_with_analytics(line: str, tool_name: str, line_count: int) -> 
         Formatted line with visual indicators
     """
     analysis = analyze_tool_output(line, tool_name)
-      # Choose emoji and color based on analysis
+    
+    # Add timestamp for better tracking
+    timestamp = datetime.datetime.now().strftime('%H:%M:%S')
+    
+    # Choose prefix based on analysis - NO EMOJIS
     if analysis['line_type'] == 'vulnerability':
         if analysis['severity'] == 'critical':
             prefix = "[CRITICAL]"
@@ -1040,18 +1121,43 @@ def format_output_with_analytics(line: str, tool_name: str, line_count: int) -> 
         else:
             prefix = "[LOW]"
     elif analysis['line_type'] == 'finding':
-        prefix = "[FOUND]"
+        if tool_name.lower() == 'naabu' and analysis.get('port_info'):
+            prefix = f"[PORT OPEN] Port {analysis['port_info']}"
+        else:
+            prefix = "[FOUND]"
     elif analysis['line_type'] == 'error':
         prefix = "[ERROR]"
     elif analysis['line_type'] == 'progress':
-        prefix = "[PROGRESS]"
+        if tool_name.lower() == 'naabu':
+            if analysis.get('progress_info') == 'port_scan':
+                if analysis.get('port_info'):
+                    prefix = f"[SCANNING PORT {analysis['port_info']}]"
+                elif analysis.get('port_range'):
+                    prefix = f"[SCANNING RANGE {analysis['port_range']}]"
+                else:
+                    prefix = "[SCANNING]"
+            elif analysis.get('progress_info') == 'port_connect':
+                prefix = "[CONNECTING]"
+            elif analysis.get('progress_info') == 'sending_packets':
+                prefix = "[SENDING]"
+            else:
+                prefix = "[PROGRESS]"
+        else:
+            prefix = "[PROGRESS]"
     else:
         prefix = "[INFO]"
     
-    # Add line number for easy reference
-    line_num_str = f"[{line_count:04d}]"
+    # Add line number and timestamp for easy reference
+    line_ref = f"[{timestamp}][{line_count:04d}]"
     
-    return f"{prefix} {line_num_str} {line}"
+    # Special formatting for naabu port information
+    if tool_name.lower() == 'naabu' and (analysis.get('port_info') or analysis.get('port_range')):
+        if analysis.get('scanning_activity'):
+            return f"{prefix} {line_ref} Port activity detected: {line}"
+        else:
+            return f"{prefix} {line_ref} {line}"
+    else:
+        return f"{prefix} {line_ref} {line}"
 
 def display_live_statistics(stats: dict, tool_name: str):
     """
@@ -1622,3 +1728,76 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+def parse_naabu_realtime_output(line: str) -> dict:
+    """
+    Enhanced parser for naabu real-time output to detect port scanning activity.
+    
+    Args:
+        line: Raw output line from naabu
+        
+    Returns:
+        Dictionary with parsed port information
+    """
+    import re
+    
+    port_info = {
+        'type': 'unknown',
+        'port': None,
+        'host': None,
+        'status': None,
+        'protocol': None,
+        'service': None
+    }
+    
+    line_lower = line.lower().strip()
+    
+    # Pattern 1: Direct port results (host:port format)
+    port_result_match = re.search(r'(\d+\.\d+\.\d+\.\d+):(\d+)', line)
+    if port_result_match:
+        port_info['type'] = 'result'
+        port_info['host'] = port_result_match.group(1)
+        port_info['port'] = port_result_match.group(2)
+        if 'open' in line_lower:
+            port_info['status'] = 'open'
+        elif 'closed' in line_lower:
+            port_info['status'] = 'closed'
+        elif 'filtered' in line_lower:
+            port_info['status'] = 'filtered'
+    
+    # Pattern 2: Scanning progress indicators
+    elif any(keyword in line_lower for keyword in ['scanning', 'probing', 'testing']):
+        port_info['type'] = 'progress'
+        # Extract port being scanned
+        port_scan_match = re.search(r'port[s]?\s+(\d+)', line_lower)
+        if port_scan_match:
+            port_info['port'] = port_scan_match.group(1)
+        # Extract port range
+        range_match = re.search(r'(\d+)-(\d+)', line)
+        if range_match:
+            port_info['port_range'] = f"{range_match.group(1)}-{range_match.group(2)}"
+    
+    # Pattern 3: Connection attempts
+    elif any(keyword in line_lower for keyword in ['connecting', 'connect']):
+        port_info['type'] = 'connection'
+        port_match = re.search(r':(\d+)', line)
+        if port_match:
+            port_info['port'] = port_match.group(1)
+    
+    # Pattern 4: Host discovery
+    elif 'host' in line_lower and ('up' in line_lower or 'down' in line_lower):
+        port_info['type'] = 'host_discovery'
+        if 'up' in line_lower:
+            port_info['status'] = 'up'
+        else:
+            port_info['status'] = 'down'
+    
+    # Pattern 5: Statistics and summaries
+    elif any(keyword in line_lower for keyword in ['found', 'discovered', 'total']):
+        port_info['type'] = 'summary'
+        # Extract numbers
+        numbers = re.findall(r'\d+', line)
+        if numbers:
+            port_info['count'] = numbers[0]
+    
+    return port_info
