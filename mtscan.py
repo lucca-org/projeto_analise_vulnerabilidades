@@ -227,7 +227,7 @@ def get_ports_input():
     print("  [1] Top 100 ports")
     print("  [2] Top 1000 ports (default)")
     print("  [3] All ports (1-65535)")
-    print("  [4] Custom ports")
+    print("  [4] Number of ports to scan")
     
     while True:
         choice = input("\nSelect option [1-4]: ")
@@ -239,11 +239,16 @@ def get_ports_input():
         elif choice == "3":
             return "1-65535"
         elif choice == "4":
-            custom_ports = input("Enter ports (e.g., 80,443,8000-9000): ").strip()
-            if custom_ports:
-                return custom_ports
-            else:
-                print("Please enter valid ports.")
+            while True:
+                try:
+                    num_ports = input("Enter number of ports to scan (e.g., 30000): ").strip()
+                    port_count = int(num_ports)
+                    if port_count > 0 and port_count <= 65535:
+                        return f"top-{port_count}"
+                    else:
+                        print("Please enter a number between 1 and 65535.")
+                except ValueError:
+                    print("Please enter a valid number.")
         else:
             print("Invalid option. Please select 1-4.")
 
