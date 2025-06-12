@@ -9,6 +9,13 @@ import sys
 import platform
 import subprocess
 import datetime
+import shutil
+import socket
+import re
+import ipaddress
+import urllib.parse
+import threading
+import time
 from pathlib import Path
 
 # Add current directory to path for imports
@@ -16,7 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Try to import utils for tool detection
 try:
-    from utils import get_executable_path
+    from src.utils import get_executable_path
     UTILS_AVAILABLE = True
 except ImportError:
     UTILS_AVAILABLE = False
@@ -32,17 +39,17 @@ except ImportError:
 
 # Ensure we're running on Linux
 if platform.system().lower() != "linux":
-    print("╔═══════════════════════════════════════════════════════════════╗")
-    print("║                             ERROR                             ║")
-    print("║                                                               ║")
-    print("║     This toolkit is designed EXCLUSIVELY for Linux systems    ║")
-    print("║                                                               ║")
-    print("║      Supported: Debian, Kali, Ubuntu, Arch Linux              ║")
-    print("║      NOT Supported: Windows, macOS, WSL                       ║")
-    print("║                                                               ║")
-    print("║     Please use a native Linux environment for optimal         ║")
-    print("║     security tool performance and compatibility.              ║")
-    print("╚═══════════════════════════════════════════════════════════════╝")
+    print("┌─────────────────────────────────────────────────────────────────┐")
+    print("│                             ERROR                               │")
+    print("│                                                                 │")
+    print("│     This toolkit is designed EXCLUSIVELY for Linux systems     │")
+    print("│                                                                 │")
+    print("│          Supported: Debian, Kali, Ubuntu, Arch Linux           │")
+    print("│              NOT Supported: Windows, macOS, WSL                │")
+    print("│                                                                 │")
+    print("│        Please use a native Linux environment for optimal       │")
+    print("│           security tool performance and compatibility.         │")
+    print("└─────────────────────────────────────────────────────────────────┘")
     sys.exit(1)
 
 def clear_screen():
@@ -214,12 +221,59 @@ def print_main_menu():
     print()
 
 def get_target_input():
-    """Get target input from user."""
+    """Get target input from user with comprehensive validation and help."""
     while True:
-        target = input("Enter target (IP/domain): ").strip()
-        if target:
-            return target
-        print("Please enter a valid target.")
+        print("\nTARGET SPECIFICATION:")
+        print("Enter your scan target. Examples:")
+        print("  - IP Address: 192.168.1.100")
+        print("  - Domain: example.com")
+        print("  - URL: https://example.com (domain will be extracted)")
+        print("  - Localhost: 127.0.0.1 or localhost")
+        print()
+        print("TIP: Use 'help' for target format examples")
+        
+        target = input("Enter target: ").strip()
+        
+        if target.lower() == 'help':
+            print("\n" + "="*50)
+            print("TARGET FORMAT EXAMPLES:")
+            print("="*50)
+            print("VALID formats:")
+            print("  192.168.1.1        - IPv4 address")
+            print("  10.0.0.1           - Private IP")
+            print("  example.com        - Domain name")
+            print("  test.example.com   - Subdomain")
+            print("  localhost          - Local system")
+            print("  127.0.0.1          - Loopback IP")
+            print()
+            print("INVALID formats:")
+            print("  999.999.999.999    - Invalid IP octets")
+            print("  just-text          - Not a valid domain")
+            print("  http://example     - Incomplete URL")
+            print("  192.168.1          - Incomplete IP")
+            print("="*50)
+            continue
+        
+        if not target:
+            print("ERROR: Target cannot be empty. Please enter a valid IP or domain.")
+            continue
+        
+        # Validate the target
+        is_valid, result = validate_target_input(target)
+        
+        if is_valid:
+            validated_target = result
+            print(f"VALID target: {validated_target}")
+            
+            # Show scan confirmation with legal notice
+            if get_safe_scan_confirmation(validated_target, "security scan"):
+                return validated_target
+            else:
+                continue  # User declined, ask for target again
+        else:
+            print(f"ERROR: {result}")
+            print("Please try again or type 'help' for examples.")
+            continue
 
 def get_ports_input():
     """Get ports input for naabu scan."""
@@ -266,7 +320,13 @@ def get_scan_options():
 
     # JSON output (only relevant if saving output)
     if options['save_output']:
-        json_output = input("Save output in JSON format? [y/N]: ").strip().lower()
+        json_output = input("Save output in JSON format? [y/N]: ")
+
+        # Validate JSON output selection
+        while json_output not in ['y', 'yes', 'n', 'no', '']:
+            print("Invalid option. Please select 'y' or 'n'.")
+            json_output = input("Save output in JSON format? [y/N]: ").strip().lower()
+        
         options['json_output'] = json_output in ['y', 'yes']
     else:
         options['json_output'] = False
@@ -274,38 +334,396 @@ def get_scan_options():
     return options
 
 def run_scan(scan_type, target, **kwargs):
-    """Run a scan with enhanced real-time output and detailed progress information."""
-    import datetime
-    import threading
-    import time
+    """Run a scan with enhanced real-time output and comprehensive flag support."""
     
+    # Get flags for the selected scan type
+    if scan_type == "naabu":
+        print(f"\nConfiguring NAABU port scanner for target: {target}")
+        show_scan_type_help("naabu")
+        flags = get_naabu_flags()
+    elif scan_type == "httpx":
+        print(f"\nConfiguring HTTPX HTTP service detection for target: {target}")
+        show_scan_type_help("httpx")
+        flags = get_httpx_flags()
+    elif scan_type == "nuclei":
+        print(f"\nConfiguring NUCLEI vulnerability scanner for target: {target}")
+        show_scan_type_help("nuclei")
+        flags = get_nuclei_flags()
+    else:
+        print(f"ERROR: Unknown scan type: {scan_type}")
+        return False
+    
+    # Ask about scan modes
+    print("\n" + "="*50)
+    print("SCAN MODE CONFIGURATION")
+    print("="*50)
+    print("Need help understanding scan modes? [y/N]: ", end="")
+    help_choice = input().strip().lower()
+    if help_choice in ['y', 'yes']:
+        explain_scan_modes()
+    
+    # Get scan mode preferences
+    print("\nScan Mode Options:")
+    stealth_mode = input("Enable STEALTH mode (slower, more discreet)? [y/N]: ").strip().lower() in ['y', 'yes']
+    tool_silent = input("Enable SILENT mode (minimal output)? [y/N]: ").strip().lower() in ['y', 'yes']
+    save_output = input("Save scan results to files? [Y/n]: ").strip().lower() not in ['n', 'no']
+    
+    if save_output:
+        json_output = input("Save in JSON format (easier to parse)? [y/N]: ").strip().lower() in ['y', 'yes']
+    else:
+        json_output = False
+    
+    # Show configuration summary
+    print(f"\n{'='*50}")
+    print("SCAN CONFIGURATION SUMMARY")
+    print("="*50)
+    print(f"Tool: {scan_type.upper()}")
+    print(f"Target: {target}")
+    print(f"Stealth Mode: {'ENABLED' if stealth_mode else 'DISABLED'}")
+    print(f"Silent Mode: {'ENABLED' if tool_silent else 'DISABLED'}")
+    print(f"Save Output: {'YES' if save_output else 'NO (real-time only)'}")
+    if save_output:
+        print(f"Output Format: {'JSON' if json_output else 'TEXT'}")
+    print(f"Flags Selected: {len(flags)}")
+    if flags:
+        print("Flag Summary:")
+        for flag, value in flags.items():
+            print(f"  {flag}: {value}")
+    print("="*50)
+    
+    # Final confirmation
+    proceed = input("Proceed with scan? [Y/n]: ").strip().lower()
+    if proceed in ['n', 'no']:
+        print("Scan cancelled by user.")
+        return False
+    
+    # Build command
     cmd = ["python3", "src/workflow.py"]
     
     # Add tool-specific flag
     if scan_type == "naabu":
-        cmd.extend(["-naabu"])
+        cmd.append("-naabu")
     elif scan_type == "httpx":
-        cmd.extend(["-httpx"])
+        cmd.append("-httpx")
     elif scan_type == "nuclei":
-        cmd.extend(["-nuclei"])
+        cmd.append("-nuclei")
     
     # Add target
     cmd.extend(["-host", target])
     
-    # Add options
-    if kwargs.get('ports'):
-        cmd.extend(["-p", kwargs['ports']])
-    
-    if kwargs.get('stealth'):
+    # Add basic options
+    if stealth_mode:
         cmd.append("-s")
     
-    # Save output flag (separate from verbose display)
-    if kwargs.get('save_output'):
+    if tool_silent:
+        cmd.append("--tool-silent")
+    
+    if save_output:
         cmd.append("--save-output")
     
-    # JSON output only if saving output
-    if kwargs.get('json_output') and kwargs.get('save_output'):
+    if json_output:
         cmd.append("--json-output")
+    
+    # Add all flag-specific arguments
+    for flag, value in flags.items():
+        if flag == 'stealth' and value:
+            cmd.append("-s")
+        elif flag == 'ports' and value:
+            cmd.extend(["-p", str(value)])
+        elif flag == 'threads' and value:
+            cmd.extend(["--threads", str(value)])
+        elif flag == 'rate' and value:
+            cmd.extend(["--rate", str(value)])
+        elif flag == 'exclude_ports' and value:
+            cmd.extend(["--exclude-ports", str(value)])
+        elif flag == 'scan_type' and value:
+            cmd.extend(["--scan-type", str(value)])
+        elif flag == 'naabu_timeout' and value:
+            cmd.extend(["--naabu-timeout", str(value)])
+        elif flag == 'naabu_retries' and value:
+            cmd.extend(["--naabu-retries", str(value)])
+        elif flag == 'top_ports' and value:
+            cmd.extend(["--top-ports", str(value)])
+        elif flag == 'source_port' and value:
+            cmd.extend(["--source-port", str(value)])
+        elif flag == 'interface' and value:
+            cmd.extend(["--interface", str(value)])
+        elif flag == 'host_discovery' and value:
+            cmd.append("--host-discovery")
+        elif flag == 'ping' and value:
+            cmd.append("--ping")
+        elif flag == 'no_ping' and value:
+            cmd.append("--no-ping")
+        elif flag == 'naabu_debug' and value:
+            cmd.append("--naabu-debug")
+        elif flag == 'naabu_json' and value:
+            cmd.append("--naabu-json")
+        elif flag == 'naabu_csv' and value:
+            cmd.append("--naabu-csv")
+        
+        # HTTPX flags
+        elif flag == 'title' and value:
+            cmd.append("--title")
+        elif flag == 'status_code' and value:
+            cmd.append("--status-code")
+        elif flag == 'tech_detect' and value:
+            cmd.append("--tech-detect")
+        elif flag == 'web_server' and value:
+            cmd.append("--web-server")
+        elif flag == 'follow_redirects' and value:
+            cmd.append("--follow-redirects")
+        elif flag == 'rate_limit' and value:
+            cmd.extend(["--rate-limit", str(value)])
+        elif flag == 'content_length' and value:
+            cmd.append("--content-length")
+        elif flag == 'response_time' and value:
+            cmd.append("--response-time")
+        elif flag == 'httpx_timeout' and value:
+            cmd.extend(["--httpx-timeout", str(value)])
+        elif flag == 'httpx_threads' and value:
+            cmd.extend(["--httpx-threads", str(value)])
+        elif flag == 'httpx_retries' and value:
+            cmd.extend(["--httpx-retries", str(value)])
+        elif flag == 'method' and value:
+            cmd.extend(["--method", str(value)])
+        elif flag == 'user_agent' and value:
+            cmd.extend(["--user-agent", str(value)])
+        elif flag == 'headers' and value:
+            cmd.extend(["--headers", str(value)])
+        elif flag == 'filter_code' and value:
+            cmd.extend(["--filter-code", str(value)])
+        elif flag == 'filter_length' and value:
+            cmd.extend(["--filter-length", str(value)])
+        elif flag == 'match_code' and value:
+            cmd.extend(["--match-code", str(value)])
+        elif flag == 'match_length' and value:
+            cmd.extend(["--match-length", str(value)])
+        elif flag == 'proxy' and value:
+            cmd.extend(["--proxy", str(value)])
+        elif flag == 'disable_redirects' and value:
+            cmd.append("--disable-redirects")
+        elif flag == 'max_redirects' and value:
+            cmd.extend(["--max-redirects", str(value)])
+        elif flag == 'httpx_json' and value:
+            cmd.append("--httpx-json")
+        elif flag == 'httpx_csv' and value:
+            cmd.append("--httpx-csv")
+        
+        # NUCLEI flags
+        elif flag == 'templates' and value:
+            cmd.extend(["-t", str(value)])
+        elif flag == 'template_path' and value:
+            cmd.extend(["--template-path", str(value)])
+        elif flag == 'tags' and value:
+            cmd.extend(["--tags", str(value)])
+        elif flag == 'severity' and value:
+            cmd.extend(["--severity", str(value)])
+        elif flag == 'exclude_tags' and value:
+            cmd.extend(["--exclude-tags", str(value)])
+        elif flag == 'exclude_templates' and value:
+            cmd.extend(["--exclude-templates", str(value)])
+        elif flag == 'concurrency' and value:
+            cmd.extend(["--concurrency", str(value)])
+        elif flag == 'nuclei_rate_limit' and value:
+            cmd.extend(["--nuclei-rate-limit", str(value)])
+        elif flag == 'nuclei_timeout' and value:
+            cmd.extend(["--nuclei-timeout", str(value)])
+        elif flag == 'nuclei_retries' and value:
+            cmd.extend(["--nuclei-retries", str(value)])
+        elif flag == 'parallel_processing' and value:
+            cmd.extend(["--parallel-processing", str(value)])
+        elif flag == 'custom_headers' and value:
+            cmd.extend(["--custom-headers", str(value)])
+        elif flag == 'nuclei_user_agent' and value:
+            cmd.extend(["--nuclei-user-agent", str(value)])
+        elif flag == 'vars' and value:
+            cmd.extend(["--vars", str(value)])
+        elif flag == 'store_resp' and value:
+            cmd.append("--store-resp")
+        elif flag == 'store_resp_dir' and value:
+            cmd.extend(["--store-resp-dir", str(value)])
+        elif flag == 'interactsh_server' and value:
+            cmd.extend(["--interactsh-server", str(value)])
+        elif flag == 'no_interactsh' and value:
+            cmd.append("--no-interactsh")
+        elif flag == 'interactsh_token' and value:
+            cmd.extend(["--interactsh-token", str(value)])
+        elif flag == 'nuclei_json' and value:
+            cmd.append("--nuclei-json")
+        elif flag == 'nuclei_csv' and value:
+            cmd.append("--nuclei-csv")
+        elif flag == 'markdown_export' and value:
+            cmd.extend(["--markdown-export", str(value)])
+        elif flag == 'sarif_export' and value:
+            cmd.extend(["--sarif-export", str(value)])
+    
+    print(f"\nStarting {scan_type.upper()} scan...")
+    print(f"Command: {' '.join(cmd)}")
+    print("\nScan output will appear below:")
+    print("="*60)
+    
+    try:
+        # Execute the scan with real-time output
+        result = subprocess.run(cmd, cwd=os.getcwd())
+        
+        print("="*60)
+        if result.returncode == 0:
+            print(f"SUCCESS: {scan_type.upper()} scan completed successfully!")
+        else:
+            print(f"WARNING: {scan_type.upper()} scan completed with exit code {result.returncode}")
+        
+        return result.returncode == 0
+        
+    except KeyboardInterrupt:
+        print("\nWARNING: Scan interrupted by user (Ctrl+C)")
+        return False
+    except FileNotFoundError:
+        print("ERROR: workflow.py not found. Please ensure all files are present.")
+        return False
+    except Exception as e:
+        print(f"ERROR: Failed to execute scan: {e}")
+        return False# Add tool-specific flags for Naabu
+    if scan_type == "naabu":
+        if kwargs.get('threads'):
+            cmd.extend(["--threads", str(kwargs['threads'])])
+        if kwargs.get('rate'):
+            cmd.extend(["--rate", str(kwargs['rate'])])
+        if kwargs.get('timeout'):
+            cmd.extend(["--naabu-timeout", str(kwargs['timeout'])])
+        if kwargs.get('retries'):
+            cmd.extend(["--naabu-retries", str(kwargs['retries'])])
+        if kwargs.get('exclude_ports'):
+            cmd.extend(["--exclude-ports", kwargs['exclude_ports']])
+        if kwargs.get('top_ports'):
+            cmd.extend(["--top-ports", str(kwargs['top_ports'])])
+        if kwargs.get('scan_type'):
+            cmd.extend(["--scan-type", kwargs['scan_type']])
+        if kwargs.get('source_port'):
+            cmd.extend(["--source-port", str(kwargs['source_port'])])
+        if kwargs.get('interface'):
+            cmd.extend(["--interface", kwargs['interface']])
+        if kwargs.get('skip_host_discovery'):
+            cmd.append("--no-ping")
+        if kwargs.get('ping'):
+            cmd.append("--ping")
+        if kwargs.get('host_discovery'):
+            cmd.append("--host-discovery")
+        if kwargs.get('debug'):
+            cmd.append("--naabu-debug")
+        if kwargs.get('json'):
+            cmd.append("--naabu-json")
+        if kwargs.get('csv'):
+            cmd.append("--naabu-csv")
+      # Add tool-specific flags for HTTPX
+    elif scan_type == "httpx":
+        if kwargs.get('title'):
+            cmd.append("--title")
+        if kwargs.get('status_code'):
+            cmd.append("--status-code")
+        if kwargs.get('tech_detect'):
+            cmd.append("--tech-detect")
+        if kwargs.get('web_server'):
+            cmd.append("--web-server")
+        if kwargs.get('content_length'):
+            cmd.append("--content-length")
+        if kwargs.get('response_time'):
+            cmd.append("--response-time")
+        if kwargs.get('follow_redirects'):
+            cmd.append("--follow-redirects")
+        if kwargs.get('rate_limit'):
+            cmd.extend(["--rate-limit", str(kwargs['rate_limit'])])
+        if kwargs.get('timeout'):
+            cmd.extend(["--httpx-timeout", str(kwargs['timeout'])])
+        if kwargs.get('threads'):
+            cmd.extend(["--httpx-threads", str(kwargs['threads'])])
+        if kwargs.get('retries'):
+            cmd.extend(["--httpx-retries", str(kwargs['retries'])])
+        if kwargs.get('method'):
+            cmd.extend(["--method", kwargs['method']])
+        if kwargs.get('custom_headers'):
+            cmd.extend(["--headers", kwargs['custom_headers']])
+        if kwargs.get('user_agent'):
+            cmd.extend(["--user-agent", kwargs['user_agent']])
+        if kwargs.get('filter_code'):
+            cmd.extend(["--filter-code", kwargs['filter_code']])
+        if kwargs.get('match_code'):
+            cmd.extend(["--match-code", kwargs['match_code']])
+        if kwargs.get('filter_length'):
+            cmd.extend(["--filter-length", kwargs['filter_length']])
+        if kwargs.get('no_color'):
+            cmd.append("--no-color")
+        if kwargs.get('json'):
+            cmd.append("--httpx-json")
+        if kwargs.get('csv'):
+            cmd.append("--httpx-csv")
+      # Add tool-specific flags for Nuclei
+    elif scan_type == "nuclei":
+        if kwargs.get('tags'):
+            cmd.extend(["--tags", kwargs['tags']])
+        if kwargs.get('severity'):
+            cmd.extend(["--severity", kwargs['severity']])
+        if kwargs.get('template_path'):
+            cmd.extend(["--template-path", kwargs['template_path']])
+        if kwargs.get('exclude_tags'):
+            cmd.extend(["--exclude-tags", kwargs['exclude_tags']])
+        if kwargs.get('exclude_severity'):
+            cmd.extend(["--exclude-severity", kwargs['exclude_severity']])
+        if kwargs.get('exclude_templates'):
+            cmd.extend(["--exclude-templates", kwargs['exclude_templates']])
+        if kwargs.get('concurrency'):
+            cmd.extend(["--concurrency", str(kwargs['concurrency'])])
+        if kwargs.get('parallel'):
+            cmd.extend(["--parallel-processing", str(kwargs['parallel'])])
+        if kwargs.get('rate_limit'):
+            cmd.extend(["--nuclei-rate-limit", str(kwargs['rate_limit'])])
+        if kwargs.get('timeout'):
+            cmd.extend(["--nuclei-timeout", str(kwargs['timeout'])])
+        if kwargs.get('retries'):
+            cmd.extend(["--nuclei-retries", str(kwargs['retries'])])
+        if kwargs.get('custom_headers'):
+            cmd.extend(["--custom-headers", kwargs['custom_headers']])
+        if kwargs.get('custom_vars'):
+            cmd.extend(["--vars", kwargs['custom_vars']])
+        if kwargs.get('user_agent'):
+            cmd.extend(["--nuclei-user-agent", kwargs['user_agent']])
+        if kwargs.get('follow_redirects'):
+            cmd.append("--follow-redirects")
+        if kwargs.get('disable_redirects'):
+            cmd.append("--disable-redirects")
+        if kwargs.get('max_redirects'):
+            cmd.extend(["--max-redirects", str(kwargs['max_redirects'])])
+        if kwargs.get('proxy'):
+            cmd.extend(["--proxy", kwargs['proxy']])
+        if kwargs.get('disable_interactsh'):
+            cmd.append("--no-interactsh")
+        if kwargs.get('interactsh_url'):
+            cmd.extend(["--interactsh-server", kwargs['interactsh_url']])
+        if kwargs.get('interactsh_token'):
+            cmd.extend(["--interactsh-token", kwargs['interactsh_token']])
+        if kwargs.get('store_response'):
+            cmd.append("--store-resp")
+        if kwargs.get('store_resp_dir'):
+            cmd.extend(["--store-resp-dir", kwargs['store_resp_dir']])
+        if kwargs.get('include_response'):
+            cmd.append("--include-rr")
+        if kwargs.get('debug'):
+            cmd.append("--debug")
+        if kwargs.get('no_color'):
+            cmd.append("--no-color")
+        if kwargs.get('json'):
+            cmd.append("--nuclei-json")
+        if kwargs.get('csv'):
+            cmd.append("--nuclei-csv")
+        if kwargs.get('markdown_export'):
+            cmd.extend(["--markdown-export", kwargs['markdown_export']])
+        if kwargs.get('sarif_export'):
+            cmd.extend(["--sarif-export", kwargs['sarif_export']])
+    
+    # Add verbose flags if specified
+    if kwargs.get('tool_silent'):
+        cmd.append("--tool-silent")
+    if kwargs.get('verbose'):
+        cmd.append("--verbose")
     
     # Enhanced pre-scan information
     print(f"\n{'='*80}")
@@ -658,6 +1076,810 @@ def install_tools():
     
     input("\nPress Enter to continue...")
 
+def get_naabu_flags():
+    """Interactive flag selection for naabu with single-flag selection system."""
+    print("\n" + "="*60)
+    print("NAABU PORT SCANNER - FLAG CONFIGURATION")
+    print("="*60)
+    print("Select scanning parameters one by one. Enter -0 when finished.")
+    print("Enter -1 to see the menu again after selecting a flag.")
+    print()
+    
+    selected_flags = {}
+    
+    while True:
+        print("\nNAABU FLAGS (Single selection - choose one):")
+        print("  -p  | Ports to scan (e.g., '80,443,8000-9000' or 'top-1000')")
+        print("  -s  | Stealth mode (reduces rate and uses SYN scan)")
+        print("  -t  | Threads/Concurrency (default: 25)")
+        print("  -r  | Rate limit (packets per second)")
+        print("  -e  | Exclude specific ports")
+        print("  -T  | Timeout per port (milliseconds)")
+        print("  -R  | Retries for failed ports")
+        print("  -S  | Scan type (syn/connect)")
+        print("  -I  | Network interface to use")
+        print("  -P  | Source port for scanning")
+        print("  -H  | Host discovery mode")
+        print("  -n  | Skip ping discovery (no ping)")
+        print("  -v  | Verbose output")
+        print("  -j  | JSON output format")
+        print("  -c  | CSV output format")
+        print("  -d  | Debug mode")
+        print("  -0  | FINISH flag selection")
+        print("  -1  | Show this menu again")
+        
+        if selected_flags:
+            print(f"\nCurrently selected: {', '.join(selected_flags.keys())}")
+        
+        choice = input("\nSelect flag: ").strip()
+        
+        if choice == "-0":
+            break
+        elif choice == "-1":
+            continue
+        elif choice == "-p":
+            print("\nPort Selection Options:")
+            print("  1. Specific ports (e.g., 80,443,8080)")
+            print("  2. Port range (e.g., 1000-2000)")
+            print("  3. Top ports (e.g., top-100, top-1000)")
+            print("  4. All ports (1-65535)")
+            port_choice = input("Choose option (1-4): ").strip()
+            
+            if port_choice == "1":
+                ports = input("Enter specific ports (comma-separated): ").strip()
+                if ports:
+                    selected_flags['ports'] = ports
+                    print(f"Selected ports: {ports}")
+            elif port_choice == "2":
+                start_port = input("Start port: ").strip()
+                end_port = input("End port: ").strip()
+                if start_port and end_port:
+                    try:
+                        if 1 <= int(start_port) <= int(end_port) <= 65535:
+                            selected_flags['ports'] = f"{start_port}-{end_port}"
+                            print(f"Selected port range: {start_port}-{end_port}")
+                        else:
+                            print("ERROR: Invalid port range")
+                    except ValueError:
+                        print("ERROR: Ports must be numbers")
+            elif port_choice == "3":
+                top_ports = input("Enter number (e.g., 100, 1000): ").strip()
+                if top_ports:
+                    selected_flags['ports'] = f"top-{top_ports}"
+                    print(f"Selected top {top_ports} ports")
+            elif port_choice == "4":
+                selected_flags['ports'] = "1-65535"
+                print("Selected all ports (1-65535)")
+                
+        elif choice == "-s":
+            selected_flags['stealth'] = True
+            print("STEALTH MODE enabled:")
+            print("  - Reduced scan rate (10 packets/sec)")
+            print("  - SYN scan type for minimal footprint")
+            print("  - Lower thread count (25)")
+            print("  - Single retry attempt")
+            
+        elif choice == "-t":
+            threads = input("Enter thread count (1-100, default 25): ").strip()
+            if threads:
+                try:
+                    thread_count = int(threads)
+                    if 1 <= thread_count <= 100:
+                        selected_flags['threads'] = thread_count
+                        print(f"Threads set to: {thread_count}")
+                    else:
+                        print("ERROR: Threads must be between 1-100")
+                except ValueError:
+                    print("ERROR: Thread count must be a number")
+                    
+        elif choice == "-r":
+            rate = input("Enter rate limit (packets/sec, default 1000): ").strip()
+            if rate:
+                try:
+                    rate_limit = int(rate)
+                    if 1 <= rate_limit <= 10000:
+                        selected_flags['rate'] = rate_limit
+                        print(f"Rate limit set to: {rate_limit} packets/sec")
+                    else:
+                        print("ERROR: Rate must be between 1-10000")
+                except ValueError:
+                    print("ERROR: Rate must be a number")
+                    
+        elif choice == "-e":
+            exclude = input("Enter ports to exclude (comma-separated): ").strip()
+            if exclude:
+                selected_flags['exclude_ports'] = exclude
+                print(f"Excluding ports: {exclude}")
+                
+        elif choice == "-T":
+            timeout = input("Enter timeout in milliseconds (default 5000): ").strip()
+            if timeout:
+                try:
+                    timeout_ms = int(timeout)
+                    if 100 <= timeout_ms <= 30000:
+                        selected_flags['naabu_timeout'] = timeout_ms
+                        print(f"Timeout set to: {timeout_ms}ms")
+                    else:
+                        print("ERROR: Timeout must be between 100-30000ms")
+                except ValueError:
+                    print("ERROR: Timeout must be a number")
+                    
+        elif choice == "-R":
+            retries = input("Enter retry count (0-5, default 2): ").strip()
+            if retries:
+                try:
+                    retry_count = int(retries)
+                    if 0 <= retry_count <= 5:
+                        selected_flags['naabu_retries'] = retry_count
+                        print(f"Retries set to: {retry_count}")
+                    else:
+                        print("ERROR: Retries must be between 0-5")
+                except ValueError:
+                    print("ERROR: Retries must be a number")
+                    
+        elif choice == "-S":
+            print("Scan type options:")
+            print("  1. SYN scan (faster, requires root)")
+            print("  2. Connect scan (compatible, no root needed)")
+            scan_choice = input("Choose scan type (1-2): ").strip()
+            if scan_choice == "1":
+                selected_flags['scan_type'] = 'syn'
+                print("Selected SYN scan (requires root privileges)")
+            elif scan_choice == "2":
+                selected_flags['scan_type'] = 'connect'
+                print("Selected Connect scan (no root required)")
+                
+        elif choice == "-I":
+            interface = input("Enter network interface (e.g., eth0, wlan0): ").strip()
+            if interface:
+                selected_flags['interface'] = interface
+                print(f"Interface set to: {interface}")
+                
+        elif choice == "-P":
+            source_port = input("Enter source port (1-65535): ").strip()
+            if source_port:
+                try:
+                    port_num = int(source_port)
+                    if 1 <= port_num <= 65535:
+                        selected_flags['source_port'] = port_num
+                        print(f"Source port set to: {port_num}")
+                    else:
+                        print("ERROR: Port must be between 1-65535")
+                except ValueError:
+                    print("ERROR: Port must be a number")
+                    
+        elif choice == "-H":
+            selected_flags['host_discovery'] = True
+            print("Host discovery enabled")
+            
+        elif choice == "-n":
+            selected_flags['no_ping'] = True
+            print("Ping discovery disabled")
+            
+        elif choice == "-v":
+            selected_flags['naabu_debug'] = True
+            print("Verbose/debug output enabled")
+            
+        elif choice == "-j":
+            selected_flags['naabu_json'] = True
+            print("JSON output format enabled")
+            
+        elif choice == "-c":
+            selected_flags['naabu_csv'] = True
+            print("CSV output format enabled")
+            
+        elif choice == "-d":
+            selected_flags['naabu_debug'] = True
+            print("Debug mode enabled")
+            
+        else:
+            print("ERROR: Invalid option. Use -0 to finish, -1 to see menu.")
+    
+    print(f"\nNaabu configuration completed with {len(selected_flags)} flags selected.")
+    return selected_flags
+
+def get_httpx_flags():
+    """Interactive flag selection for httpx with single-flag selection system."""
+    print("\n" + "="*60)
+    print("HTTPX HTTP SERVICE DETECTION - FLAG CONFIGURATION")
+    print("="*60)
+    print("Select HTTP analysis parameters one by one. Enter -0 when finished.")
+    print("Enter -1 to see the menu again after selecting a flag.")
+    print()
+    
+    selected_flags = {}
+    
+    while True:
+        print("\nHTTPX FLAGS (Single selection - choose one):")
+        print("  -t  | Title extraction")
+        print("  -s  | Status code display")
+        print("  -T  | Technology detection")
+        print("  -w  | Web server information")
+        print("  -f  | Follow HTTP redirects")
+        print("  -r  | Rate limit (requests per second)")
+        print("  -c  | Content length display")
+        print("  -R  | Response time measurement")
+        print("  -M  | HTTP method (GET, POST, etc.)")
+        print("  -U  | Custom User-Agent string")
+        print("  -H  | Custom HTTP headers")
+        print("  -F  | Filter by status codes")
+        print("  -L  | Filter by content length")
+        print("  -m  | Match specific status codes")
+        print("  -l  | Match specific content lengths")
+        print("  -p  | HTTP proxy configuration")
+        print("  -d  | Disable redirects")
+        print("  -x  | Maximum redirects")
+        print("  -j  | JSON output format")
+        print("  -v  | CSV output format")
+        print("  -0  | FINISH flag selection")
+        print("  -1  | Show this menu again")
+        
+        if selected_flags:
+            print(f"\nCurrently selected: {', '.join(selected_flags.keys())}")
+        
+        choice = input("\nSelect flag: ").strip()
+        
+        if choice == "-0":
+            break
+        elif choice == "-1":
+            continue
+        elif choice == "-t":
+            selected_flags['title'] = True
+            print("Title extraction enabled")
+        elif choice == "-s":
+            selected_flags['status_code'] = True
+            print("Status code display enabled")
+        elif choice == "-T":
+            selected_flags['tech_detect'] = True
+            print("Technology detection enabled")
+        elif choice == "-w":
+            selected_flags['web_server'] = True
+            print("Web server information enabled")
+        elif choice == "-f":
+            selected_flags['follow_redirects'] = True
+            print("Follow redirects enabled")
+        elif choice == "-r":
+            rate = input("Enter rate limit (requests/sec, default 150): ").strip()
+            if rate:
+                try:
+                    rate_limit = int(rate)
+                    if 1 <= rate_limit <= 1000:
+                        selected_flags['rate_limit'] = rate_limit
+                        print(f"Rate limit set to: {rate_limit} req/sec")
+                    else:
+                        print("ERROR: Rate must be between 1-1000")
+                except ValueError:
+                    print("ERROR: Rate must be a number")
+        elif choice == "-c":
+            selected_flags['content_length'] = True
+            print("Content length display enabled")
+        elif choice == "-R":
+            selected_flags['response_time'] = True
+            print("Response time measurement enabled")
+        elif choice == "-M":
+            method = input("Enter HTTP method (GET, POST, PUT, etc.): ").strip().upper()
+            if method in ['GET', 'POST', 'PUT', 'DELETE', 'HEAD', 'OPTIONS', 'PATCH']:
+                selected_flags['method'] = method
+                print(f"HTTP method set to: {method}")
+            else:
+                print("ERROR: Invalid HTTP method")
+        elif choice == "-U":
+            user_agent = input("Enter User-Agent string: ").strip()
+            if user_agent:
+                selected_flags['user_agent'] = user_agent
+                print(f"User-Agent set to: {user_agent}")
+        elif choice == "-H":
+            headers = input("Enter headers (comma-separated, e.g., 'X-API-Key: value,Accept: application/json'): ").strip()
+            if headers:
+                selected_flags['headers'] = headers
+                print(f"Custom headers set: {headers}")
+        elif choice == "-F":
+            filter_codes = input("Enter status codes to filter (comma-separated, e.g., 404,500): ").strip()
+            if filter_codes:
+                selected_flags['filter_code'] = filter_codes
+                print(f"Filter codes set: {filter_codes}")
+        elif choice == "-L":
+            filter_length = input("Enter content lengths to filter (comma-separated): ").strip()
+            if filter_length:
+                selected_flags['filter_length'] = filter_length
+                print(f"Filter lengths set: {filter_length}")
+        elif choice == "-m":
+            match_codes = input("Enter status codes to match (comma-separated): ").strip()
+            if match_codes:
+                selected_flags['match_code'] = match_codes
+                print(f"Match codes set: {match_codes}")
+        elif choice == "-l":
+            match_length = input("Enter content lengths to match (comma-separated): ").strip()
+            if match_length:
+                selected_flags['match_length'] = match_length
+                print(f"Match lengths set: {match_length}")
+        elif choice == "-p":
+            proxy = input("Enter proxy URL (e.g., http://127.0.0.1:8080): ").strip()
+            if proxy:
+                selected_flags['proxy'] = proxy
+                print(f"Proxy set to: {proxy}")
+        elif choice == "-d":
+            selected_flags['disable_redirects'] = True
+            print("HTTP redirects disabled")
+        elif choice == "-x":
+            max_redirects = input("Enter maximum redirects (default 10): ").strip()
+            if max_redirects:
+                try:
+                    max_redir = int(max_redirects)
+                    if 0 <= max_redir <= 20:
+                        selected_flags['max_redirects'] = max_redir
+                        print(f"Maximum redirects set to: {max_redir}")
+                    else:
+                        print("ERROR: Max redirects must be between 0-20")
+                except ValueError:
+                    print("ERROR: Max redirects must be a number")
+        elif choice == "-j":
+            selected_flags['httpx_json'] = True
+            print("JSON output format enabled")
+        elif choice == "-v":
+            selected_flags['httpx_csv'] = True
+            print("CSV output format enabled")
+        else:
+            print("ERROR: Invalid option. Use -0 to finish, -1 to see menu.")
+    
+    print(f"\nHTTPX configuration completed with {len(selected_flags)} flags selected.")
+    return selected_flags
+
+def get_nuclei_flags():
+    """Interactive flag selection for nuclei with single-flag selection system."""
+    print("\n" + "="*60)
+    print("NUCLEI VULNERABILITY SCANNER - FLAG CONFIGURATION")
+    print("="*60)
+    print("Select vulnerability scanning parameters one by one. Enter -0 when finished.")
+    print("Enter -1 to see the menu again after selecting a flag.")
+    print()
+    
+    selected_flags = {}
+    
+    while True:
+        print("\nNUCLEI FLAGS (Single selection - choose one):")
+        print("  -t  | Custom templates/template directory")
+        print("  -T  | Template tags (e.g., cve, rce, sqli)")
+        print("  -s  | Severity filter (critical, high, medium, low)")
+        print("  -e  | Exclude tags")
+        print("  -E  | Exclude templates")
+        print("  -c  | Concurrency/parallel templates")
+        print("  -r  | Rate limit (requests per second)")
+        print("  -R  | Timeout for requests")
+        print("  -x  | Number of retries")
+        print("  -b  | Bulk size for parallel processing")
+        print("  -p  | HTTP proxy")
+        print("  -H  | Custom headers")
+        print("  -U  | Custom User-Agent")
+        print("  -v  | Custom variables")
+        print("  -S  | Store HTTP responses")
+        print("  -d  | Store response directory")
+        print("  -i  | Interactsh server URL")
+        print("  -I  | Disable Interactsh")
+        print("  -k  | Interactsh token")
+        print("  -D  | Disable HTTP redirects")
+        print("  -m  | Maximum redirects")
+        print("  -j  | JSON output format")
+        print("  -C  | CSV output format")
+        print("  -M  | Markdown export")
+        print("  -F  | SARIF export")
+        print("  -0  | FINISH flag selection")
+        print("  -1  | Show this menu again")
+        
+        if selected_flags:
+            print(f"\nCurrently selected: {', '.join(selected_flags.keys())}")
+        
+        choice = input("\nSelect flag: ").strip()
+        
+        if choice == "-0":
+            break
+        elif choice == "-1":
+            continue
+        elif choice == "-t":
+            print("Template options:")
+            print("  1. Specific template file")
+            print("  2. Template directory")
+            print("  3. Built-in template (e.g., cves/, technologies/)")
+            template_choice = input("Choose option (1-3): ").strip()
+            
+            if template_choice == "1":
+                template_file = input("Enter template file path: ").strip()
+                if template_file:
+                    selected_flags['templates'] = template_file
+                    print(f"Template file set: {template_file}")
+            elif template_choice == "2":
+                template_dir = input("Enter template directory path: ").strip()
+                if template_dir:
+                    selected_flags['template_path'] = template_dir
+                    print(f"Template directory set: {template_dir}")
+            elif template_choice == "3":
+                built_in = input("Enter built-in template path (e.g., cves/, technologies/): ").strip()
+                if built_in:
+                    selected_flags['templates'] = built_in
+                    print(f"Built-in template set: {built_in}")
+                    
+        elif choice == "-T":
+            print("Common tags:")
+            print("  cve, rce, sqli, xss, lfi, rfi, ssrf, xxe")
+            print("  auth-bypass, exposure, misconfiguration")
+            tags = input("Enter tags (comma-separated): ").strip()
+            if tags:
+                selected_flags['tags'] = tags
+                print(f"Tags set: {tags}")
+                
+        elif choice == "-s":
+            print("Severity levels:")
+            print("  1. critical")
+            print("  2. high") 
+            print("  3. medium")
+            print("  4. low")
+            print("  5. critical,high")
+            print("  6. critical,high,medium")
+            print("  7. all (critical,high,medium,low)")
+            severity_choice = input("Choose severity (1-7): ").strip()
+            
+            severity_map = {
+                "1": "critical",
+                "2": "high", 
+                "3": "medium",
+                "4": "low",
+                "5": "critical,high",
+                "6": "critical,high,medium",
+                "7": "critical,high,medium,low"
+            }
+            
+            if severity_choice in severity_map:
+                selected_flags['severity'] = severity_map[severity_choice]
+                print(f"Severity filter set: {severity_map[severity_choice]}")
+            else:
+                custom_severity = input("Enter custom severity (comma-separated): ").strip()
+                if custom_severity:
+                    selected_flags['severity'] = custom_severity
+                    print(f"Custom severity set: {custom_severity}")
+                    
+        elif choice == "-e":
+            exclude_tags = input("Enter tags to exclude (comma-separated): ").strip()
+            if exclude_tags:
+                selected_flags['exclude_tags'] = exclude_tags
+                print(f"Exclude tags set: {exclude_tags}")
+                
+        elif choice == "-E":
+            exclude_templates = input("Enter templates to exclude: ").strip()
+            if exclude_templates:
+                selected_flags['exclude_templates'] = exclude_templates
+                print(f"Exclude templates set: {exclude_templates}")
+                
+        elif choice == "-c":
+            concurrency = input("Enter concurrency (1-50, default 10): ").strip()
+            if concurrency:
+                try:
+                    conc_val = int(concurrency)
+                    if 1 <= conc_val <= 50:
+                        selected_flags['concurrency'] = conc_val
+                        print(f"Concurrency set to: {conc_val}")
+                    else:
+                        print("ERROR: Concurrency must be between 1-50")
+                except ValueError:
+                    print("ERROR: Concurrency must be a number")
+                    
+        elif choice == "-r":
+            rate = input("Enter rate limit (req/sec, default 50): ").strip()
+            if rate:
+                try:
+                    rate_limit = int(rate)
+                    if 1 <= rate_limit <= 500:
+                        selected_flags['nuclei_rate_limit'] = rate_limit
+                        print(f"Rate limit set to: {rate_limit} req/sec")
+                    else:
+                        print("ERROR: Rate must be between 1-500")
+                except ValueError:
+                    print("ERROR: Rate must be a number")
+                    
+        elif choice == "-R":
+            timeout = input("Enter timeout in seconds (default 10): ").strip()
+            if timeout:
+                try:
+                    timeout_val = int(timeout)
+                    if 1 <= timeout_val <= 60:
+                        selected_flags['nuclei_timeout'] = timeout_val
+                        print(f"Timeout set to: {timeout_val}s")
+                    else:
+                        print("ERROR: Timeout must be between 1-60 seconds")
+                except ValueError:
+                    print("ERROR: Timeout must be a number")
+                    
+        elif choice == "-x":
+            retries = input("Enter retry count (0-5, default 2): ").strip()
+            if retries:
+                try:
+                    retry_count = int(retries)
+                    if 0 <= retry_count <= 5:
+                        selected_flags['nuclei_retries'] = retry_count
+                        print(f"Retries set to: {retry_count}")
+                    else:
+                        print("ERROR: Retries must be between 0-5")
+                except ValueError:
+                    print("ERROR: Retries must be a number")
+                    
+        elif choice == "-b":
+            bulk_size = input("Enter bulk size (1-50, default 10): ").strip()
+            if bulk_size:
+                try:
+                    bulk_val = int(bulk_size)
+                    if 1 <= bulk_val <= 50:
+                        selected_flags['parallel_processing'] = bulk_val
+                        print(f"Bulk size set to: {bulk_val}")
+                    else:
+                        print("ERROR: Bulk size must be between 1-50")
+                except ValueError:
+                    print("ERROR: Bulk size must be a number")
+                    
+        elif choice == "-p":
+            proxy = input("Enter proxy URL (e.g., http://127.0.0.1:8080): ").strip()
+            if proxy:
+                selected_flags['proxy'] = proxy
+                print(f"Proxy set to: {proxy}")
+                
+        elif choice == "-H":
+            headers = input("Enter custom headers (comma-separated): ").strip()
+            if headers:
+                selected_flags['custom_headers'] = headers
+                print(f"Custom headers set: {headers}")
+                
+        elif choice == "-U":
+            user_agent = input("Enter User-Agent string: ").strip()
+            if user_agent:
+                selected_flags['nuclei_user_agent'] = user_agent
+                print(f"User-Agent set: {user_agent}")
+                
+        elif choice == "-v":
+            variables = input("Enter custom variables (key=value format): ").strip()
+            if variables:
+                selected_flags['vars'] = variables
+                print(f"Variables set: {variables}")
+                
+        elif choice == "-S":
+            selected_flags['store_resp'] = True
+            print("HTTP response storage enabled")
+            
+        elif choice == "-d":
+            resp_dir = input("Enter response storage directory: ").strip()
+            if resp_dir:
+                selected_flags['store_resp_dir'] = resp_dir
+                print(f"Response directory set: {resp_dir}")
+                
+        elif choice == "-i":
+            interactsh_server = input("Enter Interactsh server URL: ").strip()
+            if interactsh_server:
+                selected_flags['interactsh_server'] = interactsh_server
+                print(f"Interactsh server set: {interactsh_server}")
+                
+        elif choice == "-I":
+            selected_flags['no_interactsh'] = True
+            print("Interactsh disabled")
+            
+        elif choice == "-k":
+            interactsh_token = input("Enter Interactsh token: ").strip()
+            if interactsh_token:
+                selected_flags['interactsh_token'] = interactsh_token
+                print("Interactsh token configured")
+                
+        elif choice == "-D":
+            selected_flags['disable_redirects'] = True
+            print("HTTP redirects disabled")
+            
+        elif choice == "-m":
+            max_redirects = input("Enter maximum redirects (default 10): ").strip()
+            if max_redirects:
+                try:
+                    max_redir = int(max_redirects)
+                    if 0 <= max_redir <= 20:
+                        selected_flags['max_redirects'] = max_redir
+                        print(f"Maximum redirects set to: {max_redir}")
+                    else:
+                        print("ERROR: Max redirects must be between 0-20")
+                except ValueError:
+                    print("ERROR: Max redirects must be a number")
+                
+        elif choice == "-j":
+            selected_flags['nuclei_json'] = True
+            print("JSON output format enabled")
+            
+        elif choice == "-C":
+            selected_flags['nuclei_csv'] = True
+            print("CSV output format enabled")
+            
+        elif choice == "-M":
+            markdown_file = input("Enter Markdown export file path: ").strip()
+            if markdown_file:
+                selected_flags['markdown_export'] = markdown_file
+                print(f"Markdown export set: {markdown_file}")
+                
+        elif choice == "-F":
+            sarif_file = input("Enter SARIF export file path: ").strip()
+            if sarif_file:
+                selected_flags['sarif_export'] = sarif_file
+                print(f"SARIF export set: {sarif_file}")
+                
+        else:
+            print("ERROR: Invalid option. Use -0 to finish, -1 to see menu.")
+    
+    print(f"\nNuclei configuration completed with {len(selected_flags)} flags selected.")
+    return selected_flags
+
+def explain_scan_modes():
+    """Explain the difference between Silent and Stealth modes clearly."""
+    print("\n" + "="*70)
+    print("SCAN MODE EXPLANATIONS")
+    print("="*70)
+    print()
+    print("SILENT MODE:")
+    print("  - Controls OUTPUT DISPLAY only")
+    print("  - Tools run with minimal console output") 
+    print("  - Reduces screen clutter and noise")
+    print("  - Does NOT affect network behavior")
+    print("  - Scan speed and intensity remain normal")
+    print("  - Used for cleaner logs and automated scripts")
+    print()
+    print("STEALTH MODE:")
+    print("  - Controls NETWORK BEHAVIOR")
+    print("  - Reduces scan intensity and speed")
+    print("  - Uses lower packet rates and connection limits")
+    print("  - Aims to avoid detection by security systems")
+    print("  - May take significantly longer to complete")
+    print("  - Minimizes network footprint and signatures")
+    print()
+    print("KEY DIFFERENCES:")
+    print("  Silent = Quiet output, normal scanning")
+    print("  Stealth = Discreet scanning, normal output")
+    print()
+    print("RECOMMENDATION:")
+    print("  - Use STEALTH for production targets")
+    print("  - Use SILENT for cleaner logs/automation")
+    print("  - Both can be used together if needed")
+    print("="*70)
+
+def validate_target_input(target):
+    """Validate target input with comprehensive checks."""
+    if not target or target.isspace():
+        return False, "Target cannot be empty or whitespace only"
+    
+    target = target.strip()
+    
+    # Handle URLs by extracting the domain/IP
+    if target.startswith(('http://', 'https://')):
+        try:
+            parsed = urllib.parse.urlparse(target)
+            target = parsed.hostname or parsed.netloc
+            if not target:
+                return False, "Could not extract hostname from URL"
+        except Exception:
+            return False, "Invalid URL format"
+    
+    # Check for localhost variants
+    if target.lower() in ['localhost', 'local']:
+        return True, '127.0.0.1'
+    
+    # Try to validate as IP address
+    try:
+        ip_obj = ipaddress.ip_address(target)
+        if ip_obj.is_private:
+            print(f"NOTE: {target} is a private IP address")
+        elif ip_obj.is_loopback:
+            print(f"NOTE: {target} is a loopback address")
+        elif ip_obj.is_link_local:
+            print(f"NOTE: {target} is a link-local address")
+        return True, str(ip_obj)
+    except ValueError:
+        pass
+    
+    # Validate as domain name
+    # Basic domain validation
+    if len(target) > 255:
+        return False, "Domain name too long (max 255 characters)"
+    
+    if target.endswith('.'):
+        target = target[:-1]  # Strip trailing dot
+    
+    # Check for invalid characters
+    if not re.match(r'^[a-zA-Z0-9.-]+$', target):
+        return False, "Domain contains invalid characters"
+    
+    # Check domain parts
+    parts = target.split('.')
+    if len(parts) < 2:
+        return False, "Domain must have at least one dot (e.g., example.com)"
+    
+    for part in parts:
+        if not part:
+            return False, "Domain cannot have empty parts (double dots)"
+        if len(part) > 63:
+            return False, "Domain part too long (max 63 characters per part)"
+        if part.startswith('-') or part.endswith('-'):
+            return False, "Domain parts cannot start or end with hyphens"
+    
+    # Check TLD
+    if len(parts[-1]) < 2:
+        return False, "Top-level domain too short"
+    
+    return True, target
+
+def get_safe_scan_confirmation(target, scan_type):
+    """Get user confirmation with legal notice."""
+    print("\n" + "!"*60)
+    print("LEGAL NOTICE AND AUTHORIZATION REQUIRED")
+    print("!"*60)
+    print()
+    print("You are about to perform a security scan on:")
+    print(f"  TARGET: {target}")
+    print(f"  SCAN TYPE: {scan_type}")
+    print()
+    print("IMPORTANT LEGAL REQUIREMENTS:")
+    print("  1. You must OWN the target system, OR")
+    print("  2. Have EXPLICIT written permission to scan it")
+    print("  3. Unauthorized scanning may violate laws")
+    print("  4. You are responsible for compliance with local laws")
+    print()
+    print("CONFIRM AUTHORIZATION:")
+    
+    while True:
+        confirm = input("Do you have authorization to scan this target? [y/N]: ").strip().lower()
+        if confirm in ['y', 'yes']:
+            print("Authorization confirmed. Proceeding with scan...")
+            return True
+        elif confirm in ['n', 'no', '']:
+            print("Scan cancelled. Authorization is required.")
+            return False
+        else:
+            print("Please enter 'y' for yes or 'n' for no.")
+
+def show_scan_type_help(scan_type):
+    """Show detailed help for each scan type."""
+    print(f"\n{'='*60}")
+    print(f"HELP: {scan_type.upper()} SCAN")
+    print("="*60)
+    
+    if scan_type == "naabu":
+        print("NAABU PORT SCANNER:")
+        print("  Purpose: Discover open ports and services")
+        print("  Speed: Fast (can scan 65K ports in seconds)")
+        print("  Output: List of open ports with optional service info")
+        print("  Best for: Initial reconnaissance, service discovery")
+        print()
+        print("COMMON USE CASES:")
+        print("  - Find web servers (ports 80, 443, 8080, etc.)")
+        print("  - Discover SSH servers (port 22)")
+        print("  - Identify database services (3306, 5432, 1433)")
+        print("  - Locate admin interfaces on uncommon ports")
+        
+    elif scan_type == "httpx":
+        print("HTTPX HTTP SERVICE DETECTION:")
+        print("  Purpose: Analyze HTTP/HTTPS services")
+        print("  Speed: Medium (depends on number of services)")
+        print("  Output: Web server info, titles, technologies")
+        print("  Best for: Web application enumeration")
+        print()
+        print("COMMON USE CASES:")
+        print("  - Identify web applications and technologies")
+        print("  - Extract page titles for quick assessment")
+        print("  - Discover server types (Apache, Nginx, IIS)")
+        print("  - Find hidden or unusual web services")
+        
+    elif scan_type == "nuclei":
+        print("NUCLEI VULNERABILITY SCANNER:")
+        print("  Purpose: Detect security vulnerabilities")
+        print("  Speed: Slow (thorough security testing)")
+        print("  Output: Detailed vulnerability reports")
+        print("  Best for: Security assessment, CVE detection")
+        print()
+        print("COMMON USE CASES:")
+        print("  - Find known CVEs and security issues")
+        print("  - Detect misconfigurations")
+        print("  - Identify exposed sensitive files")
+        print("  - Test for common web vulnerabilities")
+    
+    print("="*60)
+
 def main():
     """Main menu loop."""
     while True:
@@ -676,17 +1898,38 @@ def main():
             target = get_target_input()
             ports = get_ports_input()
             options = get_scan_options()
-            run_scan("naabu", target, ports=ports, **options)
+            
+            # Get Naabu-specific flags
+            naabu_flags = get_naabu_flags()
+            
+            # Merge options and flags
+            combined_options = {**options, **naabu_flags}
+            
+            run_scan("naabu", target, ports=ports, **combined_options)
         elif choice == "2":
             # HTTP Service Detection (httpx)
             target = get_target_input()
             options = get_scan_options()
-            run_scan("httpx", target, **options)
+            
+            # Get HTTPX-specific flags
+            httpx_flags = get_httpx_flags()
+            
+            # Merge options and flags
+            combined_options = {**options, **httpx_flags}
+            
+            run_scan("httpx", target, **combined_options)
         elif choice == "3":
             # Vulnerability Scan (nuclei)
             target = get_target_input()
             options = get_scan_options()
-            run_scan("nuclei", target, **options)
+            
+            # Get Nuclei-specific flags
+            nuclei_flags = get_nuclei_flags()
+            
+            # Merge options and flags
+            combined_options = {**options, **nuclei_flags}
+            
+            run_scan("nuclei", target, **combined_options)
         elif choice == "4":
             view_results()
         elif choice == "5":
