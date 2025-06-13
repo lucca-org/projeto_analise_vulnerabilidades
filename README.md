@@ -10,43 +10,65 @@ A comprehensive security toolkit for automated vulnerability scanning and analys
 
 ### Recent Enhancements
 
-**LATEST UPDATE: Internet Connectivity Check Fixed**
-- **Internet Connectivity Check**: Fixed and re-enabled in setup.py for Linux systems
-- **Network Validation**: Multi-method connectivity testing (DNS, Socket, Ping, HTTP)
-- **Linux VM Optimized**: Tested and working on Linux virtual machines
-- **No Emoji Output**: Clean, professional text-only output formatting
+**LATEST UPDATE: Interactive Menu and Flag Selection System**
+- **Enhanced Interactive Menu**: Completely redesigned user interface with intuitive navigation
+- **Advanced Flag Selection System**: Comprehensive flag configuration for each scanning tool
+- **Tool Path Resolution**: Improved detection of security tools across different Linux installations
+- **Network Connectivity Validation**: Multi-method connectivity testing with detailed feedback
+- **Clean Output Formatting**: Professional text-only output across all interfaces
 
 **Previous Updates:**
-- **Interactive Menu Interface**: User-friendly `mtscan.py` interface for guided scanning
-- **Network Connectivity Enforcement**: Automatic scan termination on network failure (no user prompts)
+- **Internet Connectivity Check**: Fixed and re-enabled in setup.py for Linux systems
+- **Network Connectivity Enforcement**: Automatic scan termination on network failure
 - **Port Information Display**: Real-time port range information during scans
-- **Tool Path Resolution**: Fixed executable path detection for reliable tool execution
-- **Output Formatting**: Clean, consistent output formatting across all interfaces
 - **Enhanced Installation**: Master installer with comprehensive validation
 - **Multi-Mode Support**: Interactive menu and direct command-line workflows
 
 ### Overview
 
-This toolkit integrates powerful security tools (naabu, httpx, nuclei) into a streamlined workflow for vulnerability scanning. It automates the entire process from port scanning to vulnerability detection and report generation.
+MTScan integrates powerful security tools (naabu, httpx, nuclei) into a streamlined workflow for vulnerability scanning. It provides an interactive menu system that guides users through the entire process from target selection to vulnerability detection and report generation.
 
 **IMPORTANT: This toolkit only works on Linux systems due to the security tools' dependencies on Linux kernel features and libraries.**
 
+### Key Components
+
+#### Interactive Menu (mtscan.py)
+The main interface provides access to all toolkit features:
+- **Scan Operations**: Port discovery, HTTP service analysis, and vulnerability assessment
+- **Management Operations**: View results, update templates, configure tools, and install updates
+- **Tool Status Check**: Automatic verification of required security tools
+- **Target Validation**: Comprehensive input validation with helpful suggestions
+
+#### Scanning Workflow
+Each scan type follows a structured workflow:
+1. **Target Selection**: IP address, domain name, or URL input with validation
+2. **Flag Configuration**: Interactive selection of tool-specific parameters
+3. **Scan Execution**: Real-time progress monitoring and output display
+4. **Results Storage**: Automatic saving of scan results for later analysis
+
 ### Features
 
-- **Comprehensive Scanning**: Automated port scanning, HTTP service detection, and vulnerability discovery
-- **Enhanced Real-time Output**: Live port range information and scan progress display
-- **Network Connectivity Enforcement**: Automatic scan termination if network connectivity fails
-- **Zero-Configuration**: Just provide a target and the toolkit does the rest
-- **Auto-Installation**: Automatically installs and configures all necessary tools
-- **Report Generation**: Creates detailed vulnerability reports in multiple formats
-- **Linux-Optimized**: Built specifically for Linux security environments
-- **Multi-Distro Support**: Works on Debian, Ubuntu, Kali Linux, Arch Linux, and more
-- **Clean Output Formatting**: Consistent, professional output across all scan types
-- **Internet Connectivity Check**: Robust multi-method network validation
-- **Interactive Menu System**: User-friendly interface with guided scanning options
-- **Flexible Execution Modes**: Command-line, interactive menu, or workflow-based scanning
-- **Real-time Progress Tracking**: Live updates during scanning operations
-- **Comprehensive Error Handling**: Graceful failure management with detailed error reporting
+- **Comprehensive Scanning Suite**: Three integrated scanning tools:
+  - **Naabu**: Fast port discovery and service detection
+  - **HTTPX**: Web service identification and technology fingerprinting
+  - **Nuclei**: Vulnerability detection with 5000+ pre-built templates
+
+- **Advanced Flag Selection System**:
+  - **Naabu Flags**: Port ranges, scan types, rate limiting, threading, and more
+  - **HTTPX Flags**: Technology detection, status codes, redirects, custom headers
+  - **Nuclei Flags**: Template selection, severity filtering, concurrency control
+
+- **User Experience Enhancements**:
+  - **Clear Visual Formatting**: Consistent border styles and section headers
+  - **Real-time Progress Updates**: Live feedback during scan operations
+  - **Comprehensive Help System**: Contextual guidance for all scan operations
+  - **Input Validation**: Robust error prevention with helpful feedback
+
+- **Technical Features**:
+  - **Tool Path Resolution**: Intelligent detection across different Linux installations
+  - **Network Validation**: Multi-method connectivity testing (DNS, Socket, Ping, HTTP)
+  - **Error Handling**: Graceful recovery from common failure scenarios
+  - **Report Generation**: Structured output in multiple formats (text, JSON, CSV)
 
 ### Supported Linux Distributions
 
@@ -58,151 +80,171 @@ This toolkit integrates powerful security tools (naabu, httpx, nuclei) into a st
 
 ### System Requirements
 
-- **Operating System**: Linux (64-bit)
-- **Python**: 3.8 or higher
-- **Memory**: Minimum 2GB RAM (4GB+ recommended)
+- **Operating System**: Linux (64-bit) only - Windows, macOS, and WSL are NOT supported
+- **Python**: 3.6 or higher (3.8+ recommended)
+- **Memory**: Minimum 2GB RAM (4GB+ recommended for nuclei scanning)
 - **Storage**: 1GB free space for tools and results
-- **Network**: Internet connection required for installation and updates
-- **Privileges**: Root/sudo access required for installation
-- **Go Language**: Automatically installed by the master installer
+- **Network**: Internet connection required for installation, updates, and scanning
+- **Privileges**: Root/sudo access required for installation and some scanning features
+- **Go Language**: Optional - automatically installed by the setup script if needed
 
 ### Quick Start
 
-1. **Clone and Install** (5 minutes):
+1. **Clone Repository**:
    ```bash
-   git clone https://github.com/yourusername/linux-vulnerability-toolkit.git
-   cd linux-vulnerability-toolkit
+   # Replace 'yourusername' with the actual repository owner
+   git clone https://github.com/yourusername/MTScan.git
+   cd MTScan
+   ```
+
+2. **Run Installation Script**:
+   ```bash
    sudo python3 install/setup.py
    ```
 
-2. **Verify Installation**:
+3. **Launch Interactive Menu**:
    ```bash
-   python3 tests/validate_installation.py
+   python3 mtscan.py
    ```
 
-3. **Run Your First Scan**:
+4. **Run a Direct Scan** (Alternative to menu):
    ```bash
-   python3 run.py example.com
+   python3 src/workflow.py -naabu -host example.com
    ```
 
 ## Installation
 
-### Master Installation Orchestrator (Recommended)
+### Comprehensive Installation
 
-The toolkit now features a comprehensive **single-point master installer** that handles everything automatically:
+The toolkit features a **single-point master installer** that handles everything automatically:
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/linux-vulnerability-toolkit.git
-cd linux-vulnerability-toolkit
-
-# Run the master installation orchestrator (requires root privileges)
+# Run the master installation script (requires root privileges)
 sudo python3 install/setup.py
 ```
 
-
-The master installer performs:
+The installation process includes:
 - Linux platform verification and distribution detection
-- Root/sudo permission enforcement 
-- **NEW**: Anti-hang timeout protection for all operations
-- **NEW**: Package manager lock file cleanup and repair
-- System package installation with individual package tracking
-- **NEW**: VM-optimized installation process (Kali Linux tested)
-- Go programming environment setup with PATH management
-- Security tools installation with timeout protection (naabu, httpx, nuclei)
-- Python dependencies and virtual environment setup
-- Configuration optimization and bash aliases creation
-- Complete system verification with functionality testing
+- System package installation (curl, wget, git, build-essential, python3-pip)
+- Go programming environment setup (if needed)
+- Security tools installation (naabu, httpx, nuclei)
+- Python dependencies configuration
+- Path configuration and environment setup
 
-### Alternative Installation Methods
+### Manual Installation
 
-#### Option 1: Python Environment Setup Only
+For systems where the automatic installer encounters issues:
 
-```bash
-# For Python environment setup and validation only
-python3 scripts/autoinstall.py
+1. **Install System Prerequisites**:
+   ```bash
+   # Debian/Ubuntu/Kali
+   sudo apt update
+   sudo apt install -y curl wget git build-essential python3-pip golang-go libpcap-dev
+
+   # Arch Linux
+   sudo pacman -Sy curl wget git base-devel python-pip go libpcap
+   ```
+
+2. **Install Security Tools**:
+   ```bash
+   # Install naabu
+   go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
+   
+   # Install httpx
+   go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
+   
+   # Install nuclei
+   go install -v github.com/projectdiscovery/nuclei/v2/cmd/nuclei@latest
+   ```
+
+3. **Configure PATH**:
+   ```bash
+   echo 'export PATH=$PATH:~/go/bin' >> ~/.bashrc
+   source ~/.bashrc
+   ```
+
+4. **Install Python Dependencies**:
+   ```bash
+   pip3 install -r config/requirements.txt
+   ```
+
+
+## Architecture and Code Structure
+
+MTScan is organized into a modular architecture with clear separation of concerns:
+
+```
+MTScan/
+├── mtscan.py                # Main interactive menu interface
+├── commands/               # Tool-specific command wrappers
+│   ├── __init__.py
+│   ├── httpx.py            # HTTPX command implementation
+│   ├── naabu.py            # Naabu command implementation
+│   └── nuclei.py           # Nuclei command implementation
+├── src/                    # Core functionality
+│   ├── workflow.py         # Main scanning workflow
+│   ├── utils.py            # Common utility functions
+│   ├── reporter.py         # Report generation
+│   ├── config_manager.py   # Configuration management
+│   └── network_test.py     # Network connectivity testing
+├── install/                # Installation scripts
+│   └── setup.py            # Main installer script
+├── config/                 # Configuration files
+│   └── requirements.txt    # Python dependencies
+└── docs/                   # Documentation
+    └── documentacao/       # Detailed documentation files
 ```
 
+### Key Components
 
-**Note:** Legacy shell scripts have been integrated into the master installer for a streamlined experience.
+1. **mtscan.py**: The main entry point with the interactive menu system
+   - Provides a user-friendly interface for all toolkit features
+   - Handles tool status checking, target validation, and flag selection
+   - Orchestrates the execution of scan workflows
 
-### Post-Installation Verification
+2. **commands/**: Tool-specific wrapper modules
+   - Each module (naabu.py, httpx.py, nuclei.py) wraps a specific security tool
+   - Handles parameter sanitization, command construction, and error handling
+   - Provides flexible flag and configuration management
 
-After installation, verify everything is working:
+3. **src/workflow.py**: Core scanning engine
+   - Manages the execution of individual tools in sequence
+   - Handles output collection, formatting, and storage
+   - Implements error recovery and progress tracking
 
-```bash
-# Comprehensive installation validation (Recommended)
-python3 tests/validate_installation.py
+4. **src/utils.py**: Common utilities
+   - Path resolution for security tools
+   - Command execution helpers
+   - Network connectivity validation
 
-# Python environment validation
-python3 scripts/autoinstall.py
+### Workflow Architecture
 
-# Legacy tool validation
-python3 tests/verify_installation.py
-```
+MTScan implements a structured workflow for security scanning:
 
-## Architecture
+1. **Tool Detection Phase**
+   - Identifies installed security tools using multiple detection methods
+   - Verifies tool functionality with version/help checks
+   - Provides actionable feedback for missing tools
 
-### Enhanced Master Installer Architecture
+2. **Target Validation Phase**
+   - Validates target input (IP, domain, URL)
+   - Normalizes and prepares target for scanning
+   - Provides helpful guidance for invalid inputs
 
-The toolkit features a **streamlined single-point master installer** architecture with integrated functionality:
+3. **Flag Selection Phase**
+   - Interactive selection of tool-specific parameters
+   - Validation of parameter combinations
+   - Configuration summary before execution
 
-```
-Linux Vulnerability Analysis Toolkit/
-├── install/
-│   ├── setup.py                    # ENHANCED MASTER INSTALLER (All-in-One)
-│   └── setup_backup_original.py   # Original backup
-├── scripts/
-│   ├── autoinstall.py             # Python environment setup & validation
-│   └── run_toolkit.sh             # Main toolkit launcher
-├── src/
-│   ├── workflow.py                # Main scanning workflow
-│   ├── utils.py                   # Core utilities
-│   ├── reporter.py                # Report generation
-│   ├── config_manager.py          # Configuration management
-│   └── code_scanner.py            # Code scanning capabilities
-├── commands/
-│   ├── naabu.py                   # Port scanning commands
-│   ├── httpx.py                   # HTTP service detection
-│   └── nuclei.py                  # Vulnerability scanning
-├── config/
-│   └── requirements.txt           # Python dependencies
-├── output/                        # Scan results output
-├── reports/                       # Generated reports
-└── tests/                         # Testing and validation
-    ├── validate_installation.py   # Comprehensive validation script
-    └── verify_installation.py     # Tool verification script
-```
+4. **Execution Phase**
+   - Construction of command-line arguments
+   - Real-time output streaming and monitoring
+   - Error handling and recovery
 
-### Key Architecture Improvements
-
-- **Integrated Functionality**: Legacy shell scripts consolidated into master installer
-- **Enhanced Error Handling**: Robust UTF-8 encoding and dependency management
-- **Comprehensive Validation**: Advanced installation verification system
-- **Streamlined Workflow**: Simplified installation and usage process
-
-### Installation Flow
-
-1. **install/setup.py** (Enhanced Master Installer)
-   - Platform verification & distribution detection
-   - Root permission enforcement  
-   - System package management
-   - Go environment setup and PATH configuration
-   - Security tools installation (naabu, httpx, nuclei)
-   - Configuration generation and optimization
-   - Integrated functionality from legacy scripts
-
-2. **scripts/autoinstall.py** (Python Environment Manager)
-   - Python dependencies validation
-   - Virtual environment setup
-   - Tool availability checking
-   - Configuration file creation
-
-3. **tests/validate_installation.py** (Comprehensive Validator)
-   - Installation integrity verification
-   - Tool functionality testing
-   - Configuration validation
-   - System compatibility checking
+5. **Results Management Phase**
+   - Structured storage of scan results
+   - Comprehensive reporting with key findings
+   - Results browsing and analysis
 
 ## Usage
 
@@ -261,841 +303,421 @@ python3 run.py --target example.com --ports top-1000 --tags cve,exposure --sever
 python3 run.py --target example.com --verbose
 ```
 
-### Additional Options
+### Port Format Handling
 
-- `--verbose`: Display more detailed output
-- `--timeout`: Set maximum scan timeout in seconds
-- `--scan-code`: Enable code scanning for web applications
-- `--auto-config`: Automatically configure tools based on system capabilities
+When scanning with naabu, MTScan supports several port specification formats:
 
-### Command Reference
+1. **Top Ports Format**: Scans the most common N ports
+   - Syntax: `top-N` (e.g., `top-100`, `top-1000`, `top-5000`)
+   - Example: When selecting "Top 100 ports" in the interactive menu
 
-| Command | Description | Example |
-|---------|-------------|---------|
-| `python3 run.py <target>` | Basic vulnerability scan | `python3 run.py example.com` |
-| `python3 mtscan.py` | Interactive menu interface | Launch guided scanning |
-| `bash scripts/run_toolkit.sh <target>` | Alternative launcher | `bash scripts/run_toolkit.sh example.com` |
-| `python3 tests/validate_installation.py` | Validate installation | Check system status |
-| `python3 scripts/autoinstall.py` | Python environment setup | Setup dependencies |
-| `sudo python3 install/setup.py` | Master installer | Complete system setup |
+2. **Range Format**: Scans a range of consecutive ports
+   - Syntax: `start-end` (e.g., `1-1000`, `8000-9000`) 
+   - Example: When selecting "Port range" in the interactive menu
 
-### Interactive Menu System
+3. **Specific Ports Format**: Scans only listed ports
+   - Syntax: `port1,port2,port3` (e.g., `80,443,8080`)
+   - Example: When selecting "Specific ports" in the interactive menu
 
-The toolkit includes an intuitive interactive menu system via `mtscan.py`:
+4. **All Ports**: Scans every possible port
+   - Syntax: `1-65535`
+   - Example: When selecting "All ports" in the interactive menu
+
+These port formats are automatically converted to the correct naabu command-line arguments when executing scans.
+
+## Usage Guide
+
+### Interactive Menu Interface
+
+MTScan's primary interface is the interactive menu system, launched by running:
 
 ```bash
-# Launch interactive menu
 python3 mtscan.py
 ```
 
-**Menu Features:**
-- **Guided Target Selection**: Step-by-step target input with validation
-- **Scan Type Selection**: Choose between quick, comprehensive, or custom scans
-- **Real-time Progress**: Live updates and status information
-- **Result Management**: Easy access to scan results and reports
-- **Tool Configuration**: Interactive tool setup and verification
-
-### Scan Types and Modes
-
-#### 1. Quick Scan (Recommended for beginners)
-```bash
-python3 run.py --quick <target>
-```
-- Top 1000 ports
-- Basic vulnerability templates
-- Fast execution time
-
-#### 2. Comprehensive Scan (Recommended for thorough analysis)
-```bash
-python3 run.py --comprehensive <target>
-```
-- All ports (1-65535)
-- Complete vulnerability template set
-- Detailed service enumeration
-
-#### 3. Custom Scan (Advanced users)
-```bash
-python3 run.py --target <target> --ports <ports> --templates <templates>
-```
-- User-defined port ranges
-- Specific vulnerability templates
-- Custom timeout and threading options
-
-**For detailed usage instructions, see [HOW_TO_RUN.md](HOW_TO_RUN.md)**
-
-## Output
-
-Results are saved in a timestamped directory (e.g., `results_example.com_20250603_120101/`) including:
-
-- `ports.txt`: Discovered open ports
-- `http_services.txt`: Discovered HTTP services
-- `vulnerabilities.txt`: Discovered vulnerabilities
-- `report.html`: Comprehensive HTML report
-- `report.json`: JSON data for further processing
-
-## Validation & Troubleshooting
-
-### Installation Validation
-
-Always validate your installation after setup:
-
-```bash
-# Comprehensive installation validation
-python3 tests/validate_installation.py
-
-# Python environment validation
-python3 scripts/autoinstall.py
-
-# Legacy tool validation
-python3 tests/verify_installation.py
-```
-
-
-### Common Issues & Solutions
-
-#### 1. **Master Installer Issues**
-
-```bash
-# Problem: Permission denied during installation
-sudo python3 install/setup.py
-
-# Problem: Platform not supported
-# Solution: Use Linux (Debian/Ubuntu/Kali/Arch only)
-```
-
-#### 2. **Security Tools Missing**
-
-```bash
-# Check tool availability
-which naabu httpx nuclei
-
-# Reinstall tools (master installer handles Go PATH automatically)
-sudo python3 install/setup.py
-
-# Manual tool installation if needed
-go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
-go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
-go install -v github.com/projectdiscovery/nuclei/v2/cmd/nuclei@latest
-```
-
-#### 3. **Python Environment Issues**
-
-```bash
-# Validate Python setup
-python3 scripts/autoinstall.py
-
-# Check Python version (3.8+ required)
-python3 --version
-
-# Install missing Python packages
-pip3 install -r config/requirements.txt
-```
-
-#### 4. **Configuration Problems**
-
-```bash
-# Regenerate configuration and validate installation
-python3 scripts/autoinstall.py
-
-# Run comprehensive validation
-python3 tests/validate_installation.py
-
-# Fix permissions
-chmod +x scripts/*.sh
-```
-
-
-### Linux Distribution-Specific Issues
-
-#### **Debian/Ubuntu/Kali**
-
-```bash
-# The master installer now handles all repository and package issues automatically
-sudo python3 install/setup.py
-
-# Manual fixes if needed:
-sudo apt update && sudo apt upgrade
-sudo apt install build-essential curl wget git python3-pip
-```
-
-#### **Arch Linux**
-
-```bash
-# Update system first
-sudo pacman -Syu
-
-# Install base development tools (handled by master installer)
-sudo pacman -S base-devel go git curl wget python3-pip
-```
-
-#### **Fedora/CentOS/RHEL**
-
-```bash
-# Install development tools (handled by master installer)
-sudo dnf groupinstall "Development Tools"
-sudo dnf install golang git curl wget python3-pip
-```
-
-
-### Performance Optimization
-
-#### **System Tuning for Better Performance**
-
-```bash
-# Increase file descriptor limits (temporary)
-ulimit -n 65536
-
-# Optimize network parameters (requires root)
-echo 'net.core.rmem_default = 262144' >> /etc/sysctl.conf
-echo 'net.core.rmem_max = 16777216' >> /etc/sysctl.conf
-sysctl -p
-```
-
-#### **Scan Optimization Options**
-
-```bash
-# Fast scan with optimized settings
-python3 run.py --target example.com --threads 50 --timeout 5
-
-# Conservative scan for unstable networks
-python3 run.py --target example.com --threads 10 --timeout 10 --delay 100ms
-
-# Maximum performance scan (use with caution)
-python3 run.py --target example.com --threads 100 --timeout 3 --rate 1000
-```
-
-### Advanced Troubleshooting
-
-#### **Complete Reset & Reinstall**
-
-```bash
-# 1. Clean previous installation
-rm -rf ~/go/bin/{naabu,httpx,nuclei}
-
-# 2. Run enhanced master installer
-sudo python3 install/setup.py
-
-# 3. Validate installation
-python3 tests/validate_installation.py
-```
-
-#### **Manual Tool Installation**
-
-```bash
-# Install Go manually
-wget https://golang.org/dl/go1.21.0.linux-amd64.tar.gz
-sudo tar -C /usr/local -xzf go1.21.0.linux-amd64.tar.gz
-export PATH=$PATH:/usr/local/go/bin
-
-# Install tools manually
-go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
-go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest  
-go install -v github.com/projectdiscovery/nuclei/v2/cmd/nuclei@latest
-```
-
-#### **Debug Mode**
-
-```bash
-# Run with verbose output
-python3 run.py --target example.com --verbose
-
-# Check tool versions
-naabu -version && httpx -version && nuclei -version
-
-# Test individual tools
-echo "example.com" | naabu -top-ports 10
-echo "http://example.com" | httpx -title
-nuclei -target example.com -t cves/
-```
-
-
-## Security Considerations
-
-### Legal and Ethical Guidelines
-
-- **Authorization Required**: Always obtain explicit written permission before scanning any targets
-- **Scope Limitations**: Only scan systems you own or have explicit authorization to test
-- **Responsible Disclosure**: Report discovered vulnerabilities through proper channels
-- **Data Protection**: Handle scan results and sensitive information according to applicable laws
-
-### Best Practices
-
-- **Isolated Environment**: Use dedicated security testing environments when possible
-- **Rate Limiting**: Use appropriate scan speeds to avoid overwhelming target systems
-- **Log Management**: Maintain detailed logs of all scanning activities
-- **Result Security**: Encrypt and securely store scan results containing sensitive information
-
-### Recommended Testing Environment
-
-```bash
-# Example: Setting up a controlled testing environment
-# Use VirtualBox/VMware with isolated network segments
-# Deploy intentionally vulnerable applications (DVWA, WebGoat, etc.)
-python3 run.py 192.168.56.101  # VMware/VirtualBox host-only network
-```
-
-## License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Usage Modes
-
-### Individual Tool Mode
-Perfect for targeted assessments or when you only need specific functionality:
-
-- **Port Scanning Only**: `-naabu -host <target>`
-- **HTTP Service Discovery**: `-httpx -host <target>`
-- **Vulnerability Assessment**: `-nuclei -host <target>`
-
-### Combined Tool Mode
-Run multiple tools in sequence with automatic result chaining:
-
-- **naabu → nuclei**: Port scan followed by vulnerability assessment
-- **httpx → nuclei**: HTTP discovery followed by vulnerability scanning
-- **naabu → httpx → nuclei**: Complete chain with all tools
-
-### Full Workflow Mode
-Traditional mode that runs all tools automatically:
-
-```bash
-sudo python src/workflow.py <target>
-```
-
-## Tool Configuration
-
-The toolkit automatically detects tool installations in common locations:
-
-### naabu
-- `/usr/bin/naabu`
-- `/usr/local/bin/naabu`
-- `/root/go/bin/naabu`
-- `~/go/bin/naabu`
-
-### httpx
-- `/usr/bin/httpx` (Kali Linux system package)
-- `/usr/local/bin/httpx`
-- `/root/go/bin/httpx`
-- `~/go/bin/httpx`
-
-### nuclei
-- `/usr/bin/nuclei`
-- `/usr/local/bin/nuclei`
-- `/root/go/bin/nuclei`
-- `~/go/bin/nuclei`
-
-## Output Structure
-
-Results are organized in timestamped directories:
-
-### Individual Tool Mode
+The interactive menu provides:
+1. **Tool Status Check**: Verifies that all required security tools are installed
+2. **Main Menu Options**: Scan operations and management functions
+3. **Guided Workflow**: Step-by-step process for each scan type
+
+#### Main Menu Options
 
 ```
-results_<target>_<tools>_<timestamp>/
-├── ports.txt              # naabu results (if used)
-├── ports.json              # naabu JSON output
-├── http_services.txt       # httpx results (if used)
-├── http_services.json      # httpx JSON output
-├── vulnerabilities.txt     # nuclei results (if used)
-├── vulnerabilities.jsonl   # nuclei JSONL output
-├── nuclei_responses/       # HTTP responses (if nuclei used)
-└── summary.txt            # Executive summary
+SCAN OPERATIONS:
+============================================================
+  [1] Port Discovery Scan      (naabu)
+      Fast port enumeration and service detection
+
+  [2] HTTP Service Analysis    (httpx)
+      Web service discovery and technology detection
+
+  [3] Vulnerability Assessment (nuclei)
+      Security vulnerability scanning with 5000+ templates
+
+MANAGEMENT OPERATIONS:
+============================================================
+  [4] View Previous Results
+      Browse and analyze past scan results
+
+  [5] Update Nuclei Templates
+      Download latest vulnerability templates
+
+  [6] Tool Configuration
+      Configure scanning parameters and settings
+
+  [7] Install/Update Tools
+      Install or update security scanning tools
+
+  [8] Help & Documentation
+      View usage guides and tool documentation
+
+  [0] Exit Program
+============================================================
 ```
 
-### Full Workflow Mode
+### Scan Workflow
 
+Each scan option follows a consistent workflow:
+
+#### 1. Target Selection
+
+Enter an IP address, domain name, or URL:
 ```
-results_<target>_<timestamp>/
-├── ports.txt
-├── ports.json
-├── http_services.txt
-├── http_services.json
-├── vulnerabilities.txt
-├── vulnerabilities.jsonl
-├── nuclei_responses/
-├── code_vulnerabilities.md (if --scan-code used)
-└── summary.txt
-```
+TARGET SPECIFICATION:
+Enter your scan target. Examples:
+  - IP Address: 192.168.1.100
+  - Domain: example.com
+  - URL: https://example.com (domain will be extracted)
+  - Localhost: 127.0.0.1 or localhost
 
-## Examples
-
-### Basic Port Scanning
-
-```bash
-# Quick port scan
-sudo python src/workflow.py -naabu -host 192.168.1.1
-
-# Custom ports
-sudo python src/workflow.py -naabu -host 192.168.1.1 -p "22,80,443,8080"
-
-# Top 100 ports only
-sudo python src/workflow.py -naabu -host 192.168.1.1 -p "top-100"
+TIP: Use 'help' for target format examples
 ```
 
-### HTTP Service Discovery
+#### 2. Flag Configuration
 
-```bash
-# Basic HTTP enumeration
-sudo python src/workflow.py -httpx -host example.com
+Each tool has specific flags that can be configured:
 
-# From previous port scan results
-sudo python src/workflow.py -naabu -httpx -host 192.168.1.1
+**Naabu Port Scanner Flags**:
+- `-p` - Ports to scan (e.g., '80,443,8000-9000')
+- `-s` - Stealth mode (reduces rate and uses SYN scan)
+- `-t` - Threads/Concurrency
+- `-r` - Rate limit (packets per second)
+- `-e` - Exclude specific ports
+- `-T` - Timeout per port (milliseconds)
+- `-v` - Verbose output
+- Top ports selection (e.g., top 100, top 1000) is available through the interactive menu
+
+**HTTPX Service Detection Flags**:
+- `-t` - Title extraction
+- `-s` - Status code display
+- `-T` - Technology detection
+- `-w` - Web server information
+- `-f` - Follow HTTP redirects
+- `-r` - Rate limit (requests per second)
+
+**Nuclei Vulnerability Scanner Flags**:
+- `-t` - Custom templates/template directory
+- `-T` - Template tags (e.g., cve, rce, sqli)
+- `-s` - Severity filter (critical, high, medium, low)
+- `-e` - Exclude tags
+- `-c` - Concurrency/parallel templates
+
+#### 3. Scan Execution
+
+After confirming the configuration, the scan will execute with real-time output:
+```
+SCAN CONFIGURATION SUMMARY
+============================================================
+[TOOL]           NAABU
+[TARGET]         example.com
+[SAVE OUTPUT]    ENABLED (always)
+[OUTPUT FORMAT]  TEXT (default)
+[REAL-TIME]      ENABLED
+[FLAGS COUNT]    3
+
+[ACTIVE FLAGS]
+  + ports: top-1000
+  + threads: 50
+  + naabu_verbose: True
+============================================================
+
+[READY TO START] All parameters configured
 ```
 
-### Vulnerability Assessment
+### Practical Examples
 
-```bash
-# Target-based scanning
-sudo python src/workflow.py -nuclei -host https://example.com
+Here are some practical examples of how to use MTScan for different scanning scenarios:
 
-# Chain with service discovery
-sudo python src/workflow.py -httpx -nuclei -host 192.168.1.1
+#### Basic Vulnerability Assessment Workflow:
 
-# Custom severity levels
-sudo python src/workflow.py -nuclei -host example.com --severity "critical,high"
-```
-
-### Complete Assessments
-
-```bash
-# Full automated scan
-sudo python src/workflow.py 192.168.1.1
-
-# Full scan with stealth mode
-sudo python src/workflow.py 192.168.1.1 -s
-
-# Comprehensive assessment with all options
-sudo python src/workflow.py -naabu -httpx -nuclei -host 192.168.1.1 -s -v --json-output
-```
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch
-3. Test on multiple Linux distributions
-4. Submit a pull request
-
-## License
-
-This project is licensed under the MIT License. See LICENSE file for details.
-
-## Disclaimer
-
-This toolkit is designed for authorized security testing and research purposes only. Users are responsible for ensuring they have proper authorization before scanning any targets. The authors are not responsible for any misuse or damage caused by this software.
-
----
-
-## Português Brasileiro
-
-Um kit de ferramentas de segurança abrangente para varredura automatizada de vulnerabilidades e análise, projetado **exclusivamente para sistemas Linux**.
-
-### Melhorias Recentes
-
-**ATUALIZAÇÃO MAIS RECENTE: Verificação de Conectividade com a Internet Corrigida**
-- **Verificação de Conectividade com Internet**: Corrigida e reabilitada no setup.py para sistemas Linux
-- **Validação de Rede**: Testes de conectividade multi-método (DNS, Socket, Ping, HTTP)
-- **Otimizado para VM Linux**: Testado e funcionando em máquinas virtuais Linux
-- **Saída Sem Emoji**: Formatação de saída limpa e profissional apenas com texto
-
-**Atualizações Anteriores:**
-- **Interface de Menu Interativo**: Interface `mtscan.py` amigável para varredura guiada
-- **Aplicação de Conectividade de Rede**: Término automático de varredura em falha de rede (sem prompts do usuário)
-- **Exibição de Informações de Porta**: Informações de faixa de porta em tempo real durante varreduras
-- **Resolução de Caminho de Ferramenta**: Detecção fixa de caminho executável para execução confiável de ferramenta
-- **Formatação de Saída**: Formatação de saída limpa e consistente em todas as interfaces
-- **Instalação Aprimorada**: Instalador mestre com validação abrangente
-- **Suporte Multi-Modo**: Menu interativo e fluxos de trabalho de linha de comando diretos
-
-### Visão Geral
-
-Este kit de ferramentas integra ferramentas de segurança poderosas (naabu, httpx, nuclei) em um fluxo de trabalho simplificado para varredura de vulnerabilidades. Automatiza todo o processo desde varredura de portas até detecção de vulnerabilidades e geração de relatórios.
-
-**IMPORTANTE: Este kit de ferramentas funciona apenas em sistemas Linux devido às dependências das ferramentas de segurança em recursos e bibliotecas do kernel Linux.**
-
-### Características
-
-- **Varredura Abrangente**: Varredura automatizada de portas, detecção de serviços HTTP e descoberta de vulnerabilidades
-- **Saída Aprimorada em Tempo Real**: Informações de faixa de porta ao vivo e exibição de progresso de varredura
-- **Aplicação de Conectividade de Rede**: Término automático de varredura se a conectividade de rede falhar
-- **Configuração Zero**: Apenas forneça um alvo e o kit de ferramentas faz o resto
-- **Auto-Instalação**: Instala e configura automaticamente todas as ferramentas necessárias
-- **Geração de Relatórios**: Cria relatórios detalhados de vulnerabilidades em múltiplos formatos
-- **Otimizado para Linux**: Construído especificamente para ambientes de segurança Linux
-- **Suporte Multi-Distro**: Funciona em Debian, Ubuntu, Kali Linux, Arch Linux e mais
-- **Formatação de Saída Limpa**: Saída profissional e consistente em todos os tipos de varredura
-- **Verificação de Conectividade com Internet**: Validação de rede robusta multi-método
-- **Sistema de Menu Interativo**: Interface amigável com opções de varredura guiada
-- **Modos de Execução Flexíveis**: Varredura por linha de comando, menu interativo ou baseada em fluxo de trabalho
-- **Rastreamento de Progresso em Tempo Real**: Atualizações ao vivo durante operações de varredura
-- **Tratamento Abrangente de Erros**: Gerenciamento gracioso de falhas com relatórios detalhados de erro
-
-### Distribuições Linux Suportadas
-
-- **Kali Linux** (Recomendado para testes de segurança)
-- **Debian**
-- **Ubuntu**
-- **Arch Linux**
-- **Fedora/CentOS/RHEL** (Suporte básico)
-
-### Requisitos do Sistema
-
-- **Sistema Operacional**: Linux (64-bit)
-- **Python**: 3.8 ou superior
-- **Memória**: Mínimo 2GB RAM (4GB+ recomendado)
-- **Armazenamento**: 1GB de espaço livre para ferramentas e resultados
-- **Rede**: Conexão com internet necessária para instalação e atualizações
-- **Privilégios**: Acesso root/sudo necessário para instalação
-- **Linguagem Go**: Instalada automaticamente pelo instalador mestre
-
-### Início Rápido
-
-1. **Clone e Instale** (5 minutos):
+1. **Step 1: Port Discovery**
    ```bash
-   git clone https://github.com/yourusername/linux-vulnerability-toolkit.git
-   cd linux-vulnerability-toolkit
-   sudo python3 install/setup.py
+   # Find open ports on a target
+   python3 src/workflow.py -naabu -host example.com --top-ports 1000
    ```
 
-2. **Verifique a Instalação**:
+2. **Step 2: HTTP Service Detection**
    ```bash
-   python3 tests/validate_installation.py
+   # Analyze HTTP services on discovered ports
+   python3 src/workflow.py -httpx -host example.com --title --tech-detect --web-server
    ```
 
-3. **Execute Sua Primeira Varredura**:
+3. **Step 3: Vulnerability Scanning**
    ```bash
-   python3 run.py example.com
+   # Scan for vulnerabilities with nuclei
+   python3 src/workflow.py -nuclei -host example.com --severity critical,high
    ```
 
-## Instalação
+#### Targeted Scanning Examples:
 
-### Orquestrador de Instalação Mestre (Recomendado)
-
-O kit de ferramentas agora possui um **instalador mestre de ponto único** abrangente que lida com tudo automaticamente:
-
+**Web Application Scanning:**
 ```bash
-# Clone o repositório
-git clone https://github.com/yourusername/linux-vulnerability-toolkit.git
-cd linux-vulnerability-toolkit
-
-# Execute o orquestrador de instalação mestre (requer privilégios de root)
-sudo python3 install/setup.py
+# Focus on web application vulnerabilities
+python3 src/workflow.py -nuclei -host example.com --tags cve,oast,sqli,xss,rce
 ```
 
-O instalador mestre executa:
-- Verificação de plataforma Linux e detecção de distribuição
-- Aplicação de permissão root/sudo 
-- **NOVO**: Proteção de timeout anti-travamento para todas as operações
-- **NOVO**: Limpeza e reparo de arquivos de bloqueio do gerenciador de pacotes
-- Instalação de pacotes do sistema com rastreamento de pacotes individuais
-- **NOVO**: Processo de instalação otimizado para VM (Kali Linux testado)
-- Configuração de ambiente Go com gerenciamento de PATH
-- Instalação de ferramentas de segurança com proteção de timeout (naabu, httpx, nuclei)
-- Configuração de dependências Python e ambiente virtual
-- Otimização de configuração e criação de aliases bash
-- Verificação completa do sistema com testes de funcionalidade
-
-### Métodos de Instalação Alternativos
-
-#### Opção 1: Configuração de Ambiente Python Apenas
-
+**Infrastructure Scanning:**
 ```bash
-# Para configuração de ambiente Python e validação apenas
-python3 scripts/autoinstall.py
+# Focus on infrastructure vulnerabilities
+python3 src/workflow.py -nuclei -host example.com --tags default-login,exposed-panel,misconfig
 ```
 
-**Nota:** Scripts shell legados foram integrados no instalador mestre para uma experiência simplificada.
-
-### Verificação Pós-Instalação
-
-Após a instalação, verifique se tudo está funcionando:
-
+**Stealth Mode Scanning:**
 ```bash
-# Validação de instalação abrangente (Recomendado)
-python3 tests/validate_installation.py
-
-# Validação de ambiente Python
-python3 scripts/autoinstall.py
-
-# Validação de ferramenta legada
-python3 tests/verify_installation.py
+# Lower intensity scanning for IDS/IPS evasion
+python3 src/workflow.py -naabu -host example.com -s --rate 10
 ```
 
-## Uso
+#### Interactive Menu Workflow:
 
-### Como Executar o Projeto
-
-#### **Passo 1: Instalação (Apenas Linux)**
-
+For a guided experience, use the interactive menu:
 ```bash
-# Clone o repositório
-git clone https://github.com/yourusername/linux-vulnerability-toolkit.git
-cd linux-vulnerability-toolkit
-
-# Instale tudo com um comando (requer privilégios de root)
-sudo python3 install/setup.py
-```
-
-#### **Passo 2: Validação (Recomendado)**
-
-```bash
-# Verifique se a instalação está funcionando corretamente
-python3 tests/validate_installation.py
-```
-
-#### **Passo 3: Execute Varreduras de Vulnerabilidade**
-
-**Varredura Básica:**
-
-```bash
-# Varredura simples
-python3 run.py <alvo>
-
-# Exemplo
-python3 run.py example.com
-```
-
-**Usando Script Shell:**
-
-```bash
-# Lançador alternativo
-bash scripts/run_toolkit.sh <alvo>
-```
-
-### Opções de Uso Avançado
-
-```bash
-# Especifique portas personalizadas
-python3 run.py --target example.com --ports 80,443,8080-8090
-
-# Use templates nuclei específicos
-python3 run.py --target example.com --templates cves,exposures
-
-# Varredura abrangente com filtragem
-python3 run.py --target example.com --ports top-1000 --tags cve,exposure --severity critical,high
-
-# Saída verbosa para debug
-python3 run.py --target example.com --verbose
-```
-
-### Referência de Comandos
-
-| Comando | Descrição | Exemplo |
-|---------|-----------|---------|
-| `python3 run.py <alvo>` | Varredura básica de vulnerabilidade | `python3 run.py example.com` |
-| `python3 mtscan.py` | Interface de menu interativo | Lançar varredura guiada |
-| `bash scripts/run_toolkit.sh <alvo>` | Lançador alternativo | `bash scripts/run_toolkit.sh example.com` |
-| `python3 tests/validate_installation.py` | Validar instalação | Verificar status do sistema |
-| `python3 scripts/autoinstall.py` | Configuração de ambiente Python | Configurar dependências |
-| `sudo python3 install/setup.py` | Instalador mestre | Configuração completa do sistema |
-
-### Sistema de Menu Interativo
-
-O kit de ferramentas inclui um sistema de menu interativo intuitivo via `mtscan.py`:
-
-```bash
-# Lançar menu interativo
+# Launch the interactive menu
 python3 mtscan.py
 ```
 
-**Recursos do Menu:**
-- **Seleção de Alvo Guiada**: Entrada de alvo passo a passo com validação
-- **Seleção de Tipo de Varredura**: Escolha entre varreduras rápidas, abrangentes ou personalizadas
-- **Progresso em Tempo Real**: Atualizações ao vivo e informações de status
-- **Gerenciamento de Resultados**: Acesso fácil a resultados de varredura e relatórios
-- **Configuração de Ferramentas**: Configuração e verificação interativa de ferramentas
-
-### Tipos e Modos de Varredura
-
-#### 1. Varredura Rápida (Recomendado para iniciantes)
-```bash
-python3 run.py --quick <alvo>
-```
-- Top 1000 portas
-- Templates básicos de vulnerabilidade
-- Tempo de execução rápido
-
-#### 2. Varredura Abrangente (Recomendado para análise completa)
-```bash
-python3 run.py --comprehensive <alvo>
-```
-- Todas as portas (1-65535)
-- Conjunto completo de templates de vulnerabilidade
-- Enumeração detalhada de serviços
-
-#### 3. Varredura Personalizada (Usuários avançados)
-```bash
-python3 run.py --target <alvo> --ports <portas> --templates <templates>
-```
-### Opções Adicionais
-
-- `--verbose`: Exibir saída mais detalhada
-- `--timeout`: Definir timeout máximo de varredura em segundos
-- `--scan-code`: Habilitar varredura de código para aplicações web
-- `--auto-config`: Configurar automaticamente ferramentas baseado nas capacidades do sistema
-
-## Saída e Relatórios
-
-### Estrutura de Resultados
-
-Resultados são salvos em um diretório com timestamp (ex: `results_example.com_20250603_120101/`) incluindo:
-
-- `ports.txt`: Portas abertas descobertas
-- `ports.json`: Dados JSON de portas para processamento
-- `http_services.txt`: Serviços HTTP descobertos
-- `http_services.json`: Dados JSON de serviços HTTP
-- `vulnerabilities.txt`: Vulnerabilidades descobertas
-- `vulnerabilities.jsonl`: Dados JSONL de vulnerabilidades
-- `report.html`: Relatório HTML abrangente com visualizações
-- `report.json`: Dados JSON estruturados para processamento adicional
-- `summary.txt`: Resumo executivo dos achados
-
-### Formatos de Relatório
-
-- **HTML**: Relatórios visuais com gráficos e tabelas interativas
-- **JSON**: Dados estruturados para integração com outras ferramentas
-- **TXT**: Formato legível para revisão rápida
-- **JSONL**: Formato de linha JSON para processamento em lote
-
-## Considerações de Segurança
-
-### Diretrizes Legais e Éticas
-
-- **Autorização Necessária**: Sempre obtenha permissão explícita por escrito antes de varrer qualquer alvo
-- **Limitações de Escopo**: Apenas varre sistemas que você possui ou tem autorização explícita para testar
-- **Divulgação Responsável**: Relate vulnerabilidades descobertas através de canais apropriados
-- **Proteção de Dados**: Manuseie resultados de varredura e informações sensíveis de acordo com leis aplicáveis
-
-### Melhores Práticas
-
-- **Ambiente Isolado**: Use ambientes dedicados de teste de segurança quando possível
-- **Limitação de Taxa**: Use velocidades de varredura apropriadas para evitar sobrecarregar sistemas alvo
-- **Gerenciamento de Logs**: Mantenha logs detalhados de todas as atividades de varredura
-- **Segurança de Resultados**: Criptografe e armazene com segurança resultados de varredura contendo informações sensíveis
-
-### Ambiente de Teste Recomendado
-
-```bash
-# Exemplo: Configurando um ambiente de teste controlado
-# Use VirtualBox/VMware com segmentos de rede isolados
-# Implante aplicações intencionalmente vulneráveis (DVWA, WebGoat, etc.)
-python3 run.py 192.168.56.101  # Rede host-only VMware/VirtualBox
+Then follow the on-screen prompts to:
+1. Select a scan type (Naabu, HTTPX, Nuclei)
+2. Enter target information
+3. Configure scan parameters
+4. Review and confirm the scan settings
 ```
 
-## Validação e Solução de Problemas
+### Command Line Usage
 
-### Validação de Instalação
-
-Sempre valide sua instalação após a configuração:
+For automated scanning or integration with scripts, you can bypass the interactive menu:
 
 ```bash
-# Validação de instalação abrangente
-python3 tests/validate_installation.py
+# Run port discovery scan
+python3 src/workflow.py -naabu -host example.com -p 80,443,8080-8090
 
-# Validação de ambiente Python
-python3 scripts/autoinstall.py
+# Run port discovery with top ports
+python3 src/workflow.py -naabu -host example.com --top-ports 1000
 
-# Validação de ferramenta legada
-python3 tests/verify_installation.py
+# Run HTTP service detection
+python3 src/workflow.py -httpx -host example.com --title --tech-detect
+
+# Run vulnerability scan
+python3 src/workflow.py -nuclei -host example.com --severity critical,high
 ```
 
-### Problemas Comuns e Soluções
+Available command line arguments:
 
-#### 1. **Problemas do Instalador Mestre**
+**General Options**:
+- `-host TARGET`: Target host (domain, URL, or IP address)
+- `-s`: Enable stealth mode scanning
+- `--save-output`: Save results to file (enabled by default)
+- `--json-output`: Output in JSON format
+
+**Naabu Port Scanner Options**:
+- `-p PORTS`: Ports to scan (e.g. 80,443,1000-2000)
+- `--top-ports N`: Scan top N most common ports
+  - **Note**: Use either `-p` OR `--top-ports`, not both at once, to avoid conflicts
+- `--threads N`: Number of threads to use
+- `--rate N`: Packets per second rate limit
+- `--scan-type TYPE`: Scan type (syn/connect)
+- `--exclude-ports PORTS`: Exclude specific ports from scan
+
+**HTTPX Options**:
+- `--title`: Extract page titles
+- `--status-code`: Show status codes
+- `--tech-detect`: Enable technology detection
+- `--follow-redirects`: Follow HTTP redirects
+- `--content-length`: Show response content length
+- `--response-time`: Show response time
+- `--web-server`: Show web server information
+
+**Nuclei Options**:
+- `-t TEMPLATES`: Templates to use
+- `--tags TAGS`: Template tags to use
+- `--severity LEVEL`: Filter by severity (critical,high,medium,low)
+- `--exclude-tags TAGS`: Tags to exclude
+- `--concurrency N`: Number of concurrent tasks
+
+## Development and Customization
+
+### Adding New Features
+
+MTScan is designed to be modular and extensible. To add new features:
+
+1. **New Tool Integration**:
+   - Create a new wrapper module in the `commands/` directory
+   - Implement the required flag handling and command construction
+   - Update the menu interface in `mtscan.py` to include the new option
+
+2. **Enhanced Reporting**:
+   - Modify the report generation in `src/reporter.py`
+   - Add new output formats or visualization options
+   - Extend the results analysis functionality
+
+### Customizing Flag Options
+
+To modify the available flags for each tool:
+
+1. Locate the respective flag function in `mtscan.py`:
+   - `get_naabu_flags()` for port scanning
+   - `get_httpx_flags()` for HTTP service detection
+   - `get_nuclei_flags()` for vulnerability scanning
+
+2. Add or modify flag options in the respective function
+   - Use the existing pattern for flag selection and validation
+   - Update the flag mapping in the `run_scan()` function
+
+## Troubleshooting
+
+### Common Issues
+
+#### Tool Detection Problems
+
+If MTScan cannot find installed security tools:
+
+```
+[MISSING] NAABU   Not found in system PATH
+[MISSING] HTTPX   Not found in system PATH
+[MISSING] NUCLEI  Not found in system PATH
+```
+
+**Solutions**:
+1. Ensure tools are installed: `go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest`
+2. Add Go bin directory to PATH: `export PATH=$PATH:~/go/bin`
+3. Use option [7] in the main menu to install/update tools
+
+#### Network Connectivity Issues
+
+If scans fail due to network problems:
+
+**Solutions**:
+1. Verify internet connectivity: `ping 8.8.8.8`
+2. Check DNS resolution: `nslookup example.com`
+3. Ensure no firewall rules are blocking the tools
+
+#### Permission Errors
+
+If you encounter permission issues:
+
+**Solutions**:
+1. For SYN scans: Run with sudo or select Connect scan type
+2. For file access errors: Check directory permissions
+3. For libpcap errors: Install libpcap-dev package
+
+#### Troubleshooting Port Format Issues
+
+If you encounter errors related to port formats, such as:
+```
+[FTL] Could not create runner: could not parse ports: could not read ports: invalid port number: 'top'
+```
+or
+```
+[FTL] Could not create runner: could not parse ports: invalid top ports option
+```
+
+Make sure you're using the correct port specification format:
+
+- With interactive menu: Select option 3 for "Top ports" and enter a number (e.g., 100, 1000)
+- With command line: Use `--top-ports 1000` instead of `-p top-1000`
+- Important: Never use both `-p` and `--top-ports` flags together - this causes the "invalid top ports option" error
+
+Naabu requires the top ports flag (`-top-ports N`) for scanning top N ports, which is automatically handled when using the interactive menu or workflow.py correctly.
+
+#### HTTPX Command Format Issues
+
+If you encounter an error like:
+```
+Error: No such option: -u
+```
+
+This happens because HTTPX expects the target to be provided directly without a flag:
+
+**Correct format**:
+```
+httpx example.com
+```
+
+**Incorrect format**:
+```
+httpx -u example.com
+```
+
+The toolkit has been updated to use the correct format. If you encounter this error:
+1. Make sure you're using the latest version of this toolkit
+2. If modifying the code, remember that targets should be passed to HTTPX without a flag
+3. For multiple targets, use the `-l` flag with a file containing one target per line
+
+#### Invalid Value Errors
+
+If you encounter errors like:
+```
+invalid value "None" for flag -c: parse error
+```
+
+This indicates that invalid parameter values are being passed to the scanning tools. This has been fixed in recent versions, but if you encounter it:
+
+**Solutions**:
+1. Update to the latest version of MTScan
+2. Restart the scan - the issue should be resolved
+3. If using command line, ensure all parameter values are valid (not None or empty)
+4. Use the interactive menu which has better parameter validation
+
+#### Recent Fixes (v1.2)
+
+**Port Flag Handling**: Fixed duplicate `-top-ports` flags that caused "invalid top ports option" errors. The system now ensures only one port specification method is used at a time.
+
+**Timeout Optimization**: Limited maximum timeout values to 60 seconds (60,000ms) to prevent extremely long scan times and improved overall performance.
+
+**Verbose Output**: Fixed duplicate `-v` flags in naabu commands for cleaner output and better compatibility.
+
+**Command Construction**: Improved argument parsing and flag management to prevent conflicts between different flag sources.
+
+**Argument Validation**: Enhanced validation to prevent None values from being passed to command-line tools, fixing "invalid value 'None'" errors.
+
+**Duplicate Flag Prevention**: Improved logic to prevent duplicate flags (like multiple `-c` or `-rate` flags) from being passed to naabu.
+
+## Portuguese Translations
+
+### Português Brasileiro
+
+MTScan é uma ferramenta de análise de vulnerabilidades Linux que integra ferramentas poderosas de segurança (naabu, httpx, nuclei) em um fluxo de trabalho simplificado. O toolkit fornece uma interface de menu interativa que guia os usuários por todo o processo, desde a seleção do alvo até a detecção de vulnerabilidades.
+
+#### Instalação Rápida
 
 ```bash
-# Problema: Permissão negada durante instalação
+# Clone o repositório
+git clone https://github.com/yourusername/mtscan.git
+cd mtscan
+
+# Execute o script de instalação
 sudo python3 install/setup.py
 
-# Problema: Plataforma não suportada
-# Solução: Use Linux (apenas Debian/Ubuntu/Kali/Arch)
+# Inicie a interface interativa
+python3 mtscan.py
 ```
 
-#### 2. **Ferramentas de Segurança Ausentes**
+#### Funcionalidades Principais
 
-```bash
-# Verificar disponibilidade de ferramentas
-which naabu httpx nuclei
+- **Menu Interativo**: Interface amigável para todas as funcionalidades
+- **Escaneamento Abrangente**: Detecção de portas, serviços HTTP e vulnerabilidades
+- **Sistema de Seleção de Flags**: Configuração detalhada para cada ferramenta
+- **Validação de Entrada**: Prevenção robusta de erros com feedback útil
+- **Geração de Relatórios**: Saída estruturada em múltiplos formatos
 
-# Reinstalar ferramentas (instalador mestre lida com PATH do Go automaticamente)
-sudo python3 install/setup.py
-
-# Instalação manual de ferramentas se necessário
-go install -v github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
-go install -v github.com/projectdiscovery/httpx/cmd/httpx@latest
-go install -v github.com/projectdiscovery/nuclei/v2/cmd/nuclei@latest
-```
-
-#### 3. **Problemas de Ambiente Python**
-
-```bash
-# Validar configuração Python
-python3 scripts/autoinstall.py
-
-# Verificar versão Python (3.8+ necessário)
-python3 --version
-
-# Instalar pacotes Python ausentes
-pip3 install -r config/requirements.txt
-```
-
-### Otimização de Performance
-
-#### **Ajuste do Sistema para Melhor Performance**
-
-```bash
-# Aumentar limites de descritores de arquivo (temporário)
-ulimit -n 65536
-
-# Otimizar parâmetros de rede (requer root)
-echo 'net.core.rmem_default = 262144' >> /etc/sysctl.conf
-echo 'net.core.rmem_max = 16777216' >> /etc/sysctl.conf
-sysctl -p
-```
-
-#### **Opções de Otimização de Varredura**
-
-```bash
-# Varredura rápida com configurações otimizadas
-python3 run.py --target example.com --threads 50 --timeout 5
-
-# Varredura conservadora para redes instáveis
-python3 run.py --target example.com --threads 10 --timeout 10 --delay 100ms
-
-# Varredura de performance máxima (use com cuidado)
-python3 run.py --target example.com --threads 100 --timeout 3 --rate 1000
-```
-
-### Solução Avançada de Problemas
-
-#### **Reset Completo e Reinstalação**
-
-```bash
-# 1. Limpar instalação anterior
-rm -rf ~/go/bin/{naabu,httpx,nuclei}
-
-# 2. Executar instalador mestre aprimorado
-sudo python3 install/setup.py
-
-# 3. Validar instalação
-python3 tests/validate_installation.py
-```
-
-## Contribuindo
-
-1. Faça um fork do repositório
-2. Crie uma branch de feature
-3. Teste em múltiplas distribuições Linux
-4. Envie um pull request
-
-## Licença
-
-Este projeto está licenciado sob a Licença MIT. Veja o arquivo LICENSE para detalhes.
-
-## Aviso Legal
-
-Este kit de ferramentas é projetado apenas para testes de segurança autorizados e propósitos de pesquisa. Os usuários são responsáveis por garantir que tenham autorização adequada antes de varrer qualquer alvo. Os autores não são responsáveis por qualquer uso indevido ou dano causado por este software.
-
----
-
-**Suporte de Plataforma**: Apenas Linux | **Versão**: 2.0 | **Última Atualização**: Junho 2025
-
-**Para citações de código, veja:** [docs/documentacao/CODE_CITATIONS.md](docs/documentacao/CODE_CITATIONS.md)
+Para documentação completa, consulte as seções em inglês acima.

@@ -156,68 +156,63 @@ def check_tools_status():
     return status
 
 def print_tools_status():
-    """Print the current status of tools."""
-    print("TOOL STATUS:")
-    print("=" * 50)
+    """Print enhanced tool status with detailed information."""
+    print("TOOL STATUS CHECK:")
+    print("=" * 60)
     
     status = check_tools_status()
     
+    all_tools_ready = True
     for tool, info in status.items():
         if info['installed']:
-            print(f"  [OK] {tool}: Available at {info['path']}")
+            print(f"  [OK]      {tool.upper():<8} Available at {info['path']}")
         else:
-            print(f"  [MISSING] {tool}: Not found")
+            print(f"  [MISSING] {tool.upper():<8} Not found in system PATH")
+            all_tools_ready = False
     
-    all_installed = all(info['installed'] for info in status.values())
-    
-    if not all_installed:
-        missing_tools = [tool for tool, info in status.items() if not info['installed']]
-        print(f"\nMissing tools: {', '.join(missing_tools)}")
-        print("Note: Tools may be installed in Go paths. Checking extended locations...")
-        
-        # Additional detailed check for missing tools
-        for tool in missing_tools:
-            extended_locations = [
-                f"{os.path.expanduser('~')}/go/bin/{tool}",
-                f"/root/go/bin/{tool}",
-                f"/usr/local/go/bin/{tool}"
-            ]
-            
-            found_extended = False
-            for location in extended_locations:
-                if os.path.exists(location):
-                    print(f"    Found {tool} at {location} (not in PATH)")
-                    found_extended = True
-                    break
-            
-            if not found_extended:
-                print(f"    {tool} not found in extended locations")
-        
-        print("\nTo fix PATH issues, run:")
-        print("   export PATH=$PATH:~/go/bin")
-        print("   # Or add to ~/.bashrc: echo 'export PATH=$PATH:~/go/bin' >> ~/.bashrc")
-        print("\nRun option [7] to install missing tools.")  # Fix: Corrected option number
+    if all_tools_ready:
+        print(f"\n[STATUS] All security tools are installed and ready")
+        print(f"[READY]  System prepared for vulnerability scanning")
     else:
-        print("\nAll tools are installed and ready!")
+        missing_tools = [tool for tool, info in status.items() if not info['installed']]
+        print(f"\n[WARNING] Missing tools: {', '.join(missing_tools)}")
+        print(f"[ACTION]  Run option [7] to install missing tools")
+        print(f"[PATH]    Add Go tools to PATH: export PATH=$PATH:~/go/bin")
     
     print()
 
 def print_main_menu():
-    """Print the main menu options."""
-    print("SCANNING OPTIONS:")
-    print("=" * 50)
-    print("  [1] Port Scan (naabu)")
-    print("  [2] HTTP Service Detection (httpx)")
-    print("  [3] Vulnerability Scan (nuclei)")
+    """Print enhanced main menu with better formatting."""
+    print("SCAN OPERATIONS:")
+    print("=" * 60)
+    print("  [1] Port Discovery Scan      (naabu)")
+    print("      Fast port enumeration and service detection")
     print()
-    print("MANAGEMENT OPTIONS:")
-    print("=" * 50)
+    print("  [2] HTTP Service Analysis    (httpx)")
+    print("      Web service discovery and technology detection")
+    print()
+    print("  [3] Vulnerability Assessment (nuclei)")
+    print("      Security vulnerability scanning with 5000+ templates")
+    print()
+    print("MANAGEMENT OPERATIONS:")
+    print("=" * 60)
     print("  [4] View Previous Results")
+    print("      Browse and analyze past scan results")
+    print()
     print("  [5] Update Nuclei Templates")
+    print("      Download latest vulnerability templates")
+    print()
     print("  [6] Tool Configuration")
+    print("      Configure scanning parameters and settings")
+    print()
     print("  [7] Install/Update Tools")
+    print("      Install or update security scanning tools")
+    print()
     print("  [8] Help & Documentation")
-    print("  [0] Exit")
+    print("      View usage guides and tool documentation")
+    print()
+    print("  [0] Exit Program")
+    print("=" * 60)
     print()
 
 def get_target_input():
@@ -306,37 +301,11 @@ def get_ports_input():
         else:
             print("Invalid option. Please select 1-4.")
 
-def get_scan_options():
-    """Get additional scan options."""
-    options = {}
-    
-    # Stealth mode
-    stealth = input("Enable stealth mode? [y/N]: ").strip().lower()
-    options['stealth'] = stealth in ['y', 'yes']
-    
-    # Save output (separate from real-time display)
-    save_output = input("Save scan output to files? [Y/n]: ").strip().lower()
-    options['save_output'] = save_output not in ['n', 'no']
 
-    # JSON output (only relevant if saving output)
-    if options['save_output']:
-        json_output = input("Save output in JSON format? [y/N]: ")
-
-        # Validate JSON output selection
-        while json_output not in ['y', 'yes', 'n', 'no', '']:
-            print("Invalid option. Please select 'y' or 'n'.")
-            json_output = input("Save output in JSON format? [y/N]: ").strip().lower()
-        
-        options['json_output'] = json_output in ['y', 'yes']
-    else:
-        options['json_output'] = False
-    
-    return options
 
 def run_scan(scan_type, target, **kwargs):
     """Run a scan with enhanced real-time output and comprehensive flag support."""
-    
-    # Get flags for the selected scan type
+      # Get flags for the selected scan type
     if scan_type == "naabu":
         print(f"\nConfiguring NAABU port scanner for target: {target}")
         show_scan_type_help("naabu")
@@ -352,49 +321,42 @@ def run_scan(scan_type, target, **kwargs):
     else:
         print(f"ERROR: Unknown scan type: {scan_type}")
         return False
-    
-    # Ask about scan modes
-    print("\n" + "="*50)
-    print("SCAN MODE CONFIGURATION")
-    print("="*50)
-    print("Need help understanding scan modes? [y/N]: ", end="")
-    help_choice = input().strip().lower()
-    if help_choice in ['y', 'yes']:
-        explain_scan_modes()
-    
-    # Get scan mode preferences
-    print("\nScan Mode Options:")
-    stealth_mode = input("Enable STEALTH mode (slower, more discreet)? [y/N]: ").strip().lower() in ['y', 'yes']
-    tool_silent = input("Enable SILENT mode (minimal output)? [y/N]: ").strip().lower() in ['y', 'yes']
-    save_output = input("Save scan results to files? [Y/n]: ").strip().lower() not in ['n', 'no']
-    
-    if save_output:
-        json_output = input("Save in JSON format (easier to parse)? [y/N]: ").strip().lower() in ['y', 'yes']
-    else:
-        json_output = False
-    
-    # Show configuration summary
-    print(f"\n{'='*50}")
+      # Set defaults - outputs always enabled by default
+    save_output = True  # Always save output
+    json_output = False  # Default to text format
+    stealth_mode = False  # Not used anymore, but needed for compatibility
+    tool_silent = False  # Not used anymore, but needed for compatibility
+      # Enhanced configuration summary
+    print(f"\n{'=' * 60}")
     print("SCAN CONFIGURATION SUMMARY")
-    print("="*50)
-    print(f"Tool: {scan_type.upper()}")
-    print(f"Target: {target}")
-    print(f"Stealth Mode: {'ENABLED' if stealth_mode else 'DISABLED'}")
-    print(f"Silent Mode: {'ENABLED' if tool_silent else 'DISABLED'}")
-    print(f"Save Output: {'YES' if save_output else 'NO (real-time only)'}")
-    if save_output:
-        print(f"Output Format: {'JSON' if json_output else 'TEXT'}")
-    print(f"Flags Selected: {len(flags)}")
-    if flags:
-        print("Flag Summary:")
-        for flag, value in flags.items():
-            print(f"  {flag}: {value}")
-    print("="*50)
+    print("=" * 60)
+    print(f"[TOOL]           {scan_type.upper()}")
+    print(f"[TARGET]         {target}")
+    print(f"[SAVE OUTPUT]    ENABLED (always)")
+    print(f"[OUTPUT FORMAT]  TEXT (default)")
+    print(f"[REAL-TIME]      ENABLED")
+    print(f"[FLAGS COUNT]    {len(flags)}")
     
-    # Final confirmation
-    proceed = input("Proceed with scan? [Y/n]: ").strip().lower()
+    if flags:
+        print(f"\n[ACTIVE FLAGS]")
+        for flag, value in flags.items():
+            if isinstance(value, bool) and value:
+                print(f"  + {flag}")
+            elif not isinstance(value, bool):
+                display_value = str(value)
+                if len(display_value) > 50:
+                    display_value = display_value[:47] + "..."
+                print(f"  + {flag}: {display_value}")
+    else:
+        print(f"\n[FLAGS] Using default configuration")
+    
+    print("=" * 60)
+    
+    # Final confirmation with enhanced display
+    print(f"\n[READY TO START] All parameters configured")
+    proceed = input("[CONFIRM] Proceed with scan? [Y/n]: ").strip().lower()
     if proceed in ['n', 'no']:
-        print("Scan cancelled by user.")
+        print("[CANCELLED] Scan cancelled by user.")
         return False
     
     # Build command
@@ -423,13 +385,23 @@ def run_scan(scan_type, target, **kwargs):
     
     if json_output:
         cmd.append("--json-output")
-    
-    # Add all flag-specific arguments
+      # Add all flag-specific arguments
     for flag, value in flags.items():
         if flag == 'stealth' and value:
             cmd.append("-s")
         elif flag == 'ports' and value:
-            cmd.extend(["-p", str(value)])
+            # Handle the top-N format correctly for naabu
+            if str(value).startswith('top-'):
+                try:
+                    # Extract N from "top-N" format
+                    num_ports = str(value).split("-")[1]
+                    cmd.extend(["--top-ports", num_ports])
+                except (IndexError, ValueError):
+                    # Fallback to passing the value as is
+                    cmd.extend(["-p", str(value)])
+            else:
+                # Handle regular port specifications
+                cmd.extend(["-p", str(value)])
         elif flag == 'threads' and value:
             cmd.extend(["--threads", str(value)])
         elif flag == 'rate' and value:
@@ -556,231 +528,38 @@ def run_scan(scan_type, target, **kwargs):
             cmd.extend(["--markdown-export", str(value)])
         elif flag == 'sarif_export' and value:
             cmd.extend(["--sarif-export", str(value)])
-    
-    print(f"\nStarting {scan_type.upper()} scan...")
-    print(f"Command: {' '.join(cmd)}")
-    print("\nScan output will appear below:")
-    print("="*60)
-    
-    try:
-        # Execute the scan with real-time output
-        result = subprocess.run(cmd, cwd=os.getcwd())
-        
-        print("="*60)
-        if result.returncode == 0:
-            print(f"SUCCESS: {scan_type.upper()} scan completed successfully!")
-        else:
-            print(f"WARNING: {scan_type.upper()} scan completed with exit code {result.returncode}")
-        
-        return result.returncode == 0
-        
-    except KeyboardInterrupt:
-        print("\nWARNING: Scan interrupted by user (Ctrl+C)")
-        return False
-    except FileNotFoundError:
-        print("ERROR: workflow.py not found. Please ensure all files are present.")
-        return False
-    except Exception as e:
-        print(f"ERROR: Failed to execute scan: {e}")
-        return False# Add tool-specific flags for Naabu
-    if scan_type == "naabu":
-        if kwargs.get('threads'):
-            cmd.extend(["--threads", str(kwargs['threads'])])
-        if kwargs.get('rate'):
-            cmd.extend(["--rate", str(kwargs['rate'])])
-        if kwargs.get('timeout'):
-            cmd.extend(["--naabu-timeout", str(kwargs['timeout'])])
-        if kwargs.get('retries'):
-            cmd.extend(["--naabu-retries", str(kwargs['retries'])])
-        if kwargs.get('exclude_ports'):
-            cmd.extend(["--exclude-ports", kwargs['exclude_ports']])
-        if kwargs.get('top_ports'):
-            cmd.extend(["--top-ports", str(kwargs['top_ports'])])
-        if kwargs.get('scan_type'):
-            cmd.extend(["--scan-type", kwargs['scan_type']])
-        if kwargs.get('source_port'):
-            cmd.extend(["--source-port", str(kwargs['source_port'])])
-        if kwargs.get('interface'):
-            cmd.extend(["--interface", kwargs['interface']])
-        if kwargs.get('skip_host_discovery'):
-            cmd.append("--no-ping")
-        if kwargs.get('ping'):
-            cmd.append("--ping")
-        if kwargs.get('host_discovery'):
-            cmd.append("--host-discovery")
-        if kwargs.get('debug'):
-            cmd.append("--naabu-debug")
-        if kwargs.get('json'):
-            cmd.append("--naabu-json")
-        if kwargs.get('csv'):
-            cmd.append("--naabu-csv")
-      # Add tool-specific flags for HTTPX
-    elif scan_type == "httpx":
-        if kwargs.get('title'):
-            cmd.append("--title")
-        if kwargs.get('status_code'):
-            cmd.append("--status-code")
-        if kwargs.get('tech_detect'):
-            cmd.append("--tech-detect")
-        if kwargs.get('web_server'):
-            cmd.append("--web-server")
-        if kwargs.get('content_length'):
-            cmd.append("--content-length")
-        if kwargs.get('response_time'):
-            cmd.append("--response-time")
-        if kwargs.get('follow_redirects'):
-            cmd.append("--follow-redirects")
-        if kwargs.get('rate_limit'):
-            cmd.extend(["--rate-limit", str(kwargs['rate_limit'])])
-        if kwargs.get('timeout'):
-            cmd.extend(["--httpx-timeout", str(kwargs['timeout'])])
-        if kwargs.get('threads'):
-            cmd.extend(["--httpx-threads", str(kwargs['threads'])])
-        if kwargs.get('retries'):
-            cmd.extend(["--httpx-retries", str(kwargs['retries'])])
-        if kwargs.get('method'):
-            cmd.extend(["--method", kwargs['method']])
-        if kwargs.get('custom_headers'):
-            cmd.extend(["--headers", kwargs['custom_headers']])
-        if kwargs.get('user_agent'):
-            cmd.extend(["--user-agent", kwargs['user_agent']])
-        if kwargs.get('filter_code'):
-            cmd.extend(["--filter-code", kwargs['filter_code']])
-        if kwargs.get('match_code'):
-            cmd.extend(["--match-code", kwargs['match_code']])
-        if kwargs.get('filter_length'):
-            cmd.extend(["--filter-length", kwargs['filter_length']])
-        if kwargs.get('no_color'):
-            cmd.append("--no-color")
-        if kwargs.get('json'):
-            cmd.append("--httpx-json")
-        if kwargs.get('csv'):
-            cmd.append("--httpx-csv")
-      # Add tool-specific flags for Nuclei
-    elif scan_type == "nuclei":
-        if kwargs.get('tags'):
-            cmd.extend(["--tags", kwargs['tags']])
-        if kwargs.get('severity'):
-            cmd.extend(["--severity", kwargs['severity']])
-        if kwargs.get('template_path'):
-            cmd.extend(["--template-path", kwargs['template_path']])
-        if kwargs.get('exclude_tags'):
-            cmd.extend(["--exclude-tags", kwargs['exclude_tags']])
-        if kwargs.get('exclude_severity'):
-            cmd.extend(["--exclude-severity", kwargs['exclude_severity']])
-        if kwargs.get('exclude_templates'):
-            cmd.extend(["--exclude-templates", kwargs['exclude_templates']])
-        if kwargs.get('concurrency'):
-            cmd.extend(["--concurrency", str(kwargs['concurrency'])])
-        if kwargs.get('parallel'):
-            cmd.extend(["--parallel-processing", str(kwargs['parallel'])])
-        if kwargs.get('rate_limit'):
-            cmd.extend(["--nuclei-rate-limit", str(kwargs['rate_limit'])])
-        if kwargs.get('timeout'):
-            cmd.extend(["--nuclei-timeout", str(kwargs['timeout'])])
-        if kwargs.get('retries'):
-            cmd.extend(["--nuclei-retries", str(kwargs['retries'])])
-        if kwargs.get('custom_headers'):
-            cmd.extend(["--custom-headers", kwargs['custom_headers']])
-        if kwargs.get('custom_vars'):
-            cmd.extend(["--vars", kwargs['custom_vars']])
-        if kwargs.get('user_agent'):
-            cmd.extend(["--nuclei-user-agent", kwargs['user_agent']])
-        if kwargs.get('follow_redirects'):
-            cmd.append("--follow-redirects")
-        if kwargs.get('disable_redirects'):
-            cmd.append("--disable-redirects")
-        if kwargs.get('max_redirects'):
-            cmd.extend(["--max-redirects", str(kwargs['max_redirects'])])
-        if kwargs.get('proxy'):
-            cmd.extend(["--proxy", kwargs['proxy']])
-        if kwargs.get('disable_interactsh'):
-            cmd.append("--no-interactsh")
-        if kwargs.get('interactsh_url'):
-            cmd.extend(["--interactsh-server", kwargs['interactsh_url']])
-        if kwargs.get('interactsh_token'):
-            cmd.extend(["--interactsh-token", kwargs['interactsh_token']])
-        if kwargs.get('store_response'):
-            cmd.append("--store-resp")
-        if kwargs.get('store_resp_dir'):
-            cmd.extend(["--store-resp-dir", kwargs['store_resp_dir']])
-        if kwargs.get('include_response'):
-            cmd.append("--include-rr")
-        if kwargs.get('debug'):
-            cmd.append("--debug")
-        if kwargs.get('no_color'):
-            cmd.append("--no-color")
-        if kwargs.get('json'):
-            cmd.append("--nuclei-json")
-        if kwargs.get('csv'):
-            cmd.append("--nuclei-csv")
-        if kwargs.get('markdown_export'):
-            cmd.extend(["--markdown-export", kwargs['markdown_export']])
-        if kwargs.get('sarif_export'):
-            cmd.extend(["--sarif-export", kwargs['sarif_export']])
-    
-    # Add verbose flags if specified
-    if kwargs.get('tool_silent'):
-        cmd.append("--tool-silent")
-    if kwargs.get('verbose'):
-        cmd.append("--verbose")
-    
-    # Enhanced pre-scan information
+      # Enhanced pre-scan information display
     print(f"\n{'='*80}")
-    print(f"STARTING {scan_type.upper()} SCAN")
+    print(f"INITIALIZING {scan_type.upper()} SCAN")
     print(f"{'='*80}")
-    print(f"Target: {target}")
-    print(f"Tool: {scan_type}")
-    print(f"Timestamp: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    
-    # Show scan configuration
-    print(f"\nSCAN CONFIGURATION:")
+    print(f"[TARGET]     {target}")
+    print(f"[TOOL]       {scan_type}")
+    print(f"[TIMESTAMP]  {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    print(f"[COMMAND]    {' '.join(cmd)}")
+    print(f"\n[CONFIGURATION]")
     print(f"  Real-time output: ENABLED")
-    print(f"  Save to files: {'YES' if kwargs.get('save_output') else 'NO'}")
-    if kwargs.get('save_output'):
-        print(f"  JSON format: {'YES' if kwargs.get('json_output') else 'NO'}")
-    print(f"  Stealth mode: {'YES' if kwargs.get('stealth') else 'NO'}")
-    if kwargs.get('ports'):
-        print(f"  Port range: {kwargs['ports']}")
+    print(f"  Save to files:    {'ENABLED' if save_output else 'DISABLED'}")
+    print(f"  Output format:    {'JSON' if json_output else 'TEXT'}")
+    print(f"  Flags selected:   {len(flags)}")
     
-    # Show tool-specific information
-    if scan_type == "naabu":
-        print(f"\nNAABU PORT SCAN DETAILS:")
-        print(f"  Purpose: Discover open ports on target")
-        print(f"  Output: Port numbers and services")
-        if kwargs.get('stealth'):
-            print(f"  Mode: Stealth (slower, more discreet)")
-        else:
-            print(f"  Mode: Standard (faster scanning)")
-    elif scan_type == "httpx":
-        print(f"\nHTTPX SERVICE DETECTION DETAILS:")
-        print(f"  Purpose: Discover HTTP/HTTPS services")
-        print(f"  Output: URLs, status codes, titles, technologies")
-        print(f"  Features: Title extraction, technology detection")
-    elif scan_type == "nuclei":
-        print(f"\nNUCLEI VULNERABILITY SCAN DETAILS:")
-        print(f"  Purpose: Detect security vulnerabilities")
-        print(f"  Templates: Built-in vulnerability templates")
-        print(f"  Output: Vulnerability findings with details")
+    if flags:
+        print(f"\n[ACTIVE FLAGS]")
+        for flag, value in flags.items():
+            if isinstance(value, bool) and value:
+                print(f"  + {flag}")
+            elif not isinstance(value, bool):
+                display_value = str(value)
+                if len(display_value) > 50:
+                    display_value = display_value[:47] + "..."
+                print(f"  + {flag}: {display_value}")
     
-    print(f"\nEXECUTING COMMAND:")
-    print(f"  {' '.join(cmd)}")
     print(f"\n{'='*80}")
-    print(f"REAL-TIME SCAN OUTPUT:")
+    print(f"REAL-TIME SCAN OUTPUT")
     print(f"{'='*80}")
     
-    # Variables to track scan progress
+    # Initialize variables to avoid scope issues
+    process = None
     start_time = time.time()
-    output_lines = []
-    last_activity = time.time()
-    process = None  # Initialize process variable
-    
-    def show_progress():
-        """Show periodic progress updates during scan."""
-        while process and process.poll() is None:
-            elapsed = time.time() - start_time
-            print(f"\n[PROGRESS] Scan running for {elapsed:.1f} seconds...")
-            time.sleep(30)  # Update every 30 seconds
     
     try:
         # Start the scan process with real-time output streaming
@@ -790,98 +569,151 @@ def run_scan(scan_type, target, **kwargs):
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             universal_newlines=True,
-            bufsize=1
-        )
+            bufsize=1        )
         
-        # Start progress thread
-        progress_thread = threading.Thread(target=show_progress, daemon=True)
-        progress_thread.start()
+        # Variables to track scan progress
+        output_lines = []
+        last_activity = time.time()
+        findings_count = 0
         
-        # Stream output in real-time (check if stdout is not None)
+        print(f"\n[SCAN STARTED] {datetime.datetime.now().strftime('%H:%M:%S')}")
+        print(f"[PROCESS ID] {process.pid}")
+        print(f"[STATUS] Initializing {scan_type.upper()} scan...")
+        print("-" * 80)
+        
+        # Stream output in real-time
         if process.stdout:
             for line in process.stdout:
                 line = line.rstrip()
                 if line:
-                    print(line)
+                    current_time = datetime.datetime.now().strftime('%H:%M:%S')
+                    
+                    # Color-code and categorize output
+                    if any(keyword in line.lower() for keyword in ['error', 'failed', 'timeout']):
+                        print(f"[{current_time}] [ERROR] {line}")
+                    elif any(keyword in line.lower() for keyword in ['warning', 'warn']):
+                        print(f"[{current_time}] [WARN]  {line}")
+                    elif any(keyword in line.lower() for keyword in ['open', 'found', 'vulnerable', 'critical', 'high']):
+                        findings_count += 1
+                        print(f"[{current_time}] [FIND]  {line}")
+                        print(f"[COUNTER] Total findings: {findings_count}")
+                    elif any(keyword in line.lower() for keyword in ['scanning', 'testing', 'checking']):
+                        print(f"[{current_time}] [SCAN]  {line}")
+                    else:
+                        print(f"[{current_time}] [INFO]  {line}")
+                    
                     output_lines.append(line)
                     last_activity = time.time()
-                    
-                    # Highlight important findings
-                    if any(keyword in line.lower() for keyword in ['open', 'found', 'vulnerable', 'critical', 'high']):
-                        print(f">>> FINDING: {line}")
         
         # Wait for process to complete
         return_code = process.wait()
-        
-        # Final scan summary
         elapsed_total = time.time() - start_time
-        print(f"\n{'='*80}")
-        print(f"SCAN COMPLETION SUMMARY")
-        print(f"{'='*80}")
-        print(f"Tool: {scan_type.upper()}")
-        print(f"Target: {target}")
-        print(f"Total duration: {elapsed_total:.1f} seconds")
-        print(f"Return code: {return_code}")
-        print(f"Output lines: {len(output_lines)}")
+        
+        # Enhanced scan completion summary
+        print("-" * 80)
+        print(f"[SCAN COMPLETED] {datetime.datetime.now().strftime('%H:%M:%S')}")
+        print(f"[DURATION] {elapsed_total:.2f} seconds ({elapsed_total/60:.1f} minutes)")
+        print(f"[OUTPUT LINES] {len(output_lines)} total")
+        print(f"[FINDINGS] {findings_count} items detected")
+        print(f"[EXIT CODE] {return_code}")
         
         if return_code == 0:
-            print(f"Status: SCAN COMPLETED SUCCESSFULLY!")
+            print(f"[STATUS] SCAN COMPLETED SUCCESSFULLY")
         elif return_code == 2:
-            print(f"Status: SCAN COMPLETED WITH SOME ISSUES")
+            print(f"[STATUS] SCAN COMPLETED WITH SOME ISSUES")
         else:
-            print(f"Status: SCAN FAILED")
+            print(f"[STATUS] SCAN FAILED OR INTERRUPTED")
         
-        # Show findings summary
-        findings = [line for line in output_lines if any(keyword in line.lower() for keyword in ['open', 'found', 'vulnerable'])]
-        if findings:
-            print(f"\nKEY FINDINGS SUMMARY:")
-            print(f"  Total findings: {len(findings)}")
-            for i, finding in enumerate(findings[:5], 1):
-                print(f"  {i}. {finding[:100]}{'...' if len(finding) > 100 else ''}")
-            if len(findings) > 5:
-                print(f"  ... and {len(findings) - 5} more findings")
+        # Detailed findings summary
+        if findings_count > 0:
+            print("\n" + "=" * 80)
+            print("FINDINGS SUMMARY")
+            print("=" * 80)
+            
+            finding_lines = [line for line in output_lines if any(keyword in line.lower() 
+                           for keyword in ['open', 'found', 'vulnerable', 'critical', 'high'])]
+            
+            for i, finding in enumerate(finding_lines[:10], 1):
+                print(f"{i:2d}. {finding}")
+            
+            if len(finding_lines) > 10:
+                print(f"... and {len(finding_lines) - 10} more findings")
+            
+            print(f"\nTotal findings displayed: {min(len(finding_lines), 10)} of {len(finding_lines)}")
+        else:
+            print("\n[INFO] No significant findings detected in this scan")
         
-        if kwargs.get('save_output'):
-            print(f"\nFILE OUTPUT INFORMATION:")
-            print(f"Results have been saved to the results directory.")
-            # Find and display the results directory
+        # File output information
+        if save_output:
+            print("\n" + "=" * 80)
+            print("OUTPUT FILES")
+            print("=" * 80)
+            print("[INFO] Results saved to files automatically")
+            
+            # Find and display the latest results directory
             try:
                 result_dirs = [item for item in os.listdir('.') if os.path.isdir(item) and item.startswith('results_')]
                 if result_dirs:
                     latest_dir = max(result_dirs, key=lambda x: os.path.getmtime(x))
-                    print(f"Latest results directory: {latest_dir}")
-                    comprehensive_report = os.path.join(latest_dir, "comprehensive_scan_report.txt")
-                    if os.path.exists(comprehensive_report):
-                        file_size = os.path.getsize(comprehensive_report)
-                        print(f"Comprehensive report: {comprehensive_report} ({file_size} bytes)")
-                        print(f"Use option [4] to view previous results.")
+                    print(f"[DIRECTORY] {latest_dir}")
+                    
+                    # List key files
+                    for filename in ['comprehensive_scan_report.txt', 'naabu_results.txt', 'httpx_results.txt', 'nuclei_results.txt']:
+                        filepath = os.path.join(latest_dir, filename)
+                        if os.path.exists(filepath):
+                            file_size = os.path.getsize(filepath)
+                            print(f"[FILE] {filename} ({file_size:,} bytes)")
+                    
+                    print(f"[ACCESS] Use menu option [4] to view detailed results")
             except OSError as e:
-                print(f"Could not list results directories: {e}")
+                print(f"[ERROR] Could not access results directory: {e}")
         else:
-            print(f"\nOutput was displayed in real-time only (not saved to files).")
+            print("\n[INFO] Output displayed in real-time only (not saved)")
         
-        print(f"{'='*80}")
-        input("\nPress Enter to continue...")
+        print("=" * 80)
+        print(f"\n[SCAN COMPLETED] Press Enter to return to main menu...")
+        input()
+        return return_code == 0
         
     except KeyboardInterrupt:
-        print(f"\n\n{'='*80}")
-        print(f"SCAN INTERRUPTED BY USER")
-        print(f"{'='*80}")
+        print(f"\n\n{'=' * 80}")
+        print("SCAN INTERRUPTED BY USER")
+        print("=" * 80)
         if process:
+            print("[ACTION] Terminating scan process...")
             try:
                 process.terminate()
                 process.wait(timeout=5)
+                print("[STATUS] Process terminated cleanly")
             except:
                 process.kill()
-        print(f"Scan was stopped after {time.time() - start_time:.1f} seconds")
-        input("Press Enter to continue...")
+                print("[STATUS] Process forcefully killed")
+        
+        elapsed = time.time() - start_time
+        print(f"[DURATION] Scan ran for {elapsed:.1f} seconds before interruption")
+        print("=" * 80)
+        return False
+        
+    except FileNotFoundError:
+        print("\n" + "=" * 80)
+        print("SCAN ERROR - FILE NOT FOUND")
+        print("=" * 80)
+        print("[ERROR] workflow.py not found in src/ directory")
+        print("[ACTION] Please ensure all toolkit files are present")
+        print("[COMMAND] " + " ".join(cmd))
+        print("=" * 80)
+        return False
+        
     except Exception as e:
-        print(f"\n{'='*80}")
-        print(f"SCAN ERROR")
-        print(f"{'='*80}")
-        print(f"Error running scan: {e}")
-        print(f"Command: {' '.join(cmd)}")
-        input("Press Enter to continue...")
+        print(f"\n{'=' * 80}")
+        print("SCAN ERROR - UNEXPECTED FAILURE")
+        print("=" * 80)
+        print(f"[ERROR] {str(e)}")
+        print(f"[COMMAND] {' '.join(cmd)}")
+        print(f"[TIME] {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+        print("=" * 80)
+        return False
+
 
 def view_results():
     """View previous scan results."""
@@ -1089,7 +921,7 @@ def get_naabu_flags():
     
     while True:
         print("\nNAABU FLAGS (Single selection - choose one):")
-        print("  -p  | Ports to scan (e.g., '80,443,8000-9000' or 'top-1000')")
+        print("  -p  | Ports to scan (e.g., '80,443,8080' or 'top-1000')")
         print("  -s  | Stealth mode (reduces rate and uses SYN scan)")
         print("  -t  | Threads/Concurrency (default: 25)")
         print("  -r  | Rate limit (packets per second)")
@@ -1203,7 +1035,6 @@ def get_naabu_flags():
                         print("ERROR: Timeout must be between 100-30000ms")
                 except ValueError:
                     print("ERROR: Timeout must be a number")
-                    
         elif choice == "-R":
             retries = input("Enter retry count (0-5, default 2): ").strip()
             if retries:
@@ -1257,8 +1088,8 @@ def get_naabu_flags():
             print("Ping discovery disabled")
             
         elif choice == "-v":
-            selected_flags['naabu_debug'] = True
-            print("Verbose/debug output enabled")
+            selected_flags['naabu_verbose'] = True
+            print("Verbose output enabled")
             
         elif choice == "-j":
             selected_flags['naabu_json'] = True
@@ -1292,7 +1123,7 @@ def get_httpx_flags():
     while True:
         print("\nHTTPX FLAGS (Single selection - choose one):")
         print("  -t  | Title extraction")
-        print("  -s  | Status code display")
+        print("  -s  | Status code display (uses -status-code flag)")
         print("  -T  | Technology detection")
         print("  -w  | Web server information")
         print("  -f  | Follow HTTP redirects")
@@ -1896,40 +1727,18 @@ def main():
         elif choice == "1":
             # Port Scan (naabu)
             target = get_target_input()
-            ports = get_ports_input()
-            options = get_scan_options()
-            
-            # Get Naabu-specific flags
-            naabu_flags = get_naabu_flags()
-            
-            # Merge options and flags
-            combined_options = {**options, **naabu_flags}
-            
-            run_scan("naabu", target, ports=ports, **combined_options)
+            if target:
+                run_scan("naabu", target)
         elif choice == "2":
             # HTTP Service Detection (httpx)
             target = get_target_input()
-            options = get_scan_options()
-            
-            # Get HTTPX-specific flags
-            httpx_flags = get_httpx_flags()
-            
-            # Merge options and flags
-            combined_options = {**options, **httpx_flags}
-            
-            run_scan("httpx", target, **combined_options)
+            if target:
+                run_scan("httpx", target)
         elif choice == "3":
             # Vulnerability Scan (nuclei)
             target = get_target_input()
-            options = get_scan_options()
-            
-            # Get Nuclei-specific flags
-            nuclei_flags = get_nuclei_flags()
-            
-            # Merge options and flags
-            combined_options = {**options, **nuclei_flags}
-            
-            run_scan("nuclei", target, **combined_options)
+            if target:
+                run_scan("nuclei", target)
         elif choice == "4":
             view_results()
         elif choice == "5":

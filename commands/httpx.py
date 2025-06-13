@@ -65,7 +65,7 @@ def run_httpx(target=None, target_list=None, output_file=None, json_output=False
     Returns:
         bool: True if execution was successful, False otherwise.
     """
-      # Check if httpx is available, install if needed
+    # Check if httpx is available, install if needed
     if not check_httpx():
         if auto_install:
             print(" HTTPX not found. Attempting automatic installation...")
@@ -81,7 +81,8 @@ def run_httpx(target=None, target_list=None, output_file=None, json_output=False
     if not httpx_path:
         print(" HTTPX installation verification failed - executable not found in PATH")
         return False
-      # Validate parameters
+    
+    # Validate parameters
     if not target and not target_list:
         print("Error: Either target or target_list must be specified.")
         return False
@@ -94,7 +95,8 @@ def run_httpx(target=None, target_list=None, output_file=None, json_output=False
     cmd = [httpx_path]
     
     if target:
-        cmd.extend(["-u", target])
+        # For single targets, use without a flag
+        cmd.append(target)
     if target_list:
         cmd.extend(["-l", target_list])
     
@@ -106,7 +108,7 @@ def run_httpx(target=None, target_list=None, output_file=None, json_output=False
     if title:
         cmd.append("-title")
     if status_code:
-        cmd.append("-status-code")
+        cmd.append("-status-code")  # The correct flag for httpx
     if tech_detect:
         cmd.append("-tech-detect")
     if web_server:
@@ -123,22 +125,29 @@ def run_httpx(target=None, target_list=None, output_file=None, json_output=False
     # Add any additional arguments
     if additional_args:
         cmd.extend(additional_args)
-      # Always show real-time output to user
+    
+    # Always show real-time output to user
     print(f" Running HTTPX: {' '.join(cmd)}")
     
     # Run with retry for better resilience - real-time output always shown
-    success = run_cmd(cmd, retry=1, silent=False)
-    
-    if success:
-        if save_output and output_file:
-            print(f" HTTPX scan completed! Output saved to: {output_file}")
+    try:
+        success = run_cmd(cmd, retry=1, silent=False)
+        
+        if success:
+            if save_output and output_file:
+                print(f" HTTPX scan completed! Output saved to: {output_file}")
+            else:
+                print(" HTTPX scan completed!")
         else:
-            print(" HTTPX scan completed!")
-    else:
-        print(" Failed to execute HTTPX. Please check the parameters and try again.")
+            print(" Failed to execute HTTPX. Please check the parameters and try again.")
+            print(" HINT: Make sure targets are specified correctly. HTTPX expects target without a flag.")
+            return False
+        
+        return True
+    except Exception as e:
+        print(f" HTTPX execution error: {str(e)}")
+        print(" Please check your parameters and try again.")
         return False
-    
-    return True
 
 def parse_httpx_results(output_file, json_format=False):
     """

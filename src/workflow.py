@@ -567,11 +567,28 @@ def get_port_specification(port_spec: str) -> Optional[str]:
     Returns:
         Optional[str]: Naabu-compatible port specification, or None to use naabu defaults
     """
-    if port_spec == "top-100":
-        return "top-100"
-    elif port_spec == "top-1000":
-        # Return None to use naabu's default top-1000 ports
+    if not port_spec:
+        # Return None to use naabu's default behavior
         return None
+          # Handle legacy "top-N" format from interactive menu
+    if port_spec.startswith("top-"):
+        try:
+            # Extract N from "top-N" format
+            num_ports = port_spec.split("-")[1]
+            # Validate the number is reasonable for naabu (max 1000 for stability)
+            num_ports_int = int(num_ports)
+            if num_ports_int > 1000:
+                print(f"Warning: {num_ports_int} is a large number of ports. Limiting to 1000 for better performance.")
+                return "1000"
+            elif num_ports_int < 1:
+                print(f"Warning: Invalid port count {num_ports_int}. Using default 100.")
+                return "100"
+            # We'll return the number as a string, it will be used with -top-ports flag
+            return num_ports
+        except (IndexError, ValueError):
+            # If parsing fails, use default behavior
+            print("Warning: Failed to parse port specification. Using default 100 ports.")
+            return "100"
     elif port_spec == "all":
         return "1-65535"
     else:
@@ -614,12 +631,15 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
 
     # NAABU
     if args.naabu:
-        print(f"\nStarting naabu port scan...")
-
-        # Always apply port specification mapping, whether from args or default
+        print(f"\nStarting naabu port scan...")        # Port specification logic - prioritize explicit --ports over --top-ports to avoid conflicts
         if args.ports:
+            # If specific ports are provided via -p/--ports, use those
             ports_to_scan = args.ports
+        elif args.top_ports:
+            # If top ports are specified via --top-ports, format them as "top-N"
+            ports_to_scan = f"top-{args.top_ports}"
         else:
+            # Default to top 1000 ports if nothing specified
             ports_to_scan = "top-1000"
         
         # Apply port specification mapping to convert common specs to naabu-compatible formats
@@ -644,37 +664,48 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
         temp_output = None
         if args.save_output:
             temp_output = os.path.join(output_dir, "temp_naabu_output.txt")        # Initialize naabu arguments for enhanced real-time output
-        naabu_args = ["-v"]  # Always add verbose for real-time port information
+        naabu_args = []  # Don't add -v here to avoid duplicates - it's added later
         if args.stealth:
             naabu_args.extend([
                 "-rate", "10",
                 "-c", "25",
                 "-scan-type", "syn",
-                "-retries", "1",
-                "-warm-up-time", "2"  # Add warm-up time for stability
+                "-retries", "1",                "-warm-up-time", "2"  # Add warm-up time for stability
             ])
         else:
-            naabu_args.extend([
-                "-rate", "1000",
-                "-c", "50",
-                "-warm-up-time", "2"  # Add warm-up time for stability
-            ])
-          # Add user-specified naabu flags
-        if args.threads:
-            naabu_args.extend(["-c", str(args.threads)])
-        if args.rate:
-            naabu_args.extend(["-rate", str(args.rate)])
+            # Set default values, but allow user-specified values to override
+            default_rate = "1000"
+            default_threads = "50"
+            
+            # Use user-specified values if provided, otherwise use defaults
+            if args.rate:
+                naabu_args.extend(["-rate", str(args.rate)])
+            else:
+                naabu_args.extend(["-rate", default_rate])
+            
+            if args.threads:
+                naabu_args.extend(["-c", str(args.threads)])
+            else:
+                naabu_args.extend(["-c", default_threads])
+            
+            naabu_args.extend(["-warm-up-time", "2"])  # Add warm-up time for stability
+          # Add other user-specified naabu flags (but skip threads and rate since we handled them above)
+        # Skip threads and rate since we handled them above to avoid duplicates
+        # Validate and add other flags, ensuring no None values are passed
         if args.exclude_ports:
             naabu_args.extend(["-exclude-ports", args.exclude_ports])
         if args.scan_type:
             naabu_args.extend(["-scan-type", args.scan_type])
-        if args.naabu_timeout:
+        if args.naabu_timeout and args.naabu_timeout is not None:
             naabu_args.extend(["-timeout", str(args.naabu_timeout)])
-        if args.naabu_retries:
+        if args.naabu_retries and args.naabu_retries is not None:
             naabu_args.extend(["-retries", str(args.naabu_retries)])
-        if args.top_ports:
-            naabu_args.extend(["-top-ports", str(args.top_ports)])
-        if args.source_port:
+        
+        # We'll handle top ports below with mapped_ports to avoid duplicate flags        # Comment out to prevent duplicate -top-ports flags
+        #if args.top_ports:
+        #    naabu_args.extend(["-top-ports", str(args.top_ports)])
+        
+        if args.source_port and args.source_port is not None:
             naabu_args.extend(["-source-port", str(args.source_port)])
         if args.interface:
             naabu_args.extend(["-interface", args.interface])
@@ -688,8 +719,10 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
             naabu_args.append("-debug")
         if args.tool_silent:
             naabu_args.append("-silent")
-        if args.timeout:
-            naabu_args.extend(["-timeout", str(args.timeout * 1000)])  # Convert to milliseconds
+        if args.timeout and args.timeout is not None:
+            # Limit timeout to reasonable values (max 60 seconds = 60000 ms)
+            timeout_ms = min(args.timeout * 1000, 60000)
+            naabu_args.extend(["-timeout", str(timeout_ms)])  # Convert to milliseconds
 
         print_status_header("naabu", target, "port scan")
         
@@ -703,14 +736,27 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
             return False
         
         print(f"Using naabu from: {naabu_path}")
-          # Enhanced naabu command with better verbose output
-        naabu_cmd = [naabu_path, "-host", target, "-v"]  # Always verbose for port info
+        # Enhanced naabu command with better verbose output
+        naabu_cmd = [naabu_path, "-host", target]  # Don't add -v here yet
+        
+        # Handle port specification, distinguishing between top ports and specific ports
+        # NOTE: We ensure only ONE port flag (-p or -top-ports) is ever used to avoid conflicts
         if mapped_ports:
-            naabu_cmd.extend(["-p", mapped_ports])
+            if ports_to_scan.startswith("top-"):
+                # Use -top-ports flag for top-N format
+                naabu_cmd.extend(["-top-ports", mapped_ports])
+                print(f"Using top {mapped_ports} ports")
+            else:
+                # Use -p flag for specific port ranges
+                naabu_cmd.extend(["-p", mapped_ports])
+                print(f"Using specific ports: {mapped_ports}")
         
         # Add scan type for better output consistency
         if not args.stealth:
             naabu_cmd.extend(["-scan-type", "connect"])  # Connect scan shows more details
+        
+        # Add verbose flag only once, here
+        naabu_cmd.append("-v")
           # Add output options
         if args.naabu_json or args.json_output:
             naabu_cmd.append("-json")
@@ -824,9 +870,10 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
             return False
         
         print(f"Using httpx from: {httpx_path}")
+          # Build base command - for single target, pass directly without a flag
+        httpx_cmd = [httpx_path, httpx_input]
         
-        # Build base command
-        httpx_cmd = [httpx_path, "-u", httpx_input]        # Add user-specified detection options
+        # Add user-specified detection options
         if args.title:
             httpx_cmd.append("-title")
         
@@ -1662,10 +1709,9 @@ def main():
     parser.add_argument('-o', '--output-dir', help='Custom output directory')
     parser.add_argument('--save-output', action='store_true', help='Save scan output to files (separate from real-time display)')
     parser.add_argument('--json-output', action='store_true', help='Save output in JSON format (requires --save-output)')
-    
-    # Workflow options
+      # Workflow options
     parser.add_argument('--update-templates', action='store_true', help='Update nuclei templates before scanning')
-    parser.add_argument('--timeout', type=int, default=3600, help='Maximum scan time in seconds (default: 3600)')
+    parser.add_argument('--timeout', type=int, default=None, help='Maximum scan time in seconds (optional - no timeout by default)')
     parser.add_argument('--force-tools', action='store_true', help='Force continue even if tools check fails')
     parser.add_argument('-s', '--stealth', action='store_true', help='Enable stealth mode for more discreet scanning')
     

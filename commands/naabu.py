@@ -37,9 +37,35 @@ except ImportError:
         
         return None
 
+def convert_port_format(ports):
+    """
+    Convert port format to naabu-compatible format.
+    
+    Args:
+        ports (str): Port specification (e.g., "top-1000", "80,443", "1000-2000")
+        
+    Returns:
+        str: Naabu-compatible port specification
+    """
+    if not ports:
+        return None
+        
+    # Handle "top-N" format
+    if ports.startswith("top-"):
+        try:
+            num_ports = int(ports.split("-")[1])
+            # Use naabu's built-in top ports option
+            return f"top-{num_ports}"
+        except (ValueError, IndexError):
+            print(f"Warning: Invalid top ports format '{ports}', using default")
+            return None
+    
+    # Handle other formats (ranges, specific ports) - pass through as-is
+    return ports
+
 def run_naabu(target=None, target_list=None, ports=None, exclude_ports=None, 
              threads=None, rate=None, timeout=None, json_output=False, 
-             output_file=None, save_output=False, tool_silent=False, additional_args=None, auto_install=True):
+             output_file=None, save_output=False, tool_silent=False, additional_args=None, auto_install=False):
     """
     Run Naabu port scanner with the specified parameters.
     Real-time output is ALWAYS shown to the user.
@@ -47,7 +73,7 @@ def run_naabu(target=None, target_list=None, ports=None, exclude_ports=None,
     Parameters:
         target (str): Single target to scan.
         target_list (str): Path to a file containing targets.
-        ports (str): Ports to scan (e.g., "80,443,8080-8090").
+        ports (str): Ports to scan (e.g., "80,443,8080-8090" or "top-1000").
         exclude_ports (str): Ports to exclude from scan.
         threads (int): Number of concurrent threads.
         rate (int): Number of packets per second.
@@ -55,7 +81,8 @@ def run_naabu(target=None, target_list=None, ports=None, exclude_ports=None,
         json_output (bool): Output in JSON format when saving to file.
         output_file (str): Path to save the output (only used if save_output=True).
         save_output (bool): Save output to file (real-time output always shown).
-        tool_silent (bool): Make naabu tool itself run silently.        additional_args (list): Additional naabu arguments.
+        tool_silent (bool): Make naabu tool itself run silently.
+        additional_args (list): Additional naabu arguments.
         auto_install (bool): Automatically install naabu if not found.
         
     Returns:
@@ -71,13 +98,14 @@ def run_naabu(target=None, target_list=None, ports=None, exclude_ports=None,
         else:
             print(" Naabu is not installed. Please install it first or set auto_install=True.")
             return False
-      # Get the actual path to naabu
+    
+    # Get the actual path to naabu
     naabu_path = get_executable_path("naabu")
     if not naabu_path:
         print(" Naabu not found in PATH or in ~/go/bin.")
         return False
     
-    print(f"Naabu is available:")
+    print(f"Using naabu from: {naabu_path}")
     
     if not target and not target_list:
         print("Error: Either target or target_list must be specified.")
@@ -93,11 +121,25 @@ def run_naabu(target=None, target_list=None, ports=None, exclude_ports=None,
         cmd.extend(["-host", target])
     if target_list:
         cmd.extend(["-l", target_list])
+    
+    # Convert port format for naabu compatibility
     if ports:
-        cmd.extend(["-p", ports])
+        converted_ports = convert_port_format(ports)
+        if converted_ports:
+            # For "top-N" format, naabu expects just the number
+            if converted_ports.startswith("top-"):
+                try:
+                    num_ports = converted_ports.split("-")[1]
+                    cmd.extend(["-top-ports", num_ports])
+                    print(f"Using top {num_ports} ports")
+                except:
+                    print("Warning: Failed to parse top ports, using default")
+            else:
+                cmd.extend(["-p", converted_ports])
+                print(f"Using ports: {converted_ports}")
     else:
-        # If no ports specified, use top 1000 ports by default
-        print("No ports specified, using naabu's default top 1000 ports")
+        # If no ports specified, use naabu's default
+        print("No ports specified, using naabu's default port selection")
     if exclude_ports:
         cmd.extend(["-exclude-ports", exclude_ports])
     if threads:
@@ -132,23 +174,30 @@ def run_naabu(target=None, target_list=None, ports=None, exclude_ports=None,
     # Add verbose mode to see scan progress
     if "-v" not in cmd and "--verbose" not in cmd:
         cmd.append("-v")
-    
-    # Always show real-time output to user
+      # Always show real-time output to user
     print(f"Running Naabu: {' '.join(cmd)}")
 
     # Run with retry for better resilience - real-time output always shown
-    success = run_cmd(cmd, retry=1, silent=False)
-    
-    if success:
-        if save_output and output_file:
-            print(f" Naabu scan completed! Output saved to: {output_file}")
+    try:
+        success = run_cmd(cmd, retry=1, silent=False)
+        
+        if success:
+            if save_output and output_file:
+                print(f" Naabu scan completed! Output saved to: {output_file}")
+            else:
+                print(" Naabu scan completed!")
         else:
-            print(" Naabu scan completed!")
-    else:
-        print(" Failed to execute Naabu. Please check the parameters and try again.")
+            print(" Failed to execute Naabu. Please check the parameters and try again.")
+            print(" HINT: For port format issues, try using specific ports like '80,443' or '-top-ports 100'")
+            if ports and str(ports).startswith("top-"):
+                print(f" Port format '{ports}' should be processed as '-top-ports {ports.split('-')[1]}' for naabu")
+            return False
+        
+        return True
+    except Exception as e:
+        print(f" Naabu execution error: {str(e)}")
+        print(" Please check your parameters and try again.")
         return False
-    
-    return True
 
 def parse_naabu_results(output_file, json_format=False):
     """
