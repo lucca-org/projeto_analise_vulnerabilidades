@@ -99,8 +99,7 @@ def run_nuclei(target=None, target_list=None, templates=None, tags=None, severit
     else:
         print("Error: Either target or target_list must be specified")
         return False
-    
-    # Add template parameters
+      # Add template parameters
     if templates:
         if os.path.exists(templates):
             cmd.extend(["-t", templates])
@@ -112,9 +111,9 @@ def run_nuclei(target=None, target_list=None, templates=None, tags=None, severit
         cmd.extend(["-tags", tags])
     
     if severity:
-        cmd.extend(["-severity", severity])
+        cmd.extend(["-s", severity])  # Use short flag for severity
     
-    # Output configuration - ALWAYS show real-time, optionally save to file    if save_output and output_file:
+    # Output configuration - ALWAYS show real-time, optionally save to fileif save_output and output_file:
         cmd.extend(["-o", output_file])
         if jsonl:
             cmd.append("-jsonl")

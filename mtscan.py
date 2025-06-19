@@ -432,8 +432,7 @@ def run_scan(scan_type, target, **kwargs):
             cmd.append("--naabu-json")
         elif flag == 'naabu_csv' and value:
             cmd.append("--naabu-csv")
-        
-        # HTTPX flags
+          # HTTPX flags
         elif flag == 'title' and value:
             cmd.append("--title")
         elif flag == 'status_code' and value:

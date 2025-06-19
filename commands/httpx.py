@@ -99,8 +99,7 @@ def run_httpx(target=None, target_list=None, output_file=None, json_output=False
         cmd.append(target)
     if target_list:
         cmd.extend(["-l", target_list])
-    
-    # Only add output file if we want to save output
+      # Only add output file if we want to save output
     if save_output and output_file:
         cmd.extend(["-o", output_file])
     if json_output:
@@ -108,13 +107,13 @@ def run_httpx(target=None, target_list=None, output_file=None, json_output=False
     if title:
         cmd.append("-title")
     if status_code:
-        cmd.append("-status-code")  # The correct flag for httpx
+        cmd.append("-sc")  # Correct short flag for status code
     if tech_detect:
-        cmd.append("-tech-detect")
+        cmd.append("-td")  # Correct short flag for tech detect
     if web_server:
-        cmd.append("-web-server")
+        cmd.append("-server")  # Correct flag for web server
     if follow_redirects:
-        cmd.append("-follow-redirects")
+        cmd.append("-fr")  # Correct short flag for follow redirects
     if tool_silent:
         cmd.append("-silent")
     if timeout:

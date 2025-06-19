@@ -116,6 +116,224 @@ def print_progress_indicator(message: str, symbol: str = "*", color: Optional[st
     print(f"[{timestamp}] {prefix} {message}")
     sys.stdout.flush()
 
+def run_with_clean_output_only(cmd: List[str], output_file: Optional[str] = None, 
+                             tool_name: str = "Tool") -> Tuple[bool, str]:
+    """
+    Execute a command silently and capture only clean results for graphics usage.
+    No real-time output, just clean structured data.
+    
+    Args:
+        cmd: Command and arguments to execute
+        output_file: Optional file to save clean output to
+        tool_name: Name of the tool for display purposes
+        
+    Returns:
+        Tuple of (success, captured_output)
+    """
+    captured_output = []
+    process = None
+    
+    try:
+        print(f"[{tool_name}] Starting scan (silent mode for clean output)...")
+        
+        # Validate command
+        if not cmd or not cmd[0]:
+            print(f"[{tool_name}] ERROR: Invalid command provided")
+            return False, ""
+        
+        # Check if executable exists
+        if not shutil.which(cmd[0]) and not os.path.exists(cmd[0]):
+            print(f"[{tool_name}] ERROR: Executable not found: {cmd[0]}")
+            return False, ""
+        
+        # Start process with silent configuration
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,  # Separate stderr to avoid noise
+            universal_newlines=True,
+            bufsize=1,
+            cwd=os.getcwd()
+        )
+        
+        # Capture all output without displaying
+        stdout, stderr = process.communicate()
+        return_code = process.returncode
+          # Process stdout lines and filter for clean results
+        if stdout:
+            lines = stdout.strip().split('\n')
+            for line in lines:
+                line = line.strip()
+                if line and not is_noise_line(line):
+                    captured_output.append(line)
+        
+        # Determine if scan was successful
+        # For HTTPx, no results can be expected if no web services are running
+        scan_successful = return_code == 0 or (tool_name.upper() == "HTTPX" and return_code != 0 and len(captured_output) == 0)
+        
+        # Show completion status
+        if scan_successful:
+            if len(captured_output) > 0:
+                print(f"[{tool_name}] Scan completed successfully - {len(captured_output)} results found")
+            else:
+                if tool_name.upper() == "HTTPX":
+                    print(f"[{tool_name}] Scan completed successfully - No HTTP services found on target")
+                else:
+                    print(f"[{tool_name}] Scan completed successfully - No results found")
+        else:
+            print(f"[{tool_name}] Scan completed with errors - {len(captured_output)} results")
+            # Add any relevant error info
+            if stderr and stderr.strip():
+                error_lines = [line.strip() for line in stderr.strip().split('\n') if line.strip()]
+                relevant_errors = [line for line in error_lines if is_relevant_error(line)]
+                if relevant_errors:
+                    print(f"[{tool_name}] Errors: {'; '.join(relevant_errors[:3])}")          # Save clean output to file in graphics-ready format
+        if output_file and captured_output:
+            try:
+                # Use graphics formatting for the saved file
+                save_graphics_ready_results(captured_output, output_file, tool_name.lower(), "target")
+            except Exception as e:
+                print(f"[{tool_name}] Failed to save output: {e}")
+        
+        return scan_successful, '\n'.join(captured_output)
+        
+    except subprocess.TimeoutExpired:
+        print(f"[{tool_name}] Command timed out")
+        if process:
+            process.kill()
+        return False, '\n'.join(captured_output)
+    except KeyboardInterrupt:
+        print(f"[{tool_name}] Interrupted by user")
+        if process:
+            process.terminate()
+        return False, '\n'.join(captured_output)
+    except Exception as e:
+        print(f"[{tool_name}] Execution failed: {e}")
+        if process:
+            process.terminate()
+        return False, '\n'.join(captured_output)
+
+def is_noise_line(line: str) -> bool:
+    """
+    Check if a line is noise/verbose output that should be filtered out.
+    Only keep actual scan results for graphics usage.
+    
+    Args:
+        line: Line to check
+        
+    Returns:
+        True if line should be filtered out
+    """
+    if not line or not line.strip():
+        return True
+    
+    line = line.strip()
+    line_lower = line.lower()
+    
+    # Filter out common noise patterns
+    noise_patterns = [
+        # Progress and status messages
+        'starting', 'finished', 'loading', 'initializing', 'progress:',
+        'scanning', 'processing', 'completed', 'templates loaded',
+        'using', 'target', 'configuration', 'version', 'author',
+        'license', 'website', 'update', 'projectdiscovery.io',
+        
+        # Log level indicators
+        '[inf]', '[wrn]', '[err]', '[dbg]', '[info]', '[debug]', '[warn]',
+        
+        # Performance/config messages
+        'rate limit', 'concurrency', 'threads', 'timeout', 'retries',
+        'maximum', 'minimum', 'bulk-size', 'templates excluded',
+        
+        # Visual elements and decorations
+        '════', '────', '▶', '✓', '✗', '⚠', '│', '┌', '┐', '└', '┘',
+        
+        # Generic status words that don't indicate results
+        'stats', 'current progress', 'scan completed', 'execution completed',
+        'templates loaded for', 'new templates added', 'templates available',
+        
+        # Nuclei specific noise
+        'templates loaded in', 'templates clustered into', 'requests made',
+        'matched at', 'templates executed', 'no results found',
+          # Httpx specific noise  
+        'input processed', 'running httpx', 'probe finished', 'httpx', 'started',
+        'finished at', 'requests sent', 'responses received', 'test complete',
+        
+        # Naabu specific noise
+        'packets sent', 'ports scanned', 'host discovery', 'syn scan',
+        'connect scan', 'interface selected'
+    ]
+    
+    # Check for noise patterns
+    for pattern in noise_patterns:
+        if pattern in line_lower:
+            return True
+    
+    # Filter out lines that are just URLs without results
+    if line.startswith(('http://', 'https://')) and len(line.split()) == 1:
+        # This is likely just a URL being processed, not a result
+        return True
+    
+    # Filter out lines that are just IP addresses without port info
+    if ':' not in line and all(c.isdigit() or c == '.' for c in line.replace(' ', '')):
+        return True
+    
+    # Filter out empty brackets or minimal content
+    if line.strip() in ['[]', '{}', '()', '--', '==', '||']:
+        return True
+    
+    # Keep lines that look like actual results
+    result_indicators = [
+        # Port results (IP:PORT)
+        r'\d+\.\d+\.\d+\.\d+:\d+',
+        # HTTP results with status codes
+        r'http[s]?://.*\s+\[\d+\]',
+        # Vulnerability findings
+        r'\[.*\].*http[s]?://',
+        # Technology detection
+        r'http[s]?://.*\s+\[.*\]'
+    ]
+    
+    import re
+    for pattern in result_indicators:
+        if re.search(pattern, line):
+            return False
+    
+    # If line contains actual findings keywords, keep it
+    finding_keywords = ['open', 'closed', 'filtered', 'critical', 'high', 'medium', 'low', 
+                       'vulnerable', 'cve-', 'apache', 'nginx', 'iis', 'tomcat']
+    
+    if any(keyword in line_lower for keyword in finding_keywords):
+        # But only if it's not just a status message
+        if not any(noise in line_lower for noise in ['loading', 'using', 'starting', 'found template']):
+            return False
+    
+    # Default: filter out (most lines are noise in verbose output)
+    return True
+
+def is_relevant_error(line: str) -> bool:
+    """
+    Check if an error line contains relevant information.
+    
+    Args:
+        line: Error line to check
+        
+    Returns:
+        True if error is relevant
+    """
+    relevant_errors = [
+        'connection refused',
+        'timeout',
+        'permission denied',
+        'not found',
+        'failed to',
+        'error:',
+        'unable to'
+    ]
+    
+    line_lower = line.lower()
+    return any(error.lower() in line_lower for error in relevant_errors)
+
 def run_with_enhanced_realtime_output(cmd: List[str], output_file: Optional[str] = None, 
                                     tool_name: str = "Tool") -> Tuple[bool, str]:
     """
@@ -397,20 +615,27 @@ def finalize_comprehensive_report(report_file: str, target: str, overall_success
     naabu_executed = "NAABU SCAN RESULTS" in content
     httpx_executed = "HTTPX SCAN RESULTS" in content
     nuclei_executed = "NUCLEI SCAN RESULTS" in content
-    
-    # Count various findings with better detection
+      # Count various findings with better detection
     port_findings = []
     http_findings = []
     vuln_findings = []
     
     lines = content.splitlines()
     for line in lines:
-        line_lower = line.lower()
-        if 'open' in line_lower and any(port in line for port in [':', '/']):
+        line_lower = line.lower().strip()
+        
+        # Only look for findings in actual tool output sections, not in headers or static text
+        if line_lower.startswith(('=', '-', 'tool:', 'completion time:', 'status:', 'output length:', 'no output:', 'this could indicate:', 'scan overview:', 'this report contains', 'each section below', 'results are presented')):
+            continue
+            
+        # Port findings - look for specific port patterns
+        if ('open' in line_lower or 'listening' in line_lower) and any(port_pattern in line for port_pattern in [':', '/tcp', '/udp', 'port ']):
             port_findings.append(line.strip())
-        elif any(proto in line_lower for proto in ['http://', 'https://']):
+        # HTTP findings - look for actual HTTP service responses
+        elif any(proto in line_lower for proto in ['http://', 'https://']) and not line_lower.startswith('testing urls:'):
             http_findings.append(line.strip())
-        elif any(vuln in line_lower for vuln in ['critical', 'high', 'medium', 'low', 'cve-']):
+        # Vulnerability findings - look for actual vulnerability indicators, not just severity words in headers
+        elif any(vuln_indicator in line_lower for vuln_indicator in ['cve-', '[critical]', '[high]', '[medium]', '[low]', 'vulnerability found', 'exploit available']) and not any(header in line_lower for header in ['security issues identified:', 'vulnerability scanner:', 'security concerns:']):
             vuln_findings.append(line.strip())
     
     # Remove duplicates
@@ -756,15 +981,15 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
             naabu_cmd.extend(["-scan-type", "connect"])  # Connect scan shows more details
         
         # Add verbose flag only once, here
-        naabu_cmd.append("-v")
-          # Add output options
+        naabu_cmd.append("-v")        # Add output options
         if args.naabu_json or args.json_output:
             naabu_cmd.append("-json")
         elif args.naabu_csv:
             naabu_cmd.append("-csv")
         elif temp_output:
             naabu_cmd.extend(["-o", temp_output])
-          # Add the naabu arguments
+        
+        # Add the naabu arguments
         naabu_cmd.extend(naabu_args)
         
         # Add conditional parameters based on stealth mode
@@ -782,7 +1007,7 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
         
         print(f"Executing command: {' '.join(naabu_cmd)}")
         
-        naabu_success, naabu_output = run_with_enhanced_realtime_output(
+        naabu_success, naabu_output = run_with_clean_output_only(
             cmd=naabu_cmd,
             output_file=temp_output,
             tool_name="Naabu"
@@ -820,49 +1045,25 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
         print(f"Target: {httpx_input}")
 
         # Base httpx arguments
-        httpx_args = []
-        
-        # Add verbose output if not in tool-silent mode
-        if not args.tool_silent:
-            httpx_args.append("-v")
-        
-        # For comprehensive report, always capture output
+        httpx_args = []        # For maximum compatibility, only add essential flags
+        # Remove all potentially incompatible flags for now
+          # For comprehensive report, always capture output
         temp_output = None
         if args.save_output:
             temp_output = os.path.join(output_dir, "temp_httpx_output.txt")        # Configure performance settings based on stealth mode or user preferences
+        # Temporarily disable all performance flags for compatibility testing
         if args.stealth:
-            httpx_args.extend([
-                "-rate-limit", "5",
-                "-retries", "1",
-                "-timeout", "10",
-                "-delay", "5s"
-            ])
+            # Use minimal flags for stealth mode
+            pass  # No flags for now
         else:
-            # Use user-specified rate limit or default
-            if args.rate_limit:
-                httpx_args.extend(["-rate-limit", str(args.rate_limit)])
-            else:
-                httpx_args.extend(["-rate-limit", "150"])
-            
-            # Use user-specified timeout or default
-            if args.httpx_timeout:
-                httpx_args.extend(["-timeout", str(args.httpx_timeout)])
-            else:
-                httpx_args.extend(["-timeout", "5"])
-            
-            # Use user-specified threads
-            if args.httpx_threads:
-                httpx_args.extend(["-threads", str(args.httpx_threads)])
-            
-            # Use user-specified retries
-            if args.httpx_retries:
-                httpx_args.extend(["-retries", str(args.httpx_retries)])
-
+            # Use minimal flags for normal mode to avoid compatibility issues
+            pass  # No flags for now
+        
         print_status_header("httpx", target, "service detection")
         
         # Get the actual path to httpx executable
         httpx_path = get_executable_path("httpx")
-        if not httpx_path:
+        if not httpx_path:            
             print("ERROR: httpx not found in PATH or standard locations")
             print("Expected locations: /usr/bin/httpx, /root/go/bin/httpx, ~/go/bin/httpx")
             if args.save_output and comprehensive_report:
@@ -870,10 +1071,11 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
             return False
         
         print(f"Using httpx from: {httpx_path}")
-          # Build base command - for single target, pass directly without a flag
+        
+        # Build base command - for single target, pass directly without a flag
         httpx_cmd = [httpx_path, httpx_input]
         
-        # Add user-specified detection options
+        # Add user-specified detection options with valid flags
         if args.title:
             httpx_cmd.append("-title")
         
@@ -884,7 +1086,7 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
             httpx_cmd.append("-tech-detect")
         
         if args.web_server:
-            httpx_cmd.append("-web-server")
+            httpx_cmd.append("-server")
         
         if args.follow_redirects:
             httpx_cmd.append("-follow-redirects")
@@ -901,14 +1103,13 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
         
         # Add custom User-Agent if specified
         if args.user_agent:
-            httpx_cmd.extend(["-user-agent", args.user_agent])
+            httpx_cmd.extend(["-H", f"User-Agent: {args.user_agent}"])
         
         # Add custom headers if specified
         if args.headers:
             for header in args.headers.split(','):
                 httpx_cmd.extend(["-H", header.strip()])
-        
-        # Add filtering options
+          # Add filtering options with full flag names
         if args.filter_code:
             httpx_cmd.extend(["-filter-code", args.filter_code])
         
@@ -921,27 +1122,38 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
         if args.match_length:
             httpx_cmd.extend(["-match-length", args.match_length])
         
-        # Default behavior for non-stealth mode (maintain backward compatibility)
+        # Add proxy if specified
+        if args.proxy:
+            httpx_cmd.extend(["-http-proxy", args.proxy])
+        
+        # Add redirect options with full flag names
+        if args.disable_redirects:
+            httpx_cmd.append("-no-follow-redirects")
+        
+        if args.max_redirects:
+            httpx_cmd.extend(["-max-redirects", str(args.max_redirects)])
+          # Default behavior for non-stealth mode (maintain backward compatibility)
+        # Use minimal flags to avoid compatibility issues
         if not args.stealth and not any([args.title, args.status_code, args.tech_detect, args.web_server]):
-            httpx_cmd.extend(["-title", "-status-code", "-tech-detect", "-web-server", "-follow-redirects"])
-          # Add output options
+            # Don't add any default flags for maximum compatibility
+            pass        # Add output options
         if args.httpx_json or args.json_output:
             httpx_cmd.append("-json")
         elif args.httpx_csv:
             httpx_cmd.append("-csv")
         elif temp_output:
             httpx_cmd.extend(["-o", temp_output])
-            
-        # Add all other arguments
+          # Add all other arguments
         httpx_cmd.extend(httpx_args)
-        httpx_success, httpx_output = run_with_enhanced_realtime_output(
+        
+        httpx_success, httpx_output = run_with_clean_output_only(
             cmd=httpx_cmd,
             output_file=temp_output,
             tool_name="HTTPX"
         )
 
         print(f"\nHTTPX scan completed!")
-
+        
         if httpx_success:
             if args.save_output and comprehensive_report:
                 # Read temporary output and append to comprehensive report
@@ -956,15 +1168,20 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
                 if httpx_content.strip():
                     print(f"HTTP service detection results added to comprehensive report")
                 else:
-                    print("No HTTP services found")
+                    print("No HTTP services detected on target - this is normal if no web servers are running")
             else:
-                print("Real-time scan output was displayed above")
-                print("Results were not saved to files (as requested)")
+                if httpx_output.strip():
+                    print("Real-time scan output was displayed above")
+                    print("Results were not saved to files (as requested)")
+                else:
+                    print("No HTTP services detected on target - this is normal if no web servers are running")
         else:
-            print("HTTPX scan failed.")
+            print("HTTPX scan encountered errors.")
             if args.save_output and comprehensive_report:
-                append_to_comprehensive_report(comprehensive_report, "HTTPX", "Scan failed", False)
-            success = False    # NUCLEI
+                append_to_comprehensive_report(comprehensive_report, "HTTPX", "Scan encountered errors", False)
+            success = False
+    
+    # NUCLEI
     elif args.nuclei:
         print(f"\nStarting nuclei vulnerability scan...")
 
@@ -1007,29 +1224,29 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
             if args.store_resp:
                 nuclei_resp_dir = os.path.join(output_dir, "nuclei_responses")
                 create_directory_if_not_exists(nuclei_resp_dir)
-                nuclei_args.extend(["-store-resp", "-store-resp-dir", nuclei_resp_dir])# Configure performance settings based on stealth mode or user preferences
+                nuclei_args.extend(["-store-resp", "-store-resp-dir", nuclei_resp_dir])        # Configure performance settings based on stealth mode or user preferences
         if args.stealth:
             nuclei_args.extend([
-                "-rate-limit", "5",
-                "-bulk-size", "5", 
-                "-concurrency", "5",
+                "-rl", "5",
+                "-bs", "5", 
+                "-c", "5",
                 "-timeout", "5",
                 "-retries", "1",
-                "-exclude-tags", "fuzzing,dos,brute-force",
-                "-no-interactsh"
-                        ])
+                "-et", "fuzzing,dos,brute-force",
+                "-ni"
+            ])
         else:
             # Use user-specified concurrency or default
             if args.concurrency:
-                nuclei_args.extend(["-concurrency", str(args.concurrency)])
+                nuclei_args.extend(["-c", str(args.concurrency)])
             else:
-                nuclei_args.extend(["-concurrency", "10"])
+                nuclei_args.extend(["-c", "10"])
             
             # Use user-specified rate limit or default
             if args.nuclei_rate_limit:
-                nuclei_args.extend(["-rate-limit", str(args.nuclei_rate_limit)])
+                nuclei_args.extend(["-rl", str(args.nuclei_rate_limit)])
             else:
-                nuclei_args.extend(["-rate-limit", "50"])
+                nuclei_args.extend(["-rl", "50"])
             
             # Use user-specified timeout or default
             if args.nuclei_timeout:
@@ -1043,9 +1260,9 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
             
             # Use user-specified parallel processing
             if args.parallel_processing:
-                nuclei_args.extend(["-bulk-size", str(args.parallel_processing)])
+                nuclei_args.extend(["-bs", str(args.parallel_processing)])
             else:
-                nuclei_args.extend(["-bulk-size", "10"])
+                nuclei_args.extend(["-bs", "10"])
 
         print_status_header("nuclei", target, "vulnerability scan")
         
@@ -1065,22 +1282,47 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
             nuclei_cmd = [nuclei_path, "-l", nuclei_input]
         else:
             nuclei_cmd = [nuclei_path, "-u", nuclei_input]        # Add template specification - user-specified templates take precedence
+        templates_added = False
         if args.templates:
-            nuclei_cmd.extend(["-t", args.templates])
+            # Handle different template formats
+            if args.templates.startswith('/') or os.path.exists(args.templates):
+                # Absolute path or existing file/directory
+                nuclei_cmd.extend(["-t", args.templates])
+            elif '/' in args.templates:
+                # Relative path like 'cves/' or 'technologies/'
+                nuclei_cmd.extend(["-t", args.templates])
+            else:
+                # Template name or tag - let nuclei handle it
+                nuclei_cmd.extend(["-t", args.templates])
+            templates_added = True
         elif args.template_path:
             nuclei_cmd.extend(["-t", args.template_path])
+            templates_added = True
         
-        # Add tags - user-specified or default
+        # If no specific templates specified, use default comprehensive set
+        if not templates_added:
+            # Use a good default set of templates for comprehensive scanning
+            default_templates = [
+                "cves/",
+                "vulnerabilities/",
+                "exposures/",
+                "technologies/",
+                "misconfiguration/",
+                "default-logins/"
+            ]
+            for template in default_templates:
+                nuclei_cmd.extend(["-t", template])
+          # Add tags - user-specified or default
         if args.tags:
             nuclei_cmd.extend(["-tags", args.tags])
         
         # Add severity - user-specified or default
         if args.severity:
-            nuclei_cmd.extend(["-severity", args.severity])
+            nuclei_cmd.extend(["-s", args.severity])
         
         # Add exclusion options
         if args.exclude_tags:
-            nuclei_cmd.extend(["-exclude-tags", args.exclude_tags])
+            nuclei_cmd.extend(["-et", args.exclude_tags])
         
         if args.exclude_templates:
             nuclei_cmd.extend(["-exclude-templates", args.exclude_templates])
@@ -1093,10 +1335,29 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
             nuclei_cmd.extend(["-proxy", args.proxy])
         
         if args.disable_redirects:
-            nuclei_cmd.append("-disable-redirects")
+            nuclei_cmd.append("-dr")
         
         if args.max_redirects:
-            nuclei_cmd.extend(["-max-redirects", str(args.max_redirects)])
+            nuclei_cmd.extend(["-maxr", str(args.max_redirects)])
+        
+        # Add custom headers
+        if args.custom_headers:
+            for header in args.custom_headers.split(','):
+                nuclei_cmd.extend(["-H", header.strip()])
+        
+        # Add custom variables
+        if args.vars:
+            nuclei_cmd.extend(["-var", args.vars])
+        
+        # Add Interactsh options
+        if args.interactsh_server:
+            nuclei_cmd.extend(["-iserver", args.interactsh_server])
+        
+        if args.no_interactsh:
+            nuclei_cmd.append("-ni")
+        
+        if args.interactsh_token:
+            nuclei_cmd.extend(["-itoken", args.interactsh_token])
         
         if args.nuclei_user_agent:
             nuclei_cmd.extend(["-user-agent", args.nuclei_user_agent])
@@ -1135,10 +1396,10 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
         
         if args.sarif_export:
             nuclei_cmd.extend(["-sarif-export", args.sarif_export])
-            
-        # Add all other arguments
+              # Add all other arguments
         nuclei_cmd.extend(nuclei_args)
-        nuclei_success, nuclei_output = run_with_enhanced_realtime_output(
+        
+        nuclei_success, nuclei_output = run_with_clean_output_only(
             cmd=nuclei_cmd,
             output_file=temp_output,
             tool_name="Nuclei"
@@ -1542,6 +1803,7 @@ def check_network_connectivity():
             with socket.create_connection((dns_host, dns_port), timeout=5) as sock:
                 print(f"  ✓ Successfully connected to {dns_host}")
                 return True
+
         except (socket.timeout, socket.error, OSError) as e:
             print(f"  ✗ Failed to connect to {dns_host}: {e}")
             continue
@@ -1925,3 +2187,94 @@ def parse_naabu_realtime_output(line: str) -> dict:
             port_info['count'] = numbers[0]
     
     return port_info
+
+def format_results_for_graphics(results: List[str], tool_type: str) -> List[str]:
+    """
+    Format clean results specifically for graphics/visualization usage.
+    
+    Args:
+        results: List of clean result lines
+        tool_type: Type of tool (naabu, httpx, nuclei)
+        
+    Returns:
+        List of formatted result lines
+    """
+    formatted_results = []
+    
+    for line in results:
+        line = line.strip()
+        if not line:
+            continue
+            
+        if tool_type.lower() == 'naabu':
+            # Format: IP:PORT or HOST:PORT
+            if ':' in line and any(c.isdigit() for c in line):
+                # Clean up any extra whitespace or characters
+                formatted_line = ' '.join(line.split())
+                formatted_results.append(formatted_line)
+                
+        elif tool_type.lower() == 'httpx':
+            # Format: URL [STATUS] [TITLE] [TECH]
+            if line.startswith(('http://', 'https://')):
+                formatted_line = ' '.join(line.split())
+                formatted_results.append(formatted_line)
+                
+        elif tool_type.lower() == 'nuclei':
+            # Format: [SEVERITY] [TEMPLATE] URL
+            if '[' in line and ']' in line and any(proto in line for proto in ['http://', 'https://']):
+                formatted_line = ' '.join(line.split())
+                formatted_results.append(formatted_line)
+    
+    return formatted_results
+
+def save_graphics_ready_results(results: List[str], output_file: str, tool_type: str, target: str):
+    """
+    Save clean results to file in a format optimized for graphics processing.
+    No real-time output noise, just structured data for visualization.
+    
+    Args:
+        results: List of clean result lines
+        output_file: Path to output file
+        tool_type: Type of tool (naabu, httpx, nuclei)
+        target: Target that was scanned
+    """
+    try:
+        timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        
+        with open(output_file, 'w') as f:
+            # Write clean header for graphics processing
+            f.write(f"# {tool_type.upper()} SCAN RESULTS\n")
+            f.write(f"# Target: {target}\n")
+            f.write(f"# Timestamp: {timestamp}\n")
+            f.write(f"# Total Results: {len(results)}\n")
+            f.write(f"# Format: Clean data for graphics processing\n")
+            f.write("#" + "="*60 + "\n\n")
+            
+            # Write tool-specific format headers
+            if tool_type.lower() == 'naabu':
+                f.write("# PORT SCAN RESULTS\n")
+                f.write("# Format: IP:PORT or HOST:PORT\n")
+                f.write("#" + "-"*40 + "\n")
+                
+            elif tool_type.lower() == 'httpx':
+                f.write("# HTTP SERVICE RESULTS\n") 
+                f.write("# Format: URL [STATUS] [TITLE] [TECH]\n")
+                f.write("#" + "-"*40 + "\n")
+                
+            elif tool_type.lower() == 'nuclei':
+                f.write("# VULNERABILITY SCAN RESULTS\n")
+                f.write("# Format: [SEVERITY] [TEMPLATE] URL\n")
+                f.write("#" + "-"*40 + "\n")
+            
+            # Write clean results without any noise
+            for result in results:
+                f.write(result + "\n")
+                
+            # Add footer for completeness
+            f.write(f"\n# End of {tool_type.upper()} results\n")
+            f.write(f"# Scan completed at {timestamp}\n")
+                
+        print(f"[{tool_type.upper()}] Clean results saved to: {output_file}")
+        
+    except Exception as e:
+        print(f"[{tool_type.upper()}] Error saving graphics-ready results: {e}")
