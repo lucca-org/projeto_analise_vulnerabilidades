@@ -10,19 +10,19 @@ A comprehensive security toolkit for automated vulnerability scanning and analys
 
 ### Recent Enhancements
 
-**LATEST UPDATE: Interactive Menu and Flag Selection System**
+**LATEST UPDATE: Tool Compatibility and Output Management**
+- **Fixed HTTPX Compatibility**: Resolved invalid flag issues for all HTTPX versions
+- **Nuclei Template Auto-Detection**: Automatic template loading when none specified
+- **Clean Output Filtering**: Separate real-time display and structured file output
+- **Improved Error Handling**: Better feedback for common scanning issues
+- **Graphics-Ready Results**: Output files optimized for visualization and analysis
+
+**Previous Updates:**
 - **Enhanced Interactive Menu**: Completely redesigned user interface with intuitive navigation
 - **Advanced Flag Selection System**: Comprehensive flag configuration for each scanning tool
 - **Tool Path Resolution**: Improved detection of security tools across different Linux installations
 - **Network Connectivity Validation**: Multi-method connectivity testing with detailed feedback
 - **Clean Output Formatting**: Professional text-only output across all interfaces
-
-**Previous Updates:**
-- **Internet Connectivity Check**: Fixed and re-enabled in setup.py for Linux systems
-- **Network Connectivity Enforcement**: Automatic scan termination on network failure
-- **Port Information Display**: Real-time port range information during scans
-- **Enhanced Installation**: Master installer with comprehensive validation
-- **Multi-Mode Support**: Interactive menu and direct command-line workflows
 
 ### Overview
 
@@ -50,12 +50,18 @@ Each scan type follows a structured workflow:
 
 - **Comprehensive Scanning Suite**: Three integrated scanning tools:
   - **Naabu**: Fast port discovery and service detection
-  - **HTTPX**: Web service identification and technology fingerprinting
-  - **Nuclei**: Vulnerability detection with 5000+ pre-built templates
+  - **HTTPX**: HTTP service enumeration and technology detection (universal compatibility)
+  - **Nuclei**: Vulnerability detection with 5000+ pre-built templates (auto-loaded)
+
+- **Advanced Tool Compatibility**:
+  - **Universal HTTPX Support**: Compatible with all HTTPX versions and installations
+  - **Smart Template Loading**: Nuclei automatically uses comprehensive template sets
+  - **Dual Output System**: Real-time feedback with clean structured file output
+  - **Error Recovery**: Graceful handling of common scanning issues
 
 - **Advanced Flag Selection System**:
   - **Naabu Flags**: Port ranges, scan types, rate limiting, threading, and more
-  - **HTTPX Flags**: Technology detection, status codes, redirects, custom headers
+  - **HTTPX Flags**: Service detection, technology identification, response analysis
   - **Nuclei Flags**: Template selection, severity filtering, concurrency control
 
 - **User Experience Enhancements**:
@@ -63,6 +69,7 @@ Each scan type follows a structured workflow:
   - **Real-time Progress Updates**: Live feedback during scan operations
   - **Comprehensive Help System**: Contextual guidance for all scan operations
   - **Input Validation**: Robust error prevention with helpful feedback
+  - **Smart Output Management**: Clean results for visualization, verbose logs for debugging
 
 - **Technical Features**:
   - **Tool Path Resolution**: Intelligent detection across different Linux installations
@@ -92,7 +99,6 @@ Each scan type follows a structured workflow:
 
 1. **Clone Repository**:
    ```bash
-   # Replace 'yourusername' with the actual repository owner
    git clone https://github.com/yourusername/MTScan.git
    cd MTScan
    ```
@@ -109,8 +115,16 @@ Each scan type follows a structured workflow:
 
 4. **Run a Direct Scan** (Alternative to menu):
    ```bash
-   python3 src/workflow.py -naabu -host example.com
+   # Universal compatibility - works with all tool versions
+   python3 src/workflow.py -httpx -host example.com
+   python3 src/workflow.py -nuclei -host example.com  # Auto-loads templates
    ```
+
+**Key Features Ready to Use:**
+- ✅ Universal HTTPX compatibility (all versions supported)
+- ✅ Nuclei auto-template loading (5000+ templates)
+- ✅ Clean output files optimized for analysis
+- ✅ Real-time progress with structured results
 
 ## Installation
 
@@ -247,6 +261,20 @@ MTScan implements a structured workflow for security scanning:
    - Results browsing and analysis
 
 ## Usage
+
+### Important: Dual Output System
+
+MTScan now features a **dual output system** designed for both user experience and data analysis:
+
+**Real-time Display**: Shows detailed progress, status messages, and verbose information during scans for user feedback.
+
+**Output Files**: Contain only clean, structured results suitable for:
+- Graphics and visualization tools
+- Data analysis and processing  
+- Integration with other security tools
+- Professional reporting
+
+This ensures you get comprehensive feedback during scans while maintaining clean, actionable data in your result files.
 
 ### How to Run the Project
 
@@ -678,19 +706,25 @@ This indicates that invalid parameter values are being passed to the scanning to
 3. If using command line, ensure all parameter values are valid (not None or empty)
 4. Use the interactive menu which has better parameter validation
 
-#### Recent Fixes (v1.2)
+#### Recent Fixes (v1.3)
+
+**HTTPX Compatibility**: Fixed all HTTPX flag compatibility issues across different versions. Removed invalid flags like `-t` and `-output`, using only universally supported flags for maximum compatibility.
+
+**Nuclei Template Auto-Loading**: Implemented automatic template loading when no specific templates are specified. Uses comprehensive default template set including CVEs, vulnerabilities, exposures, technologies, misconfigurations, and default-logins.
+
+**Clean Output Management**: Separated real-time display output from file output. Output files now contain only clean, structured results suitable for visualization and analysis, while real-time output provides detailed progress feedback.
+
+**False Positive Filtering**: Enhanced report analysis to prevent static text from being counted as security issues. Improved vulnerability detection logic to only count actual findings.
+
+**Error Handling**: Better error messages and recovery for common scanning scenarios, including graceful handling when no services are found (which is normal for targets without web servers).
+
+**Previous Fixes (v1.2)**:
 
 **Port Flag Handling**: Fixed duplicate `-top-ports` flags that caused "invalid top ports option" errors. The system now ensures only one port specification method is used at a time.
 
 **Timeout Optimization**: Limited maximum timeout values to 60 seconds (60,000ms) to prevent extremely long scan times and improved overall performance.
 
 **Verbose Output**: Fixed duplicate `-v` flags in naabu commands for cleaner output and better compatibility.
-
-**Command Construction**: Improved argument parsing and flag management to prevent conflicts between different flag sources.
-
-**Argument Validation**: Enhanced validation to prevent None values from being passed to command-line tools, fixing "invalid value 'None'" errors.
-
-**Duplicate Flag Prevention**: Improved logic to prevent duplicate flags (like multiple `-c` or `-rate` flags) from being passed to naabu.
 
 ## Portuguese Translations
 
@@ -714,10 +748,21 @@ python3 mtscan.py
 
 #### Funcionalidades Principais
 
-- **Menu Interativo**: Interface amigável para todas as funcionalidades
-- **Escaneamento Abrangente**: Detecção de portas, serviços HTTP e vulnerabilidades
-- **Sistema de Seleção de Flags**: Configuração detalhada para cada ferramenta
+- **Menu Interativo**: Interface amigável para todas as funcionalidades do toolkit
+- **Escaneamento Abrangente**: Detecção de portas (naabu), serviços HTTP (httpx) e vulnerabilidades (nuclei)
+- **Compatibilidade Universal**: Suporte aprimorado para todas as versões das ferramentas de segurança
+- **Sistema de Saída Duplo**: Feedback em tempo real com arquivos de resultados limpos para análise
+- **Carregamento Automático de Templates**: Nuclei carrega automaticamente templates abrangentes
+- **Sistema de Seleção de Flags**: Configuração detalhada para cada ferramenta de escaneamento
 - **Validação de Entrada**: Prevenção robusta de erros com feedback útil
-- **Geração de Relatórios**: Saída estruturada em múltiplos formatos
+- **Geração de Relatórios**: Saída estruturada otimizada para visualização e análise
+
+#### Melhorias Recentes (v1.3)
+
+- **Compatibilidade HTTPX**: Corrigidos todos os problemas de compatibilidade de flags do HTTPX
+- **Templates Nuclei**: Carregamento automático de templates quando não especificados
+- **Gerenciamento de Saída**: Separação entre exibição em tempo real e arquivos de resultados
+- **Filtragem de Falsos Positivos**: Melhoria na análise de relatórios para evitar contagem incorreta
+- **Tratamento de Erros**: Melhor recuperação de erros em cenários comuns de escaneamento
 
 Para documentação completa, consulte as seções em inglês acima.

@@ -1299,8 +1299,8 @@ def run_individual_tools(args, tool_paths: Dict[str, str], output_dir: str) -> b
             nuclei_cmd.extend(["-t", args.template_path])
             templates_added = True
         
-        # If no specific templates specified, use default comprehensive set
-        if not templates_added:
+        # If no specific templates specified AND no tags specified, use default comprehensive set
+        if not templates_added and not args.tags:
             # Use a good default set of templates for comprehensive scanning
             default_templates = [
                 "cves/",
